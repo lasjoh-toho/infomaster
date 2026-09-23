@@ -667,6 +667,34 @@ if (isset($_GET['proxy'])) {
     display:block; width:100%; margin-top:18px; padding:12px; border:none; border-radius:10px;
     background:var(--accent); color:#2B120A; font-weight:700; font-size:14px; cursor:pointer;
   }
+
+  /* ————— Medien verkleinern / In Teile aufteilen ————— */
+  .mb-modal-box{ width:min(640px, 100%); }
+  .mb-modal-actions{ display:flex; justify-content:flex-end; gap:10px; margin-top:18px; }
+  .mb-split-list{ max-height:44vh; overflow-y:auto; margin-bottom:8px; }
+  .mb-split-row{ display:flex; align-items:center; gap:12px; padding:6px 0; }
+  .mb-split-label{ font-size:13px; color:var(--ink-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .mb-split-thumb{ position:relative; width:120px; height:67.5px; flex:none; border-radius:6px; overflow:hidden; background:var(--tile-paper); border:1px solid var(--line); }
+  .mb-split-thumb-placeholder{ width:100%; height:100%; border:none; background:transparent; cursor:pointer; font-size:16px; color:var(--ink-dim); }
+  .mb-split-thumb-spinner{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:11px; color:var(--ink-dim); }
+  .mb-split-thumb-spinner::after{ content:'…'; }
+  .mb-split-thumb-frame{ position:absolute; top:0; left:0; transform-origin:top left; border:none; pointer-events:none; }
+  .mb-split-break{
+    display:block; width:100%; margin:2px 0; padding:4px 10px; font-size:11px; text-align:left;
+    border:1px dashed var(--line); border-radius:6px; background:transparent; color:var(--ink-dim); cursor:pointer;
+  }
+  .mb-split-break.active{ border-color:var(--accent); color:var(--accent-dim); border-style:solid; font-weight:700; }
+  .mb-split-name-row{ display:flex; align-items:center; gap:10px; font-size:12px; margin-bottom:6px; }
+  .mb-split-name-row span{ flex:0 0 160px; color:var(--ink-dim); }
+  .mb-split-name-row input{ flex:1; padding:6px 8px; }
+  .mb-shrink-settings{ display:flex; gap:16px; margin-bottom:10px; }
+  .mb-shrink-settings label{ font-size:12px; color:var(--ink-dim); display:flex; flex-direction:column; gap:4px; }
+  .mb-shrink-settings input{ width:100px; padding:6px 8px; }
+  .mb-shrink-dupes{ display:block; font-size:12px; margin-bottom:10px; }
+  .mb-shrink-list{ max-height:44vh; overflow-y:auto; }
+  .mb-shrink-row{ display:flex; align-items:center; gap:12px; padding:6px 0; border-bottom:1px solid var(--line); }
+  .mb-shrink-thumb{ width:64px; height:64px; object-fit:cover; border-radius:6px; flex:none; }
+  .mb-shrink-size{ font-size:12px; color:var(--ink-dim); margin-left:auto; }
 </style>
 </head>
 <body>
@@ -715,6 +743,7 @@ if (isset($_GET['proxy'])) {
         <div style="display:flex; gap:6px; flex:0 0 auto; align-items:center;">
           <a href="<?php echo htmlspecialchars($deckUrl); ?>#present" target="_blank" rel="noopener" title="Präsentation starten" style="width:28px; height:28px; display:flex; align-items:center; justify-content:center; background:#1e293b; color:#93c5fd; border-radius:6px; text-decoration:none;">▶</a>
           <a href="<?php echo htmlspecialchars($deckUrl); ?>" target="_blank" rel="noopener" title="Bearbeiten (im vollen Editor)" style="width:28px; height:28px; display:flex; align-items:center; justify-content:center; background:#1e293b; color:#93c5fd; border-radius:6px; text-decoration:none;">✎</a>
+          <button type="button" class="bento-deck-load-btn" title="Hier unten laden, um Medien zu verkleinern oder in Teile aufzuteilen" style="width:28px; height:28px; display:flex; align-items:center; justify-content:center; background:#1e293b; color:#93c5fd; border-radius:6px; border:none; cursor:pointer; font-size:14px;">🗜</button>
           <a href="<?php echo htmlspecialchars($deckUrl); ?>" download title="Als .bento.html herunterladen" style="width:28px; height:28px; display:flex; align-items:center; justify-content:center; background:#1e293b; color:#93c5fd; border-radius:6px; text-decoration:none;">⬇</a>
           <form method="POST" action="?api=delete_deck" onsubmit="return confirm('&quot;<?php echo htmlspecialchars(addslashes($deckTitle)); ?>&quot; wirklich löschen?');" style="margin:0;">
             <input type="hidden" name="file" value="<?php echo htmlspecialchars($deckFile); ?>">
@@ -764,6 +793,33 @@ if (isset($_GET['proxy'])) {
         else if (ev.key === 'Escape') { ev.preventDefault(); commit(false); }
       });
       input.addEventListener('blur', function(){ commit(true); });
+    });
+  });
+
+  // "🗜 laden" bei einer bereits gespeicherten Präsentation: läd die Datei
+  // herunter und speist sie in denselben Import-Weg ein wie ein per Drag&Drop
+  // abgelegtes .bento.html (handleFiles, weiter unten definiert - wird erst
+  // beim tatsächlichen Klick aufgerufen, ist also zu diesem Zeitpunkt schon
+  // vorhanden) - so stehen für eine schon gespeicherte Präsentation dieselben
+  // Karten-Aktionen (🗜 Medien verkleinern, ✂️ In Teile aufteilen, erneut
+  // speichern, …) zur Verfügung wie für eine frisch konvertierte.
+  document.querySelectorAll('.bento-deck-load-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var banner = btn.closest('.bento-deck-banner');
+      var file = banner.getAttribute('data-file');
+      var original = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '…';
+      fetch('media/bento-pronto/decks/' + encodeURIComponent(file))
+        .then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+        .then(function(text){
+          var blob = new Blob([text], { type: 'text/html' });
+          var syntheticFile = new File([blob], file, { type: 'text/html' });
+          handleFiles([syntheticFile]);
+          document.querySelector('#items')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        })
+        .catch(function(e){ alert('Konnte die Datei nicht laden: ' + (e.message || e)); })
+        .finally(function(){ btn.disabled = false; btn.textContent = original; });
     });
   });
   </script>
@@ -1390,6 +1446,379 @@ function mergeDocs(docA, docB){
   return merged;
 }
 
+// ---------------- Medien verkleinern & In Teile aufteilen ----------------
+// Portiert aus moodle-mod_bentos bentoconvert.js (dieselbe Funktionalität wie
+// dort in manage.php - siehe dessen eigenen Kommentar dazu: reines Client-JS
+// ohne Build-Schritt, arbeitet nur auf dem doc-Objekt, daher 1:1 uebertragbar).
+
+/** Ermittelt alle tatsaechlich von Folien/Layouts referenzierten Asset- und
+ *  Font-Keys - Grundlage fuer bentoBuildSplitDoc() (ein Teil bekommt nur die
+ *  Assets, die seine eigenen Folien wirklich brauchen). */
+function bentoFindUsedAssetAndFontKeys(doc){
+  const assetKeys = {};
+  const fontFamiliesInUse = {};
+  if (doc.theme && doc.theme.fontFamily) fontFamiliesInUse[doc.theme.fontFamily] = true;
+  const assetKeyFrom = (value) => (typeof value === 'string' && value.indexOf('asset:') === 0) ? value.slice('asset:'.length) : null;
+  function visitElement(el){
+    if (!el || !el.type) return;
+    if (el.type === 'image'){
+      const src = assetKeyFrom(el.src); if (src) assetKeys[src] = true;
+      const mask = assetKeyFrom(el.mask); if (mask) assetKeys[mask] = true;
+    } else if (el.type === 'svg'){
+      if (el.asset) assetKeys[el.asset] = true;
+    } else if (el.type === 'media'){
+      const msrc = assetKeyFrom(el.src); if (msrc) assetKeys[msrc] = true;
+      const poster = assetKeyFrom(el.poster); if (poster) assetKeys[poster] = true;
+    } else if (el.type === 'text'){
+      if (el.fontFamily) fontFamiliesInUse[el.fontFamily] = true;
+    } else if (el.type === 'table'){
+      if (el.style && el.style.fontFamily) fontFamiliesInUse[el.style.fontFamily] = true;
+    } else if (el.type === 'chart'){
+      const str = JSON.stringify(el.option || {});
+      let m; const re = /asset:([a-zA-Z0-9_-]+)/g;
+      while ((m = re.exec(str))) assetKeys[m[1]] = true;
+    }
+  }
+  const visitSlide = (s) => (s.elements || []).forEach(visitElement);
+  (doc.slides || []).forEach(visitSlide);
+  (doc.layouts || []).forEach(visitSlide);
+  const fontKeys = {};
+  (doc.fonts || []).forEach((f) => { if (fontFamiliesInUse[f.family]) { fontKeys[f.asset] = true; assetKeys[f.asset] = true; } });
+  return { assetKeys, fontKeys };
+}
+
+/** Baut ein eigenstaendiges Dokument aus einer zusammenhaengenden Folge von
+ *  doc.slides - nur die Assets/Fonts, die genau diese Folien tatsaechlich
+ *  verwenden, kommen mit (siehe bentoFindUsedAssetAndFontKeys). */
+function bentoBuildSplitDoc(doc, startIdx, endIdx){
+  const part = JSON.parse(JSON.stringify(doc));
+  part.slides = (doc.slides || []).slice(startIdx, endIdx);
+  const used = bentoFindUsedAssetAndFontKeys(part);
+  if (part.assets) Object.keys(part.assets).forEach((k) => { if (!used.assetKeys[k]) delete part.assets[k]; });
+  if (part.fonts) part.fonts = part.fonts.filter((f) => used.fontKeys[f.asset]);
+  return part;
+}
+
+function bentoRemapAssetRefs(node, keyMap){
+  if (typeof node === 'string'){
+    const m = /^asset:(.+)$/.exec(node);
+    return (m && keyMap[m[1]]) ? 'asset:' + keyMap[m[1]] : node;
+  }
+  if (Array.isArray(node)) return node.map((n) => bentoRemapAssetRefs(n, keyMap));
+  if (node && typeof node === 'object'){
+    const out = {};
+    for (const k in node) out[k] = bentoRemapAssetRefs(node[k], keyMap);
+    return out;
+  }
+  return node;
+}
+
+/** Echte dekodierte Byte-Groesse eines data:-URIs (base64-Aufblaehung + Padding
+ *  beruecksichtigt), nicht die rohe String-Laenge. */
+function bentoDataUriByteSize(dataUri){
+  const comma = dataUri.indexOf(',');
+  if (comma < 0) return dataUri.length;
+  const payload = dataUri.slice(comma + 1);
+  if (!/;base64$/.test(dataUri.slice(0, comma))) return payload.length;
+  const padding = payload.slice(-2) === '==' ? 2 : payload.slice(-1) === '=' ? 1 : 0;
+  return Math.floor((payload.length * 3) / 4) - padding;
+}
+
+/** PNG bleibt PNG (Transparenz), alles andere wird JPEG; loest unveraendert
+ *  auf, falls schon klein genug oder bei jedem Dekodier-Fehler. */
+function bentoDownscaleImageDataUrl(dataUrl, maxDim, quality){
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight));
+      if (scale >= 1){ resolve(dataUrl); return; }
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.naturalWidth * scale);
+      canvas.height = Math.round(img.naturalHeight * scale);
+      const ctx = canvas.getContext('2d');
+      if (!ctx){ resolve(dataUrl); return; }
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const isPng = dataUrl.indexOf('data:image/png') === 0;
+      resolve(canvas.toDataURL(isPng ? 'image/png' : 'image/jpeg', quality));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
+function slideLabel(slide, idx){
+  let found = null;
+  (function walk(node){
+    if (found || !node || typeof node !== 'object') return;
+    if (Array.isArray(node)){ node.forEach(walk); return; }
+    if (typeof node.text === 'string' && node.text.trim()){ found = node.text.trim(); return; }
+    if (typeof node.content === 'string' && node.content.trim()){ found = node.content.trim(); return; }
+    for (const k in node) walk(node[k]);
+  })(slide.elements || []);
+  const text = found ? found.slice(0, 40) + (found.length > 40 ? '…' : '') : '(ohne Text)';
+  return 'Folie ' + (idx + 1) + ' — ' + text;
+}
+
+// Ein Thumbnail (iframe-Render) nach dem anderen - alle gleichzeitig zu bauen
+// machte das Modal bei vielen Folien spuerbar traege.
+const thumbnailQueue = [];
+let thumbnailQueueRunning = false;
+function pumpThumbnailQueue(){
+  if (thumbnailQueueRunning || !thumbnailQueue.length) return;
+  thumbnailQueueRunning = true;
+  const job = thumbnailQueue.shift();
+  job(() => { thumbnailQueueRunning = false; pumpThumbnailQueue(); });
+}
+
+function buildSlideThumbnail(doc, idx){
+  const wrap = document.createElement('div');
+  wrap.className = 'mb-split-thumb';
+  const placeholder = document.createElement('button');
+  placeholder.type = 'button';
+  placeholder.className = 'mb-split-thumb-placeholder';
+  placeholder.textContent = '▶';
+  placeholder.title = 'Vorschau laden';
+  wrap.appendChild(placeholder);
+  let loaded = false;
+  function load(){
+    if (loaded) return;
+    loaded = true;
+    placeholder.remove();
+    const spinner = document.createElement('div');
+    spinner.className = 'mb-split-thumb-spinner';
+    wrap.appendChild(spinner);
+    const w = (doc.size && doc.size.width) || 1280;
+    const h = (doc.size && doc.size.height) || 720;
+    const iframe = document.createElement('iframe');
+    iframe.className = 'mb-split-thumb-frame';
+    iframe.style.width = w + 'px';
+    iframe.style.height = h + 'px';
+    iframe.style.transform = 'scale(' + (120 / w) + ')';
+    iframe.setAttribute('tabindex', '-1');
+    iframe.setAttribute('aria-hidden', 'true');
+    iframe.setAttribute('sandbox', 'allow-scripts');
+    wrap.appendChild(iframe);
+    thumbnailQueue.push((done) => {
+      const finish = () => { spinner.remove(); done(); };
+      getShell().then((shell) => {
+        const slideDoc = {
+          format: doc.format, version: doc.version || 1,
+          docId: 'thumb-' + idx, title: doc.title || '',
+          size: doc.size || { width: 1280, height: 720 },
+          theme: doc.theme || { background: '#FFFFFF', color: '#111111', accent: '#FF9E5E', fontFamily: 'system-ui, sans-serif' },
+          assets: doc.assets, slides: [doc.slides[idx]],
+          readonly: true,
+        };
+        const html = spliceDoc(shell, slideDoc);
+        iframe.addEventListener('load', finish, { once: true });
+        iframe.srcdoc = html;
+      }).catch((e) => { console.warn('Thumbnail konnte nicht geladen werden:', e); finish(); });
+    });
+    pumpThumbnailQueue();
+  }
+  placeholder.addEventListener('click', load);
+  return { el: wrap, load };
+}
+
+function openSplitModal(it, onDone){
+  const slides = it.doc.slides || [];
+  const breakAfter = new Array(slides.length - 1).fill(false);
+  const customNames = [];
+
+  const overlay = document.createElement('div');
+  overlay.className = 'paste-modal show';
+  const box = document.createElement('div');
+  box.className = 'paste-modal-inner mb-modal-box';
+  box.innerHTML = `
+    <button class="paste-modal-close" type="button">✕</button>
+    <h3>In Teile aufteilen</h3>
+    <p>Zwischen zwei Folien klicken, um dort eine Trennung einzufügen. Jeder entstehende Teil bekommt nur die Assets, die seine eigenen Folien tatsächlich verwenden.</p>
+    <button type="button" class="mb-split-load-all" style="width:auto; margin-bottom:12px;">Alle Thumbnails öffnen</button>
+    <div class="mb-split-list"></div>
+    <div class="mb-split-names"></div>
+    <div class="mb-modal-actions">
+      <button type="button" class="mb-split-cancel" style="width:auto;">Abbrechen</button>
+      <button type="button" class="primary mb-split-confirm" style="width:auto;">Aufteilen</button>
+    </div>`;
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+
+  const listEl = box.querySelector('.mb-split-list');
+  const namesEl = box.querySelector('.mb-split-names');
+  const confirmBtn = box.querySelector('.mb-split-confirm');
+  const thumbLoaders = [];
+
+  function computeGroups(){
+    const groups = [];
+    let current = [];
+    slides.forEach((_, idx) => {
+      current.push(idx);
+      if (breakAfter[idx]){ groups.push(current); current = []; }
+    });
+    if (current.length) groups.push(current);
+    return groups;
+  }
+  function renderNameInputs(){
+    const groups = computeGroups();
+    namesEl.innerHTML = '';
+    if (groups.length <= 1) return;
+    groups.forEach((g, partNum) => {
+      const row = document.createElement('label');
+      row.className = 'mb-split-name-row';
+      row.innerHTML = `<span>Teil ${partNum + 1} (${g.length} Folie${g.length === 1 ? '' : 'n'})</span>`;
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.value = customNames[partNum] || ((it.doc.title || it.baseName || 'Deck') + ' — Teil ' + (partNum + 1));
+      input.addEventListener('input', () => { customNames[partNum] = input.value; });
+      row.appendChild(input);
+      namesEl.appendChild(row);
+    });
+  }
+  function updateConfirmState(){
+    const partCount = breakAfter.filter(Boolean).length + 1;
+    confirmBtn.textContent = partCount > 1 ? ('In ' + partCount + ' Teile aufteilen') : 'Keine Trennung gewählt';
+    confirmBtn.disabled = partCount <= 1;
+    renderNameInputs();
+  }
+
+  slides.forEach((slide, idx) => {
+    const row = document.createElement('div');
+    row.className = 'mb-split-row';
+    const thumb = buildSlideThumbnail(it.doc, idx);
+    thumbLoaders.push(thumb.load);
+    row.appendChild(thumb.el);
+    const label = document.createElement('div');
+    label.className = 'mb-split-label';
+    label.textContent = slideLabel(slide, idx);
+    row.appendChild(label);
+    listEl.appendChild(row);
+    if (idx < slides.length - 1){
+      const brk = document.createElement('button');
+      brk.type = 'button';
+      brk.className = 'mb-split-break';
+      brk.textContent = '+ Trennung hier einfügen';
+      brk.addEventListener('click', () => {
+        breakAfter[idx] = !breakAfter[idx];
+        brk.className = 'mb-split-break' + (breakAfter[idx] ? ' active' : '');
+        brk.textContent = breakAfter[idx] ? '✂ Trennung hier — klicken zum Entfernen' : '+ Trennung hier einfügen';
+        updateConfirmState();
+      });
+      listEl.appendChild(brk);
+    }
+  });
+  updateConfirmState();
+  box.querySelector('.mb-split-load-all').addEventListener('click', () => thumbLoaders.forEach((load) => load()));
+
+  const close = () => overlay.remove();
+  box.querySelector('.paste-modal-close').addEventListener('click', close);
+  box.querySelector('.mb-split-cancel').addEventListener('click', close);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  confirmBtn.addEventListener('click', () => {
+    const groups = computeGroups();
+    const newItems = groups.map((g, partNum) => {
+      const partDoc = bentoBuildSplitDoc(it.doc, g[0], g[g.length - 1] + 1);
+      const name = (customNames[partNum] || '').trim() || ((it.doc.title || it.baseName || 'Deck') + ' — Teil ' + (partNum + 1));
+      partDoc.title = name;
+      partDoc.docId = (crypto.randomUUID ? crypto.randomUUID() : 'part-' + Date.now() + '-' + partNum);
+      return { baseName: name, doc: partDoc, slideCount: partDoc.slides.length, warnings: [] };
+    });
+    close();
+    onDone(newItems);
+  });
+}
+
+function openShrinkAssetsModal(it, onDone){
+  const assets = it.doc.assets || {};
+  const imageEntries = Object.keys(assets)
+    .map((key) => ({ key, value: assets[key], bytes: bentoDataUriByteSize(assets[key]) }))
+    .filter((e) => e.value.indexOf('data:image/') === 0)
+    .sort((a, b) => b.bytes - a.bytes);
+
+  if (imageEntries.length === 0){ toast('Keine eingebetteten Bilder in dieser Präsentation.'); return; }
+
+  const byValue = {};
+  imageEntries.forEach((e) => { (byValue[e.value] = byValue[e.value] || []).push(e.key); });
+  let dupCount = 0;
+  Object.keys(byValue).forEach((v) => { if (byValue[v].length > 1) dupCount += byValue[v].length - 1; });
+
+  const overlay = document.createElement('div');
+  overlay.className = 'paste-modal show';
+  const box = document.createElement('div');
+  box.className = 'paste-modal-inner mb-modal-box';
+  box.innerHTML = `
+    <button class="paste-modal-close" type="button">✕</button>
+    <h3>Medien verkleinern</h3>
+    <p>Ausgewählte Bilder werden auf die angegebene Kantenlänge verkleinert und neu komprimiert (PNG bleibt PNG, alles andere wird JPEG).</p>
+    <div class="mb-shrink-settings">
+      <label>Max. Kantenlänge (px)<input type="number" class="mb-shrink-maxdim" min="200" max="8000" value="1920"></label>
+      <label>Qualität (%)<input type="number" class="mb-shrink-quality" min="10" max="100" value="85"></label>
+    </div>
+    ${dupCount > 0 ? `<label class="mb-shrink-dupes"><input type="checkbox" class="mb-shrink-dedupe" checked> ${dupCount} doppelte Bilder gefunden — entfernen</label>` : ''}
+    <div class="mb-shrink-list"></div>
+    <div class="mb-modal-actions">
+      <button type="button" class="mb-shrink-cancel" style="width:auto;">Abbrechen</button>
+      <button type="button" class="primary mb-shrink-confirm" style="width:auto;">Anwenden</button>
+    </div>`;
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+
+  const listEl = box.querySelector('.mb-shrink-list');
+  const maxDimInput = box.querySelector('.mb-shrink-maxdim');
+  const qualityInput = box.querySelector('.mb-shrink-quality');
+  const dedupeCb = box.querySelector('.mb-shrink-dedupe');
+  const rows = [];
+  imageEntries.forEach((e) => {
+    const row = document.createElement('div');
+    row.className = 'mb-shrink-row';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = true;
+    row.appendChild(cb);
+    const thumb = document.createElement('img');
+    thumb.className = 'mb-shrink-thumb';
+    thumb.src = e.value;
+    thumb.loading = 'lazy';
+    row.appendChild(thumb);
+    const sizeEl = document.createElement('span');
+    sizeEl.className = 'mb-shrink-size';
+    sizeEl.textContent = (e.bytes / 1024).toFixed(0) + ' KB';
+    row.appendChild(sizeEl);
+    listEl.appendChild(row);
+    rows.push({ entry: e, checkbox: cb });
+  });
+
+  const close = () => overlay.remove();
+  box.querySelector('.paste-modal-close').addEventListener('click', close);
+  box.querySelector('.mb-shrink-cancel').addEventListener('click', close);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+  const confirmBtn = box.querySelector('.mb-shrink-confirm');
+  confirmBtn.addEventListener('click', () => {
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Wird verarbeitet…';
+    const maxDim = parseInt(maxDimInput.value, 10) || 1920;
+    const quality = (parseInt(qualityInput.value, 10) || 85) / 100;
+    const toShrink = rows.filter((r) => r.checkbox.checked);
+    Promise.all(toShrink.map((r) => bentoDownscaleImageDataUrl(r.entry.value, maxDim, quality).then((shrunk) => { it.doc.assets[r.entry.key] = shrunk; })))
+      .then(() => {
+        if (dedupeCb && dedupeCb.checked){
+          const byValue2 = {};
+          const keyMap = {};
+          Object.keys(it.doc.assets).forEach((key) => {
+            const val = it.doc.assets[key];
+            if (Object.prototype.hasOwnProperty.call(byValue2, val)) keyMap[key] = byValue2[val];
+            else byValue2[val] = key;
+          });
+          Object.keys(keyMap).forEach((oldKey) => { delete it.doc.assets[oldKey]; });
+          it.doc.slides = bentoRemapAssetRefs(it.doc.slides, keyMap);
+          if (it.doc.fonts) it.doc.fonts = it.doc.fonts.map((f) => keyMap[f.asset] ? Object.assign({}, f, { asset: keyMap[f.asset] }) : f);
+        }
+        close();
+        onDone();
+      });
+  });
+}
+
 function toast(msg, duration){
   toastEl.textContent = msg;
   toastEl.classList.add('show');
@@ -1525,6 +1954,8 @@ function buildItemCard(it){
       <button data-action="open">Direkt öffnen</button>
       <button data-action="download">Nur JSON herunterladen</button>
       <button data-action="copy">JSON kopieren</button>
+      <button data-action="shrink" title="Eingebettete Bilder verkleinern/neu komprimieren">🗜 Medien verkleinern</button>
+      ${it.slideCount > 1 ? `<button data-action="split" title="In mehrere eigenständige Präsentationen aufteilen">✂️ In Teile aufteilen</button>` : ''}
     </div>
     <div class="fetch-note" style="display:none" class="err-msg"></div>
     <div class="save-server-result" style="display:none; margin-top:10px; background:#0f2a1c; border:1px solid #1f6b3f; border-radius:6px; padding:10px 12px; font-size:12px; color:#bbf7d0;"></div>
@@ -1709,6 +2140,24 @@ function buildItemCard(it){
     items.splice(above ? targetIdx : targetIdx + 1, 0, draggedItem);
     renderItems();
   });
+
+  const shrinkBtn = card.querySelector('[data-action="shrink"]');
+  shrinkBtn.addEventListener('click', () => {
+    openShrinkAssetsModal(it, () => { renderItems(); toast('Medien verkleinert — noch nicht gespeichert.'); });
+  });
+
+  const splitBtn = card.querySelector('[data-action="split"]');
+  if (splitBtn){
+    splitBtn.addEventListener('click', () => {
+      openSplitModal(it, (newItems) => {
+        const i = items.indexOf(it);
+        if (i >= 0) items.splice(i, 1, ...newItems);
+        else items.push(...newItems);
+        renderItems();
+        toast('In ' + newItems.length + ' Teile aufgeteilt — noch nicht gespeichert.');
+      });
+    });
+  }
 
   return card;
 }

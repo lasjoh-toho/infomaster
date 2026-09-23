@@ -49,7 +49,17 @@ Präsentationskonverter), fest in Infomaster eingebaut:
   "Banner" (Titel, Folienanzahl, Größe, Datum) mit denselben Funktionen wie die
   Deck-Karten in moodle-mod_bentos `manage.php`: ▶ Ansehen (startet direkt die
   Präsentation), ✎ Bearbeiten, ⬇ Herunterladen, Doppelklick auf den Titel zum
-  Umbenennen, 🗑 Löschen.
+  Umbenennen, 🗑 Löschen sowie 🗜 (lädt die Präsentation unten in die Karten-
+  Ansicht, für "Medien verkleinern"/"In Teile aufteilen", siehe nächster Punkt).
+- **🗜 Medien verkleinern / ✂️ In Teile aufteilen** - wie in moodle-mod_bentos
+  Deck-Karten: jede Karte in der Karten-Ansicht (frisch konvertiert, importiert
+  oder über 🗜 von einer gespeicherten Präsentation geladen) bekommt einen
+  Knopf zum Verkleinern/Neukomprimieren eingebetteter Bilder (mit Duplikat-
+  Erkennung) sowie - ab 2 Folien - einen zum Aufteilen in mehrere eigenständige
+  Präsentationen (Trennpunkte per Klick zwischen Folien-Thumbnails setzen,
+  jeder Teil bekommt nur die von ihm tatsächlich genutzten Bilder/Schriften).
+  Ergebnis erscheint als neue, noch ungespeicherte Karte(n) - normal über
+  "Auf Server speichern"/"Bearbeitbar auf Server speichern" sichern.
 - Erreichbar über den Link "🎬 Präsentationen (Bento-Pronto)" oben im Dashboard.
 
 ### `bento.php` neu bauen
