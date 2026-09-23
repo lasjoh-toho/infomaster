@@ -37,20 +37,29 @@ Präsentationskonverter), fest in Infomaster eingebaut:
   Slideshow) und zeigt die fertige URL (inkl. `?autostart=1&loop`) zum Kopieren - diese
   Adresse im Dashboard bei einem Monitor als Inhalt "Webseite (URL)" eintragen.
 - **Bearbeitbare Präsentationen (wie bei Moodle-mod_bento)** - "📝 Bearbeitbar auf Server
-  speichern" legt eine editierbare Kopie unter `media/bento-pronto/decks/` an. Diese
-  Datei trägt einen `bento-host-config`-Meta-Tag; der **native** "Speichern"-Knopf im
-  Bento-Editor selbst schreibt beim erneuten Öffnen direkt wieder in dieselbe Datei
+  speichern" legt eine editierbare Kopie unter `media/bentos/` an (bewusst NICHT unter
+  `media/bento-pronto/decks/` o.ä. - der Bento-Editor selbst erkennt einen Speichern-
+  Host nur, wenn `bentos` als eigenes Pfadsegment in der URL vorkommt, genau wie
+  mod_bento das ganz analog über `mod/bento` in der URL löst; siehe `editor/hostsave.ts`
+  im bento-Projekt - `moodle.ts` selbst bleibt davon komplett unberührt). Diese Datei
+  trägt zusätzlich einen `bento-host-config`-Meta-Tag; der **native** "Speichern"-Knopf
+  im Bento-Editor selbst schreibt beim erneuten Öffnen direkt wieder in dieselbe Datei
   zurück (Dafür nötige Editor-Änderungen liegen als offener PR im
   [bento](https://github.com/lasjoh-toho/bento)-Projekt:
   [lasjoh-toho/bento#1](https://github.com/lasjoh-toho/bento/pull/1) - muss dort erst
-  gemerged und über `build.mjs` neu gebaut werden, siehe unten). Das Logo oben links im
-  Editor führt bei diesen Dateien als Home-Button zurück zu `infomaster.php`.
+  gemerged und über `build.mjs` neu gebaut werden, siehe unten) - inklusive desselben
+  visuellen Feedbacks wie beim Moodle-Speichern-Knopf (Fortschrittsbalken während des
+  Hochladens, ein "✓ Gespeichert"-Häkchen ersetzt den Knopf, solange nichts geändert
+  wurde). Das Logo oben links im Editor führt bei diesen Dateien als Home-Button zurück
+  zu `infomaster.php`.
   Gespeicherte Präsentationen erscheinen auf der `bento.php`-Startseite als eigene
-  "Banner" (Titel, Folienanzahl, Größe, Datum) mit denselben Funktionen wie die
-  Deck-Karten in moodle-mod_bentos `manage.php`: ▶ Ansehen (startet direkt die
-  Präsentation), ✎ Bearbeiten, ⬇ Herunterladen, Doppelklick auf den Titel zum
-  Umbenennen, 🗑 Löschen sowie 🗜 (lädt die Präsentation unten in die Karten-
-  Ansicht, für "Medien verkleinern"/"In Teile aufteilen", siehe nächster Punkt).
+  "Banner" mit denselben Funktionen wie die Deck-Karten in moodle-mod_bentos
+  `manage.php` - nur Icons mit Tooltip, kein Text: ▶ Ansehen (startet direkt die
+  Präsentation), ✎ Bearbeiten, 🗜 (lädt die Präsentation unten in die Karten-Ansicht,
+  für "Medien verkleinern"/"In Teile aufteilen", siehe nächster Punkt), ⬇ Herunterladen,
+  Doppelklick auf den Namen zum Umbenennen, ✕ Löschen. Dieselbe Karten-Ansicht (frisch
+  konvertiert, importiert oder von dort geladen) hat ebenfalls nur Icon-Knöpfe mit
+  Tooltip statt Textbeschriftung.
 - **🗜 Medien verkleinern / ✂️ In Teile aufteilen** - wie in moodle-mod_bentos
   Deck-Karten: jede Karte in der Karten-Ansicht (frisch konvertiert, importiert
   oder über 🗜 von einer gespeicherten Präsentation geladen) bekommt einen

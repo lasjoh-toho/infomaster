@@ -24,14 +24,19 @@ if (empty($_SESSION['loggedin'])) {
 }
 
 // Praesentationen serverseitig ablegen statt nur als Browser-Download - in
-// zwei getrennten Unterordnern, je nach Zweck:
+// zwei getrennten Ordnern, je nach Zweck:
 //  - media/bento-pronto/monitors/  -> schreibgeschuetzte Kiosk-Exporte (siehe
 //    "Auf Server speichern (für Monitor)"): die URL kommt 1:1 als Monitor-
 //    Inhalt (Typ "Webseite/URL") in infomaster.php.
-//  - media/bento-pronto/decks/     -> bearbeitbare Praesentationen (siehe
+//  - media/bentos/                -> bearbeitbare Praesentationen (siehe
 //    "Bearbeitbar auf Server speichern"): tragen den bento-host-config-Meta-
-//    Tag (siehe unten), dadurch speichert die BENTO-APP SELBST (der native
-//    Speichern-Knopf im Editor, genau wie bei Moodle-mod_bento) spaeter
+//    Tag (siehe unten). Der Ordnername "bentos" ist absichtlich so gewaehlt,
+//    NICHT "bento-pronto/decks" o.ae. - der Bento-Editor selbst erkennt einen
+//    Speichern-Host nur, wenn "bentos" als eigenes Pfadsegment in der URL
+//    vorkommt (siehe editor/hostsave.ts im bento-Projekt, spiegelt exakt
+//    moodle.ts's eigene "mod/bento"-Erkennung, die dabei unangetastet
+//    bleibt). Erst WENN das zutrifft, speichert die BENTO-APP SELBST (der
+//    native Speichern-Knopf im Editor, genau wie bei Moodle-mod_bento) spaeter
 //    direkt wieder in dieselbe Datei zurueck - kein Zwischenschritt hier
 //    noetig, das ?api=save_deck weiter unten uebernimmt das.
 function bentoReadUploadedHtml(): string {
@@ -110,7 +115,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && (isset($_POST['bento_sav
         // in place - das ist der Endpunkt, den der native "Speichern"-Knopf
         // im Bento-Editor selbst aufruft (siehe hostConfig.saveUrl, in
         // diesen Dateien beim ersten Speichern unten mit eingebettet).
-        $dir = $uploadBase . 'bento-pronto/decks';
+        $dir = $uploadBase . 'bentos';
         $safeFile = basename((string)($_GET['file'] ?? ''));
         $path = $dir . '/' . $safeFile;
         if ($safeFile === '' || !preg_match('/\.html?$/i', $safeFile) || !is_file($path)) {
@@ -130,8 +135,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && (isset($_POST['bento_sav
     // Neuanlage - Ziel (Kiosk-Export fuer Monitore vs. bearbeitbare Praesentation)
     // kommt vom "kind"-Feld, das die beiden Speichern-Knoepfe unterschiedlich setzen.
     $kind = ($_POST['bento_kind'] ?? 'monitor') === 'deck' ? 'deck' : 'monitor';
-    $subfolder = $kind === 'deck' ? 'decks' : 'monitors';
-    $dir = $uploadBase . 'bento-pronto/' . $subfolder;
+    // "bentos" fuer bearbeitbare Decks ist absichtlich EIN eigenstaendiges
+    // Pfadsegment direkt unter media/ (nicht media/bento-pronto/decks) - siehe
+    // Kommentar oben: der Bento-Editor erkennt den Speichern-Host nur daran.
+    $dir = $kind === 'deck' ? ($uploadBase . 'bentos') : ($uploadBase . 'bento-pronto/monitors');
     if (!is_dir($dir)) { @mkdir($dir, 0775, true); }
     $rawName = bentoSafeBaseName((string)($_POST['bento_filename'] ?? 'praesentation'));
     $filename = $rawName . '_' . date('Ymd_His') . '.html';
@@ -143,7 +150,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && (isset($_POST['bento_sav
         // native Speichern-Vorgang im Editor serialisiert die aktuell
         // geladene Seite samt diesem Meta-Tag automatisch mit, siehe
         // hostsave.ts im bento-Projekt).
-        // Absolute URLs - die Datei liegt unter media/bento-pronto/decks/, nicht neben
+        // Absolute URLs - die Datei liegt unter media/bentos/, nicht neben
         // bento.php selbst, also wuerde ein relativer Pfad hier vom FALSCHEN Verzeichnis
         // aus aufgeloest (dem der Datei beim Oeffnen, nicht dem von bento.php).
         $saveUrl = bentoServerUrlFor(basename($_SERVER['SCRIPT_NAME'])) . '?api=save_deck&file=' . rawurlencode($filename);
@@ -172,7 +179,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && (isset($_POST['bento_sav
 
 // Loeschen einer gespeicherten bearbeitbaren Praesentation aus der Liste unten.
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_GET['api'] ?? '') === 'delete_deck') {
-    $dir = 'media/bento-pronto/decks';
+    $dir = 'media/bentos';
     $safeFile = basename((string)($_POST['file'] ?? ''));
     $path = $dir . '/' . $safeFile;
     if ($safeFile !== '' && preg_match('/\.html?$/i', $safeFile) && is_file($path)) {
@@ -189,7 +196,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_GET['api'] ?? '') ===
 // des Dateinamens bleibt erhalten, damit die Datei eindeutig bleibt.
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_GET['api'] ?? '') === 'rename_deck') {
     header('Content-Type: application/json');
-    $dir = 'media/bento-pronto/decks';
+    $dir = 'media/bentos';
     $safeFile = basename((string)($_POST['file'] ?? ''));
     $path = $dir . '/' . $safeFile;
     if ($safeFile === '' || !is_file($path)) {
@@ -536,7 +543,8 @@ if (isset($_GET['proxy'])) {
   .card-top-left{ display:flex; align-items:flex-start; gap:10px; min-width:0; }
   .card-grip{ cursor:grab; color:var(--ink-dim); font-size:16px; line-height:1; padding-top:2px; user-select:none; }
   .card-grip:active{ cursor:grabbing; }
-  .card-name{ font-weight:600; font-size:15px; word-break:break-all; }
+  .card-name{ font-weight:600; font-size:15px; word-break:break-all; cursor:text; }
+  .card-name-input{ font-weight:600; font-size:15px; padding:2px 6px; width:100%; }
   .card-meta{ font-family:var(--mono); font-size:12px; color:var(--ink-dim); margin-top:4px; }
   .pill{
     font-family:var(--mono); font-size:11px; padding:3px 8px; border-radius:100px;
@@ -547,6 +555,19 @@ if (isset($_GET['proxy'])) {
   .card .err-msg{ color:var(--bad); font-size:13px; margin-top:8px; line-height:1.5; }
   .card .warn-list{ margin:10px 0 0; padding-left:18px; color:var(--ink-dim); font-size:12.5px; line-height:1.6; }
   .actions{ display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; }
+  .actions-icons button{
+    width:40px; height:40px; flex:none; padding:0; font-size:17px; line-height:1;
+    display:flex; align-items:center; justify-content:center; position:relative; overflow:hidden;
+  }
+  .actions-icons button.busy{ opacity:.6; cursor:wait; }
+  .btn-progress{
+    position:absolute; left:0; right:0; bottom:0; height:3px; background:transparent;
+  }
+  .actions-icons button.busy .btn-progress{
+    background:linear-gradient(90deg, transparent, rgba(255,255,255,.9), transparent);
+    background-size:60% 100%; animation:btn-progress-sweep 1s linear infinite;
+  }
+  @keyframes btn-progress-sweep{ from{ background-position:-60% 0; } to{ background-position:160% 0; } }
   .connector{ display:flex; justify-content:center; align-items:center; height:34px; position:relative; }
   .connector::before{
     content:''; position:absolute; left:24px; right:24px; top:50%; height:1px;
@@ -715,7 +736,7 @@ if (isset($_GET['proxy'])) {
   </div>
 
   <?php
-    $bentoDecksDir = 'media/bento-pronto/decks';
+    $bentoDecksDir = 'media/bentos';
     $bentoDeckFiles = is_dir($bentoDecksDir) ? array_values(array_diff(scandir($bentoDecksDir), ['.', '..'])) : [];
     rsort($bentoDeckFiles); // Dateiname endet auf Zeitstempel -> neueste zuerst
   ?>
@@ -810,7 +831,7 @@ if (isset($_GET['proxy'])) {
       var original = btn.textContent;
       btn.disabled = true;
       btn.textContent = '…';
-      fetch('media/bento-pronto/decks/' + encodeURIComponent(file))
+      fetch('media/bentos/' + encodeURIComponent(file))
         .then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
         .then(function(text){
           var blob = new Blob([text], { type: 'text/html' });
@@ -1940,32 +1961,59 @@ function buildItemCard(it){
       <div class="card-top-left">
         <div class="card-grip" title="Ziehen zum Sortieren">⠿</div>
         <div>
-          <div class="card-name">${esc(it.baseName)} → ${esc(it.baseName)}.bento.html</div>
+          <div class="card-name" tabindex="0" title="Doppelklick zum Umbenennen">${esc(it.baseName)}</div>
           <div class="card-meta">${it.slideCount} Folie${it.slideCount===1?'':'n'} · ${it.doc.size.width}×${it.doc.size.height}px</div>
         </div>
       </div>
       <span class="pill ok">${it.merged ? 'verbunden' : 'fertig'}</span>
     </div>
     ${it.warnings && it.warnings.length ? `<ul class="warn-list">${it.warnings.map(w=>`<li>${esc(w)}</li>`).join('')}</ul>` : ''}
-    <div class="actions">
-      <button class="primary" data-action="html">Als .bento.html herunterladen</button>
-      <button data-action="save-server">💾 Auf Server speichern (für Monitor)</button>
-      <button data-action="save-deck">📝 Bearbeitbar auf Server speichern</button>
-      <button data-action="open">Direkt öffnen</button>
-      <button data-action="download">Nur JSON herunterladen</button>
-      <button data-action="copy">JSON kopieren</button>
-      <button data-action="shrink" title="Eingebettete Bilder verkleinern/neu komprimieren">🗜 Medien verkleinern</button>
-      ${it.slideCount > 1 ? `<button data-action="split" title="In mehrere eigenständige Präsentationen aufteilen">✂️ In Teile aufteilen</button>` : ''}
+    <div class="actions actions-icons">
+      <button class="primary" data-action="html" title="Als .bento.html herunterladen">⬇</button>
+      <button data-action="save-server" title="Auf Server speichern (für Monitor)">📺<span class="btn-progress"></span></button>
+      <button data-action="save-deck" title="Bearbeitbar auf Server speichern">📝<span class="btn-progress"></span></button>
+      <button data-action="open" title="Direkt öffnen (nicht gespeichert)">↗</button>
+      <button data-action="download" title="Nur JSON herunterladen">📄</button>
+      <button data-action="copy" title="JSON kopieren">📋</button>
+      <button data-action="shrink" title="Medien verkleinern">🗜</button>
+      ${it.slideCount > 1 ? `<button data-action="split" title="In Teile aufteilen">✂️</button>` : ''}
     </div>
     <div class="fetch-note" style="display:none" class="err-msg"></div>
     <div class="save-server-result" style="display:none; margin-top:10px; background:#0f2a1c; border:1px solid #1f6b3f; border-radius:6px; padding:10px 12px; font-size:12px; color:#bbf7d0;"></div>
     <div class="save-deck-result" style="display:none; margin-top:10px; background:#0b1f3a; border:1px solid #1e3a63; border-radius:6px; padding:10px 12px; font-size:12px; color:#bfdbfe;"></div>`;
 
+  const nameEl = card.querySelector('.card-name');
+  nameEl.addEventListener('dblclick', () => {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'card-name-input';
+    input.value = it.baseName;
+    nameEl.replaceWith(input);
+    input.focus();
+    input.select();
+    let done = false;
+    function commit(save){
+      if (done) return; done = true;
+      const next = input.value.trim();
+      if (save && next && next !== it.baseName){
+        it.baseName = next;
+        it.doc.title = next;
+        renderItems();
+        return;
+      }
+      input.replaceWith(nameEl);
+    }
+    input.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter'){ ev.preventDefault(); commit(true); }
+      else if (ev.key === 'Escape'){ ev.preventDefault(); commit(false); }
+    });
+    input.addEventListener('blur', () => commit(true));
+  });
+
   const htmlBtn = card.querySelector('[data-action="html"]');
   htmlBtn.addEventListener('click', async () => {
-    const original = htmlBtn.textContent;
     htmlBtn.disabled = true;
-    htmlBtn.textContent = 'Lade Bento-App…';
+    htmlBtn.classList.add('busy');
     try{
       const { filename, html } = await buildBentoHtml(it.doc, it.baseName);
       download(filename, html, 'text/html');
@@ -1980,15 +2028,14 @@ function buildItemCard(it){
         'nutzen und über About → Replace document from JSON… in bento.page/slides einfügen.';
     } finally {
       htmlBtn.disabled = false;
-      htmlBtn.textContent = original;
+      htmlBtn.classList.remove('busy');
     }
   });
 
   const saveServerBtn = card.querySelector('[data-action="save-server"]');
   saveServerBtn.addEventListener('click', async () => {
-    const original = saveServerBtn.textContent;
     saveServerBtn.disabled = true;
-    saveServerBtn.textContent = 'Speichere…';
+    saveServerBtn.classList.add('busy');
     const resultBox = card.querySelector('.save-server-result');
     try{
       // Als schreibgeschützte Datei bauen (eigene Kopie, das Original in
@@ -2026,15 +2073,14 @@ function buildItemCard(it){
       resultBox.textContent = 'Fehler beim Speichern: ' + (e.message || e);
     } finally {
       saveServerBtn.disabled = false;
-      saveServerBtn.textContent = original;
+      saveServerBtn.classList.remove('busy');
     }
   });
 
   const saveDeckBtn = card.querySelector('[data-action="save-deck"]');
   saveDeckBtn.addEventListener('click', async () => {
-    const original = saveDeckBtn.textContent;
     saveDeckBtn.disabled = true;
-    saveDeckBtn.textContent = 'Speichere…';
+    saveDeckBtn.classList.add('busy');
     const resultBox = card.querySelector('.save-deck-result');
     try{
       // KEIN readonly hier - die Datei landet weiterhin im vollen Editor,
@@ -2064,13 +2110,12 @@ function buildItemCard(it){
       resultBox.textContent = 'Fehler beim Speichern: ' + (e.message || e);
     } finally {
       saveDeckBtn.disabled = false;
-      saveDeckBtn.textContent = original;
+      saveDeckBtn.classList.remove('busy');
     }
   });
 
   const openBtn = card.querySelector('[data-action="open"]');
   openBtn.addEventListener('click', () => {
-    const original = openBtn.textContent;
     // Open the tab SYNCHRONOUSLY, in direct response to the click — once
     // an `await` happens first, some browsers no longer treat the later
     // window.open() as user-initiated and silently block it.
@@ -2084,7 +2129,7 @@ function buildItemCard(it){
       '<body style="font-family:system-ui,sans-serif;padding:2.5rem;color:#667">Bento wird geladen…</body>'
     );
     openBtn.disabled = true;
-    openBtn.textContent = 'Lade Bento-App…';
+    openBtn.classList.add('busy');
     (async () => {
       try{
         const { html } = await buildBentoHtml(it.doc, it.baseName);
@@ -2111,7 +2156,7 @@ function buildItemCard(it){
         note.textContent = 'Konnte die Bento-App nicht laden (' + (e.message || e) + ').';
       } finally {
         openBtn.disabled = false;
-        openBtn.textContent = original;
+        openBtn.classList.remove('busy');
       }
     })();
   });
