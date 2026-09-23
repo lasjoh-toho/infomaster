@@ -1,0 +1,32 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - claude/inspiring-brown-hi4qmz
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Code auschecken
+        uses: actions/checkout@v4
+
+      - name: Versionsnummer bestimmen
+        id: version
+        run: echo "tag=v0.0.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - name: Release-Zip bauen
+        run: zip -r "infomaster-${{ steps.version.outputs.tag }}.zip" . -x '.git/*' -x '.github/*'
+
+      - name: GitHub Release erstellen
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
+          generate_release_notes: true
+          files: infomaster-${{ steps.version.outputs.tag }}.zip
