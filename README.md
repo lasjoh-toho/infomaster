@@ -16,6 +16,19 @@ die Clients, `nextcloud_proxy.php` erlaubt Nextcloud-Freigabeordner als Inhaltsq
    (bewusst nicht über die Weboberfläche änderbar).
 3. Raspberry Pis über den im Dashboard angezeigten Installationsbefehl anbinden.
 
+## Mehrere Monitore an einem Pi
+
+Wayland-Compositors (labwc, Standard bei Raspberry Pi OS Bookworm) lassen einen Client
+NICHT selbst bestimmen, auf welchem Ausgang sein Fenster erscheint - ohne Gegenmaßnahme
+landen dadurch mehrere gleichzeitig gestartete Kiosk-Fenster oft alle auf demselben
+Monitor. `client.py` bewegt darum den Mauszeiger unmittelbar vor jedem Kiosk-Start per
+`wlrctl` auf den jeweiligen Ziel-Ausgang; der Installationsbefehl baut `wlrctl`
+best-effort aus dem Quellcode und setzt bei labwc einmalig additiv `policy=cursor` in
+`rc.xml` (vorhandene Konfiguration bleibt unangetastet). Fehlen `wlrctl` oder labwc, läuft
+alles wie bisher weiter, nur eben ohne gezielte Platzierung je Ausgang - ein Pi mit bereits
+laufendem Kiosk-Dienst muss dafür einmal den Installationsbefehl erneut ausführen und den
+Dienst danach neu starten.
+
 ## AJAX & visuelles Feedback
 
 Alle Formulare (inkl. Login) laufen über eine generische `fetch()`-Schicht
