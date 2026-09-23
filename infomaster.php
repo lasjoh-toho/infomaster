@@ -24,6 +24,12 @@ $clientsFile = 'clients.json';
 $reportsFile = 'error_reports.json';
 $uploadBase = 'media/';
 $allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf', 'mp4'];
+// Feste Ablage-Ordner fuer "Bild archivieren statt loeschen" (siehe renderFileManager) -
+// nach Ausrichtung sortiert, damit archivierte Bilder spaeter leicht fuer den passenden
+// Monitor-Typ wiedergefunden werden. Bewusst mit Leerzeichen im Namen (wie vom Nutzer
+// vorgegeben) - anders als bei per Formular neu angelegten Ordnern ist das hier ein fest
+// einprogrammierter, vertrauenswuerdiger Name, kein Nutzereingabe, die sanitisiert werden muesste.
+$archiveFolders = ['Archiv Hoch', 'Archiv Quer'];
 
 $baseUrl = ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https://" : "http://") . $_SERVER['HTTP_HOST'] . $_SERVER['SCRIPT_NAME'];
 $serverDirUrl = dirname($baseUrl) . "/";
@@ -2113,6 +2119,7 @@ function renderAjaxBootstrap() {
       sync_ics: '🔄 Kalender synchronisiert',
       new_folder: '📁 Ordner angelegt',
       save_folder_visibility: '👁 Sichtbarkeit gespeichert',
+      archive_file: '📦 Ins Archiv verschoben',
       screen_id: '✓ Layout gespeichert',
       save_required_outputs: '✓ Gespeichert',
       add_user: '✓ Nutzer angelegt',
@@ -2304,6 +2311,31 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $targetPath = $uploadBase . $safeFolder . "/" . $safeFile;
         if(file_exists($targetPath)) unlink($targetPath);
     }
+    // Statt eines Bildes aus einem normalen Inhalts-Ordner endgueltig zu loeschen: in eines
+    // der beiden festen Archiv-Ordner verschieben (nach Ausrichtung sortiert) - das Bild
+    // bleibt so fuer eine spaetere Wiederverwendung erhalten. Nur diese beiden Namen sind
+    // erlaubt, damit dieses Formular nicht zum beliebigen Verschieben in irgendeinen Ordner
+    // (z.B. ueber manipulierte Formulardaten) missbraucht werden kann.
+    if (!empty($_POST['archive_file']) && !empty($_POST['from_folder']) && !empty($_POST['archive_target'])) {
+        $safeFile = basename($_POST['archive_file']);
+        $safeFolder = basename($_POST['from_folder']);
+        $archiveTarget = $_POST['archive_target'];
+        if (in_array($archiveTarget, $archiveFolders, true)) {
+            $srcPath = $uploadBase . $safeFolder . '/' . $safeFile;
+            $destDir = $uploadBase . $archiveTarget;
+            if (!is_dir($destDir)) { @mkdir($destDir, 0775, true); }
+            if (is_file($srcPath) && is_dir($destDir)) {
+                $destPath = $destDir . '/' . $safeFile;
+                if (file_exists($destPath)) {
+                    // Namenskollision im Archiv: Zeitstempel anhaengen statt zu ueberschreiben.
+                    $ext = pathinfo($safeFile, PATHINFO_EXTENSION);
+                    $base = pathinfo($safeFile, PATHINFO_FILENAME);
+                    $destPath = $destDir . '/' . $base . '_' . date('Ymd_His') . ($ext !== '' ? '.' . $ext : '');
+                }
+                @rename($srcPath, $destPath);
+            }
+        }
+    }
     if (isset($_POST['save_folder_visibility']) && !empty($_POST['folder_name'])) {
         // Checkbox pro Datei: welche Dateien eines Ordners tatsaechlich in der Wiedergabe
         // (view.php) auftauchen sollen. Server ermittelt den vollstaendigen Dateibestand
@@ -2443,11 +2475,19 @@ if (!empty($config['schedule']['holidays'])) {
 }
 
 $allFolders = array_filter(glob($uploadBase . '*'), 'is_dir');
-$folderNames = array_map('basename', $allFolders);
+// Die beiden Archiv-Ordner sind eine Ablage, kein aktiver Inhalt - tauchen daher bewusst
+// NICHT in der Dropdown-Auswahl "Ordner: ..." fuer Monitor-Inhalte auf (sonst koennte
+// versehentlich der Archiv-Ordner selbst als Wiedergabequelle eingestellt werden).
+$folderNames = array_values(array_diff(array_map('basename', $allFolders), $archiveFolders));
 
 $install_command = "wget -qO- \"" . $baseUrl . "?install=1\" | bash";
 
 function renderFileManager($folderName, $uploadBase, $label, $hiddenFiles = []) {
+    global $archiveFolders;
+    // Die beiden Archiv-Ordner selbst behalten die alte "endgueltig loeschen"-Funktion -
+    // archivieren-statt-loeschen gilt nur fuer normale Inhalts-Ordner. Sonst gaebe es gar
+    // keine Stelle mehr, an der ein Bild wirklich entfernt werden kann.
+    $isArchiveFolder = in_array($folderName, $archiveFolders, true);
     $path = $uploadBase . $folderName;
     if (!is_dir($path)) return;
     $files = array_diff(scandir($path), ['.','..']);
@@ -2476,19 +2516,41 @@ function renderFileManager($folderName, $uploadBase, $label, $hiddenFiles = []) 
                 <label style='display:flex; align-items:center; gap:6px; flex:1; cursor:pointer; ".($isVisible ? '' : 'opacity:0.5;')."' title='Datei in der Wiedergabe anzeigen/ausblenden'>
                     <input type='checkbox' name='visible_files[]' value='".htmlspecialchars($file)."' ".($isVisible ? 'checked' : '').">
                     <span>".htmlspecialchars($file)."</span>
-                </label>
-                <button type='submit' form='$fid' style='background:#ff5252; border:none; color:#fff; padding:2px 6px; border-radius:3px;'>X</button>
-              </div>";
+                </label>";
+        if ($isArchiveFolder) {
+            echo "<button type='submit' form='$fid' title='Endgültig löschen' style='width:24px; height:24px; padding:0; background:#7f1d1d; border:none; color:#fff; border-radius:4px;'>✕</button>";
+        } else {
+            $fidHoch = 'archform_hoch_' . md5($folderName . '/' . $file);
+            $fidQuer = 'archform_quer_' . md5($folderName . '/' . $file);
+            echo "<button type='submit' form='$fidHoch' title='In Archiv Hoch verschieben' style='width:24px; height:24px; padding:0; background:#1e293b; color:#94a3b8; border:none; border-radius:4px;'>⬆</button>
+                  <button type='submit' form='$fidQuer' title='In Archiv Quer verschieben' style='width:24px; height:24px; padding:0; background:#1e293b; color:#94a3b8; border:none; border-radius:4px;'>➡</button>";
+        }
+        echo "</div>";
     }
     echo "</div>";
     echo "<button type='submit' style='margin-top:8px; background:#38bdf8; color:#000; width:auto; padding:6px 14px;'>👁 Sichtbarkeit speichern</button>";
     echo "</form>";
     foreach ($files as $file) {
-        $fid = 'delform_' . md5($folderName . '/' . $file);
-        echo "<form method='POST' id='$fid' onsubmit=\"return confirm('".addslashes($file)." wirklich loeschen?');\">
-                <input type='hidden' name='del_file' value='".htmlspecialchars($file)."'>
-                <input type='hidden' name='from_folder' value='".htmlspecialchars($folderName)."'>
-              </form>";
+        if ($isArchiveFolder) {
+            $fid = 'delform_' . md5($folderName . '/' . $file);
+            echo "<form method='POST' id='$fid' onsubmit=\"return confirm('".addslashes($file)." wirklich endgültig löschen?');\">
+                    <input type='hidden' name='del_file' value='".htmlspecialchars($file)."'>
+                    <input type='hidden' name='from_folder' value='".htmlspecialchars($folderName)."'>
+                  </form>";
+        } else {
+            $fidHoch = 'archform_hoch_' . md5($folderName . '/' . $file);
+            $fidQuer = 'archform_quer_' . md5($folderName . '/' . $file);
+            echo "<form method='POST' id='$fidHoch'>
+                    <input type='hidden' name='archive_file' value='".htmlspecialchars($file)."'>
+                    <input type='hidden' name='from_folder' value='".htmlspecialchars($folderName)."'>
+                    <input type='hidden' name='archive_target' value='Archiv Hoch'>
+                  </form>
+                  <form method='POST' id='$fidQuer'>
+                    <input type='hidden' name='archive_file' value='".htmlspecialchars($file)."'>
+                    <input type='hidden' name='from_folder' value='".htmlspecialchars($folderName)."'>
+                    <input type='hidden' name='archive_target' value='Archiv Quer'>
+                  </form>";
+        }
     }
     echo "</div>";
 }
