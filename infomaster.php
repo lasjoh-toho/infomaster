@@ -2743,14 +2743,15 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
         <code class="url-tag"><?php echo $serverDirUrl; ?>view.php?id=<?php echo $id; ?></code>
 
         <?php $pbSource = $s['playback_source'] ?? 'local'; ?>
-        <form method="POST" style="margin:8px 0;">
+        <!-- Nur das versteckte Formular selbst (kein sichtbarer Button hier) - der eigentliche
+             kleine Umschalt-Knopf sitzt unten direkt hinter dem "Inhalt A"-Select und
+             submitted per form="..."-Attribut dieses Formular hier, genau wie die einzelnen
+             Datei-Löschen-Buttons in renderFileManager(). -->
+        <form method="POST" id="pbform-<?php echo $id; ?>" style="display:none;">
             <input type="hidden" name="toggle_playback_source" value="<?php echo $id; ?>">
-            <button type="submit" style="width:100%; font-size:11px; padding:6px; background:<?php echo $pbSource === 'local' ? '#166534' : '#1e3a8a'; ?>;" title="Klicken zum Umschalten">
-                <?php echo $pbSource === 'local' ? '🏠 Lokale Wiedergabe (Standard)' : '🌐 Live vom Server'; ?>
-            </button>
         </form>
-        
-        <?php 
+
+        <?php
         $orient = $s['orient'] ?? '0';
         $isPortrait = ($orient == '90' || $orient == '270');
         $iframeW = $isPortrait ? 720 : 1280;
@@ -2783,13 +2784,18 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
             </div>
 
             <label style="font-size:11px; color:#aaa;">Inhalt A</label>
-            <select name="modeA" onchange="toggleInput(this)">
-                <option value="url" <?php if($s['type']=='url') echo 'selected'; ?>>Webseite (URL)</option>
-                <option value="nextcloud" <?php if($s['type']=='nextcloud') echo 'selected'; ?>>Nextcloud Ordner (URL)</option>
-                <?php foreach($folderNames as $fn): ?>
-                    <option value="folder:<?php echo $fn; ?>" <?php if($s['type']=="folder:$fn") echo 'selected'; ?>>Ordner: <?php echo $fn; ?></option>
-                <?php endforeach; ?>
-            </select>
+            <div style="display:flex; gap:4px; align-items:center;">
+                <select name="modeA" onchange="toggleInput(this)" style="flex:1; width:auto;">
+                    <option value="url" <?php if($s['type']=='url') echo 'selected'; ?>>Webseite (URL)</option>
+                    <option value="nextcloud" <?php if($s['type']=='nextcloud') echo 'selected'; ?>>Nextcloud Ordner (URL)</option>
+                    <?php foreach($folderNames as $fn): ?>
+                        <option value="folder:<?php echo $fn; ?>" <?php if($s['type']=="folder:$fn") echo 'selected'; ?>>Ordner: <?php echo $fn; ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <button type="submit" form="pbform-<?php echo $id; ?>" style="width:auto; flex:0 0 auto; font-size:10px; padding:6px 8px; background:<?php echo $pbSource === 'local' ? '#166534' : '#1e3a8a'; ?>;" title="<?php echo $pbSource === 'local' ? 'Lokale Wiedergabe (Standard) - klicken für Live vom Server' : 'Live vom Server - klicken für Lokale Wiedergabe'; ?>">
+                    <?php echo $pbSource === 'local' ? '🏠' : '🌐'; ?>
+                </button>
+            </div>
             <input type="text" name="valA" value="<?php echo htmlspecialchars($s['content']); ?>" style="display:<?php echo (in_array($s['type'],['url','nextcloud'])?'block':'none'); ?>">
             <?php if ($s['type'] === 'nextcloud' && !empty($s['content'])): ?>
                 <a href="<?php echo htmlspecialchars($s['content']); ?>" target="_blank" rel="noopener" style="font-size:11px; color:#38bdf8; display:inline-block; margin-top:4px;">🔗 Nextcloud-Ordner öffnen</a>
