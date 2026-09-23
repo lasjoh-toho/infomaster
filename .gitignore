@@ -1,0 +1,9 @@
+# Laufzeit-/Zugangsdaten - werden beim ersten Aufruf automatisch angelegt, gehoeren
+# nicht ins Repo (enthalten Passwort-Hashes bzw. das Master-Passwort selbst).
+vip.txt
+master_password.txt
+config.json
+clients.json
+users.json
+error_reports.json
+media/
