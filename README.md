@@ -32,15 +32,42 @@ Präsentationskonverter), fest in Infomaster eingebaut:
 
 - **Gleicher Login** - `bento.php` nutzt dieselbe PHP-Session wie `infomaster.php` (kein
   eigener Zugang), nicht angemeldete Aufrufe werden zum Infomaster-Login umgeleitet.
-- **Direkt für Monitore nutzbar** - nach dem Erzeugen einer Präsentation steht neben dem
-  Download-Knopf ein "💾 Auf Server speichern (für Monitor)"-Knopf zur Verfügung. Er legt
-  die Präsentation (schreibgeschützt, damit sie am Monitor automatisch als Endlos-
-  Slideshow startet) unter `media/bento-pronto/` ab und zeigt die fertige URL
-  (inkl. `?autostart=1&loop`) zum Kopieren an - diese Adresse im Infomaster-Dashboard bei
-  einem Monitor einfach als Inhalt "Webseite (URL)" eintragen.
+- **Für Monitore** - "💾 Auf Server speichern (für Monitor)" legt eine schreibgeschützte
+  Kopie unter `media/bento-pronto/monitors/` ab (startet dort automatisch als Endlos-
+  Slideshow) und zeigt die fertige URL (inkl. `?autostart=1&loop`) zum Kopieren - diese
+  Adresse im Dashboard bei einem Monitor als Inhalt "Webseite (URL)" eintragen.
+- **Bearbeitbare Präsentationen (wie bei Moodle-mod_bento)** - "📝 Bearbeitbar auf Server
+  speichern" legt eine editierbare Kopie unter `media/bento-pronto/decks/` an. Diese
+  Datei trägt einen `bento-host-config`-Meta-Tag; der **native** "Speichern"-Knopf im
+  Bento-Editor selbst schreibt beim erneuten Öffnen direkt wieder in dieselbe Datei
+  zurück (Dafür nötige Editor-Änderungen liegen als offener PR im
+  [bento](https://github.com/lasjoh-toho/bento)-Projekt:
+  [lasjoh-toho/bento#1](https://github.com/lasjoh-toho/bento/pull/1) - muss dort erst
+  gemerged und über `build.mjs` neu gebaut werden, siehe unten). Das Logo oben links im
+  Editor führt bei diesen Dateien als Home-Button zurück zu `infomaster.php`.
+  Gespeicherte Präsentationen erscheinen auf der `bento.php`-Startseite als eigene
+  "Banner" (Titel, Folienanzahl, Größe, Datum) mit denselben Funktionen wie die
+  Deck-Karten in moodle-mod_bentos `manage.php`: ▶ Ansehen (startet direkt die
+  Präsentation), ✎ Bearbeiten, ⬇ Herunterladen, Doppelklick auf den Titel zum
+  Umbenennen, 🗑 Löschen.
 - Erreichbar über den Link "🎬 Präsentationen (Bento-Pronto)" oben im Dashboard.
 
-`bento.php` wird aus [bento-pronto](https://github.com/lasjoh-toho/bento-pronto)s
-`template.php` + `build.mjs` gebaut (siehe dortiges Projekt für Updates); der Login-
-Verbund sowie der "Auf Server speichern"-Knopf sind Infomaster-spezifische Ergänzungen
-gegenüber dem Original.
+### `bento.php` neu bauen
+
+`bento.php` ist eine fertig gebaute Datei (Editor-Shell + Demo-Deck sind als Base64 in
+`bento-pronto-template.php` eingebettet - dieselbe Vorlage, mit Infomaster-spezifischen
+Ergänzungen gegenüber dem Original-Template aus
+[bento-pronto](https://github.com/lasjoh-toho/bento-pronto)). Zum Neubauen (z.B. nach
+einem Update im [bento](https://github.com/lasjoh-toho/bento)-Editor selbst):
+
+```bash
+git clone --depth 1 --branch feature/infomaster-host-save https://github.com/lasjoh-toho/bento
+cd bento/slides && npm install && npm run build:single
+node ../../dump-starter.mjs src   # erzeugt src/__starter-dump.json (Demo-Deck)
+```
+
+Anschließend `bento-pronto-template.php`s vier Platzhalter (`__BENTO_SHELL_B64__`,
+`__BENTO_DEMO_B64__`, `__BENTO_VERSION__`, `__BENTO_BUILD_DATE__`) wie in
+[bento-pronto](https://github.com/lasjoh-toho/bento-pronto)s eigenem `build.mjs` mit dem
+Inhalt aus `dist-single/Bento_Slides.bento.html` bzw. `src/__starter-dump.json` ersetzen
+und als `bento.php` speichern.
