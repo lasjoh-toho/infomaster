@@ -406,6 +406,14 @@ _log_history = deque(maxlen=LOG_HISTORY_SIZE)
 CHROMIUM_CANDIDATES = ["chromium-browser", "chromium", "chromium-browser-privileged"]
 CHROMIUM_BIN = None
 
+# "wlrctl" wird NUR fuer das Cursor-Warp-Verfahren bei MEHREREN Monitoren an einem Pi
+# gebraucht (siehe warp_cursor_to_output weiter unten) - fehlt es, laeuft alles wie bisher
+# weiter, nur eben ohne die gezielte Platzierung je Ausgang. Einmalig ermittelt, damit nicht
+# bei jedem Zyklus erneut nach dem Binary gesucht wird.
+WLRCTL_BIN = None
+WLRCTL_CHECKED = False
+WLRCTL_MISSING_WARNED = False
+
 def find_chromium_binary():
     for name in CHROMIUM_CANDIDATES:
         if shutil.which(name):
@@ -659,6 +667,99 @@ def detect_output_details(env):
         except Exception:
             continue  # eine einzelne kaputte Zeile darf die restliche Auswertung nicht stoppen
     return details
+
+def detect_output_positions(env):
+    # Position (X,Y in der virtuellen Bildschirmflaeche) je Ausgang - einzige Grundlage fuer
+    # das Cursor-Warp-Verfahren bei mehreren Monitoren (siehe warp_cursor_to_output). Separat
+    # von detect_output_details() gehalten (eigener wlr-randr-Aufruf, etwas Redundanz), damit
+    # diese neue, zusaetzliche Auswertung die bestehende, bereits bewaehrte Detail-Erkennung
+    # nicht versehentlich mit beeinflussen kann.
+    positions = {}
+    try:
+        result = subprocess.run(["wlr-randr"], env=env, capture_output=True, text=True, timeout=5)
+    except Exception:
+        return positions
+    if result.returncode != 0:
+        return positions
+    current = None
+    for raw_line in result.stdout.splitlines():
+        try:
+            if not raw_line.strip():
+                continue
+            if not raw_line[0].isspace():
+                current = raw_line.split()[0].strip()
+                continue
+            if current is None:
+                continue
+            stripped = raw_line.strip()
+            if stripped.lower().startswith("position:"):
+                coords = stripped.split(":", 1)[1].strip()
+                if "," in coords:
+                    x_txt, y_txt = coords.split(",", 1)
+                    x_txt, y_txt = x_txt.strip(), y_txt.strip()
+                    if (x_txt.lstrip("-").isdigit()) and (y_txt.lstrip("-").isdigit()):
+                        positions[current] = (int(x_txt), int(y_txt))
+        except Exception:
+            continue
+    return positions
+
+# ============================================================================
+# MEHRERE MONITORE AN EINEM PI: Wayland erlaubt es einem Client (hier: Chromium) grundsaetzlich
+# NICHT, seine eigene Fensterposition festzulegen - das entscheidet ausschliesslich der
+# Compositor. Ohne weiteres Zutun landen darum mehrere gleichzeitig gestartete Chromium-
+# Kiosk-Fenster oft alle auf demselben (z.B. dem zuerst erkannten) Ausgang, obwohl zwei
+# Monitore angeschlossen und mit unterschiedlichem Inhalt belegt sind.
+#
+# Workaround (Standardtechnik fuer wlroots-Compositors wie das auf Raspberry Pi OS
+# Bookworm per Default laufende "labwc"): den Mauszeiger UNMITTELBAR VOR dem Start eines
+# Kiosk-Fensters auf den Ziel-Ausgang bewegen. Ist im Compositor die Platzierungs-Regel
+# "policy=cursor" gesetzt (siehe Installer, patcht labwc's rc.xml automatisch), platziert
+# der Compositor ein neu erscheinendes (Vollbild-)Fenster auf genau dem Ausgang, auf dem
+# sich der Zeiger gerade befindet.
+#
+# Benoetigt das externe Tool "wlrctl" (spricht das wlr-virtual-pointer-Protokoll) - fehlt es,
+# wird EINMAL gewarnt und alles laeuft wie bisher weiter (ohne gezielte Platzierung je
+# Ausgang), statt den Kiosk-Start zu blockieren.
+# ============================================================================
+
+def find_wlrctl_binary():
+    global WLRCTL_BIN, WLRCTL_CHECKED
+    if not WLRCTL_CHECKED:
+        WLRCTL_CHECKED = True
+        WLRCTL_BIN = shutil.which("wlrctl")
+    return WLRCTL_BIN
+
+def warp_cursor_to_output(out, env):
+    global WLRCTL_MISSING_WARNED
+    wlrctl_bin = find_wlrctl_binary()
+    if not wlrctl_bin:
+        if not WLRCTL_MISSING_WARNED:
+            WLRCTL_MISSING_WARNED = True
+            log("HINWEIS: 'wlrctl' nicht gefunden - bei mehreren angeschlossenen Monitoren an "
+                "diesem Pi kann es sein, dass alle Kiosk-Fenster auf demselben Ausgang landen. "
+                "'sudo apt install wlrctl' installieren (oder aus dem Quellcode bauen, falls im "
+                "Paket-Repository nicht vorhanden) und den Kiosk-Dienst neu starten.")
+        return
+    output_positions = detect_output_positions(env)
+    pos = output_positions.get(out)
+    if pos is None:
+        return  # Position unbekannt (z.B. wlr-randr-Ausgabe unerwartet) - lieber nichts tun als raten.
+    out_x, out_y = pos
+    # Etwas Abstand vom Rand (100px) statt exakt der Ecke - manche Compositors werten die
+    # Ausgangsgrenze exklusiv, ein Punkt direkt auf 0,0 koennte dann knapp daneben liegen.
+    target_x, target_y = out_x + 100, out_y + 100
+    try:
+        # wlrctl kennt nur RELATIVE Zeigerbewegung (kein "an Position X,Y setzen"). Ein grober
+        # Ueberschuss weit Richtung Ursprung wird vom Compositor an den gueltigen
+        # Bildschirmrand geklemmt - von dort aus fuehrt die zweite, exakte Bewegung
+        # unabhaengig von der vorherigen Zeigerposition zuverlaessig zum Ziel.
+        subprocess.run(["wlrctl", "pointer", "move", "--", "-100000", "-100000"],
+                        env=env, capture_output=True, text=True, timeout=3)
+        subprocess.run(["wlrctl", "pointer", "move", "--", str(target_x), str(target_y)],
+                        env=env, capture_output=True, text=True, timeout=3)
+    except Exception as e:
+        log(f"   [WARNUNG] Mauszeiger konnte nicht auf {out} bewegt werden ({e}) - "
+            f"Kiosk-Fenster landet moeglicherweise auf dem falschen Ausgang.")
 
 def load_cached_config():
     try:
@@ -1156,6 +1257,12 @@ def apply_output_state(out, cfg, env, user, runtime_dir, active_processes, last_
 
             log(f"   [+] Starte Chromium ('{CHROMIUM_BIN}') auf {out} -> {url} (User: {user})")
 
+            # Bei mehreren Monitoren an diesem Pi: Mauszeiger auf den Ziel-Ausgang bewegen,
+            # BEVOR das Kiosk-Fenster erscheint - siehe warp_cursor_to_output() weiter oben
+            # fuer die vollstaendige Begruendung (Wayland-Clients koennen ihre eigene
+            # Fensterposition nicht selbst bestimmen).
+            warp_cursor_to_output(out, env)
+
             # Bis zu 3 sofortige Versuche, bevor auf den naechsten regulaeren Zyklus (60s)
             # gewartet wird - deckt kurzlebige Race-Conditions (z.B. Wayland-Socket direkt
             # nach dem Wiedereinschalten noch nicht bereit) viel schneller ab, statt bis zu
@@ -1211,10 +1318,17 @@ def apply_output_state(out, cfg, env, user, runtime_dir, active_processes, last_
                 debug_port = 9220 + (int(m.group(1)) if m else 0)
                 debug_ports[out] = debug_port
 
+                # Eindeutige App-ID (Wayland xdg_toplevel app_id) je Ausgang - ohne diese waeren
+                # alle gleichzeitig laufenden Chromium-Kiosk-Fenster fuer den Compositor
+                # ununterscheidbar, was etwaige eigene Fensterregeln (z.B. in labwc's rc.xml)
+                # unmoeglich machen wuerde. Wird aktuell primaer fuer das Cursor-Warp-Verfahren
+                # (warp_cursor_to_output) gebraucht, schadet aber auch sonst nicht.
+                window_class = "kiosk-" + re.sub(r"[^a-zA-Z0-9_-]", "_", out)
+
                 inner_cmd = (
                     f"XDG_RUNTIME_DIR={runtime_dir} WAYLAND_DISPLAY={env['WAYLAND_DISPLAY']} "
                     f"{CHROMIUM_BIN} --kiosk --noerrdialogs --disable-infobars "
-                    f"--ozone-platform=wayland "
+                    f"--ozone-platform=wayland --class={window_class} "
                     # Ohne diesen Flag versucht Chromium, Passwoerter/Cookies ueber den
                     # System-Keyring (GNOME Keyring/KWallet) zu speichern. Fehlt der - wie auf
                     # einer schlanken Kiosk-Installation ohne Desktop-Umgebung ueblich - kann
@@ -1706,7 +1820,70 @@ if (isset($_GET['install'])) {
     echo "  echo '✅ Chromium-Binary gefunden: '\$(command -v chromium-browser || command -v chromium)\n";
     echo "else\n";
     echo "  echo '❌ FEHLER: Kein Chromium-Binary nach der Installation gefunden! Kiosk kann so nicht starten.'\n";
-    echo "fi\n";
+    echo "fi\n\n";
+
+    // Nur relevant, wenn dieser Pi MEHRERE Monitore gleichzeitig bespielen soll (siehe
+    // warp_cursor_to_output() in client.py): ohne "wlrctl" bleibt alles wie bisher, nur
+    // eben ohne gezielte Platzierung je Ausgang - deshalb hier bewusst NICHT fataler Fehler,
+    // nur ein Hinweis. "wlrctl" liegt (Stand jetzt) in keinem offiziellen Debian/Raspberry-Pi-
+    // OS-Paketquellen-Repo, daher direkt der best-effort-Versuch, ohne erst ein apt-Paket zu
+    // probieren, das ohnehin fehlschlagen wuerde.
+    echo "echo '🖱️  Pruefe \"wlrctl\" (fuer korrekte Fenster-Platzierung bei mehreren Monitoren)...'\n";
+    echo "if command -v wlrctl > /dev/null; then\n";
+    echo "  echo '✅ wlrctl bereits vorhanden.'\n";
+    echo "else\n";
+    echo "  echo '   Nicht gefunden - versuche aus dem Quellcode zu bauen (nur fuer Mehr-Monitor-Betrieb noetig)...'\n";
+    echo "  if sudo apt install -y meson ninja-build git pkg-config libwayland-dev libwayland-bin wayland-protocols scdoc > /dev/null 2>&1; then\n";
+    echo "    WLRCTL_TMP=\$(mktemp -d)\n";
+    // git.sr.ht ist die eigentliche Quelle; github.com/ralphptorres/wlrctl ist ein
+    // bekannter, oeffentlicher Spiegel davon - als Fallback, falls sr.ht von einem
+    // bestimmten Netz aus nicht erreichbar ist.
+    echo "    if git clone --depth 1 https://git.sr.ht/~brocellous/wlrctl \"\$WLRCTL_TMP\" > /dev/null 2>&1 || git clone --depth 1 https://github.com/ralphptorres/wlrctl.git \"\$WLRCTL_TMP\" > /dev/null 2>&1; then\n";
+    echo "      if (cd \"\$WLRCTL_TMP\" && meson setup build > /dev/null 2>&1 && ninja -C build > /dev/null 2>&1 && sudo ninja -C build install > /dev/null 2>&1); then\n";
+    echo "        echo '✅ wlrctl erfolgreich gebaut und installiert.'\n";
+    echo "      else\n";
+    echo "        echo '⚠️  wlrctl-Build fehlgeschlagen - Mehr-Monitor-Platzierung bleibt deaktiviert, alles andere funktioniert normal.'\n";
+    echo "      fi\n";
+    echo "    else\n";
+    echo "      echo '⚠️  wlrctl-Quellcode konnte nicht geladen werden (kein Internetzugriff zu git-Repos?) - Mehr-Monitor-Platzierung bleibt deaktiviert.'\n";
+    echo "    fi\n";
+    echo "    rm -rf \"\$WLRCTL_TMP\"\n";
+    echo "  else\n";
+    echo "    echo '⚠️  Build-Werkzeuge fuer wlrctl konnten nicht installiert werden - Mehr-Monitor-Platzierung bleibt deaktiviert.'\n";
+    echo "  fi\n";
+    echo "fi\n\n";
+
+    // labwc's eigene Fenster-Platzierungsregel auf "cursor" setzen (Voraussetzung dafuer,
+    // dass das Cursor-Warp-Verfahren ueberhaupt etwas bewirkt) - NUR wenn labwc auch
+    // tatsaechlich installiert ist, und rein additiv: eine bereits vorhandene rc.xml wird nur
+    // ergaenzt (kein <placement> vorhanden -> einfuegen), niemals ueberschrieben oder
+    // umformatiert, damit eigene Anpassungen der Nutzerin/des Nutzers erhalten bleiben.
+    echo "if command -v labwc > /dev/null; then\n";
+    echo "  echo '🖱️  labwc erkannt - pruefe Fenster-Platzierungsregel (rc.xml)...'\n";
+    echo "  sudo -u pi python3 - << 'PYEOF'\n";
+    echo "import os\n";
+    echo "path = os.path.expanduser('~/.config/labwc/rc.xml')\n";
+    echo "os.makedirs(os.path.dirname(path), exist_ok=True)\n";
+    echo "if not os.path.exists(path):\n";
+    echo "    with open(path, 'w') as f:\n";
+    echo "        f.write('<?xml version=\"1.0\"?>\\n<labwc_config>\\n  <placement>\\n    <policy>cursor</policy>\\n  </placement>\\n</labwc_config>\\n')\n";
+    echo "    print('✅ rc.xml neu angelegt mit Platzierungsregel \"cursor\".')\n";
+    echo "else:\n";
+    echo "    content = open(path).read()\n";
+    echo "    if '<placement>' in content:\n";
+    echo "        print('ℹ️  rc.xml enthaelt bereits eine <placement>-Regel - unveraendert gelassen (ggf. manuell auf policy=cursor pruefen).')\n";
+    echo "    elif '</labwc_config>' in content:\n";
+    echo "        content = content.replace('</labwc_config>', '  <placement>\\n    <policy>cursor</policy>\\n  </placement>\\n</labwc_config>')\n";
+    echo "        with open(path, 'w') as f:\n";
+    echo "            f.write(content)\n";
+    echo "        print('✅ Platzierungsregel \"cursor\" zu bestehender rc.xml hinzugefuegt.')\n";
+    echo "    else:\n";
+    echo "        print('⚠️  rc.xml hat ein unerwartetes Format - bitte manuell <placement><policy>cursor</policy></placement> ergaenzen.')\n";
+    echo "PYEOF\n";
+    echo "else\n";
+    echo "  echo 'ℹ️  labwc nicht gefunden (anderer Compositor?) - Fenster-Platzierungsregel wird uebersprungen.'\n";
+    echo "fi\n\n";
+
     echo "sudo mkdir -p /home/pi/kiosk_system\n";
     echo "if [ \$? -ne 0 ]; then echo '❌ FEHLER: Verzeichnis /home/pi/kiosk_system konnte nicht angelegt werden (sudo-Rechte?).'; fi\n\n";
 
