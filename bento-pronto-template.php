@@ -666,13 +666,13 @@ if (isset($_GET['proxy'])) {
   }
   @keyframes btn-progress-sweep{ from{ background-position:-60% 0; } to{ background-position:160% 0; } }
   .connector{
-    /* Sitzt direkt auf der Naht zwischen zwei Panels (Karten wie Banner) -
-       height:0 traegt selbst keine eigene Zeilenhoehe bei, die Buttons
-       (30px) ragen dadurch je zur Haelfte in das Panel darueber/darunter
-       hinein und ueberlappen es sichtbar, statt in einer eigenen Zeile mit
+    /* Sitzt auf der Naht zwischen zwei Panels (Karten wie Banner) - die kleine
+       Eigenhoehe (statt 0) gibt etwas Luft zwischen den Panels selbst, die
+       Buttons (30px) ragen trotzdem noch gut sichtbar je zur Haelfte in das
+       Panel darueber/darunter hinein, statt in einer eigenen Zeile mit
        Trennstrich zu sitzen. */
     display:flex; justify-content:center; align-items:center; gap:8px;
-    height:0; margin:0; position:relative; z-index:3;
+    height:10px; margin:0; position:relative; z-index:3;
   }
   .connector-btn{
     position:relative; width:30px; height:30px; border-radius:999px; padding:0;
@@ -921,7 +921,11 @@ if (isset($_GET['proxy'])) {
         // weiterhin bearbeitbar (nicht readonly) bleibt - siehe main.ts's #present-Handler
         // im bento-Projekt (liest dieselben ?interval=<Sekunden>&loop-Parameter wie die
         // schreibgeschützten "für Monitor"-Exporte).
-        $deckPlayUrl = $deckUrl . '?autostart=1&loop&interval=8#present';
+        // Absolut (Schema+Host+Pfad), nicht nur relativ zu bento.php - ein per 🔗
+        // kopierter Link muss auch AUSSERHALB des Browsers (E-Mail, Infomaster-
+        // Monitor-URL-Feld, …) funktionieren, wo es keine "aktuelle Seite" gibt,
+        // zu der ein relativer Pfad aufgeloest werden koennte.
+        $deckPlayUrl = bentoServerUrlFor($deckUrl) . '?autostart=1&loop&interval=8#present';
         $deckSize = @filesize($deckPath);
         $deckMtime = @filemtime($deckPath);
       ?>
