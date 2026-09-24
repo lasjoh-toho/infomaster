@@ -621,11 +621,14 @@ if (isset($_GET['proxy'])) {
   #cards{ margin-top:28px; display:flex; flex-direction:column; gap:14px; }
   .items-row{ margin-top:14px; display:flex; flex-direction:column; }
   .card{
-    background:var(--panel); border:1px solid var(--line); border-radius:14px;
-    padding:18px 20px;
+    /* Dieselbe schwarze Kachel wie die spaeter gespeicherten Praesentationen
+       (.bento-deck-banner) - eine frisch entstehende Karte soll von Anfang an
+       genauso aussehen wie das, was sie nach dem Speichern wird. */
+    background:#0f0f0f; border:1px solid #2a2a2a; border-radius:8px;
+    padding:10px 12px;
   }
   .card.error{ border-color:#5a2f31; background:#221819; }
-  .card.merged{ border-color:var(--accent-dim); }
+  .card.merged{ border-color:#38bdf8; }
   .card.dragging{ opacity:.4; }
   .card-top{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
   .card-top-left{ display:flex; align-items:flex-start; gap:10px; min-width:0; }
@@ -642,11 +645,17 @@ if (isset($_GET['proxy'])) {
   .pill.err{ color:var(--bad); }
   .card .err-msg{ color:var(--bad); font-size:13px; margin-top:8px; line-height:1.5; }
   .card .warn-list{ margin:10px 0 0; padding-left:18px; color:var(--ink-dim); font-size:12.5px; line-height:1.6; }
-  .actions{ display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; }
+  .actions{ display:flex; gap:6px; margin-top:10px; flex-wrap:wrap; }
   .actions-icons button{
-    width:40px; height:40px; flex:none; padding:0; font-size:17px; line-height:1;
+    /* Gleiche Icon-Knopf-Optik wie bei den gespeicherten Bannern (siehe
+       .bento-deck-banner-Buttons weiter unten) - dunkles Quadrat statt der
+       bisherigen groesseren, helleren Kreise. */
+    width:28px; height:28px; flex:none; padding:0; font-size:14px; line-height:1;
     display:flex; align-items:center; justify-content:center; position:relative; overflow:hidden;
+    background:#1e293b; color:#93c5fd; border:none; border-radius:6px;
   }
+  .actions-icons button.primary{ background:#1e293b; color:#93c5fd; border-color:transparent; }
+  .actions-icons button:hover{ filter:brightness(1.2); }
   .actions-icons button.busy{ opacity:.6; cursor:wait; }
   .btn-progress{
     position:absolute; left:0; right:0; bottom:0; height:3px; background:transparent;
@@ -656,10 +665,14 @@ if (isset($_GET['proxy'])) {
     background-size:60% 100%; animation:btn-progress-sweep 1s linear infinite;
   }
   @keyframes btn-progress-sweep{ from{ background-position:-60% 0; } to{ background-position:160% 0; } }
-  .connector{ display:flex; justify-content:center; align-items:center; height:34px; position:relative; }
-  .connector::before{
-    content:''; position:absolute; left:24px; right:24px; top:50%; height:1px;
-    background:var(--line);
+  .connector{
+    /* Sitzt direkt auf der Naht zwischen zwei Panels (Karten wie Banner) -
+       height:0 traegt selbst keine eigene Zeilenhoehe bei, die Buttons
+       (30px) ragen dadurch je zur Haelfte in das Panel darueber/darunter
+       hinein und ueberlappen es sichtbar, statt in einer eigenen Zeile mit
+       Trennstrich zu sitzen. */
+    display:flex; justify-content:center; align-items:center; gap:8px;
+    height:0; margin:0; position:relative; z-index:3;
   }
   .connector-btn{
     position:relative; width:30px; height:30px; border-radius:999px; padding:0;
@@ -823,6 +836,73 @@ if (isset($_GET['proxy'])) {
     öffnen; der „Speichern"-Knopf im Editor selbst schreibt dann direkt in diese Datei zurück.
   </div>
 
+
+  <header>
+    <p class="eyebrow">PPTX → bento/slides</p>
+    <h1><span class="box"></span>Präsentationen im Browser</h1>
+    <p class="lede">
+      Diese Seite wandelt <code>.pptx</code>-Präsentationen in HTML-Dateien um, die sich in
+      jedem Browser abspielen lassen. Diese können heruntergeladen, gespeichert, im Browser
+      geändert und wiederverwendet werden. Präsentationen lassen sich per Drag &amp; Drop
+      sortieren und über die <b>✚</b>-Schaltfläche zwischen ihren Karten zu einer gemeinsamen
+      Präsentation verbinden.
+    </p>
+  </header>
+
+  <div class="bento-options">
+    <div class="bento-opt-left">
+      <button class="bento-opt bento-opt-demo" id="demoBtn">
+        <span class="bento-opt-icon">▶</span>
+        <span class="bento-opt-label">Demopräsentation zeigen</span>
+        <span class="bento-opt-sub">Feature-Tour, 17 Folien</span>
+      </button>
+      <button class="bento-opt bento-opt-paste" id="pasteTile">
+        <span class="bento-opt-icon">📋</span>
+        <span class="bento-opt-label">Text einfügen</span>
+        <span class="bento-opt-sub">Kopierter Text aus Webseite/PDF — wird auf mehrere Folien aufgeteilt</span>
+      </button>
+    </div>
+    <button class="bento-opt bento-opt-topright" id="blankBtn">
+      <span class="bento-opt-icon">✚</span>
+      <span class="bento-opt-label">Mit neuer Präsentation starten</span>
+    </button>
+    <label class="bento-opt bento-opt-botright" id="importTile">
+      <span class="bento-opt-icon">⇩</span>
+      <span class="bento-opt-label">Dateien importieren</span>
+      <input type="file" id="fileInput" accept=".pptx,.ppt,.json,.html,.htm" multiple>
+    </label>
+  </div>
+
+  <div class="paste-modal" id="pasteModal">
+    <div class="paste-modal-inner" id="pasteModalInner">
+      <button class="paste-modal-close" id="pasteModalClose">✕</button>
+      <div id="pasteStep1">
+        <h3>Text einfügen</h3>
+        <p>Text aus einer Webseite oder einem PDF kopieren, dann hier mit Strg+V (Cmd+V auf dem Mac) einfügen. Bilder im kopierten Inhalt werden mit übernommen — diese Version läuft auf einem eigenen PHP-Server und holt Bilder über einen eingebauten Proxy, unabhängig von Sicherheitsbeschränkungen (CORS) der jeweiligen Webseite.</p>
+        <div class="paste-catcher" id="pasteCatcher" contenteditable="true" data-placeholder="Hier klicken und einfügen…">Hier klicken und einfügen…</div>
+      </div>
+      <div id="pasteStep2" style="display:none">
+        <div class="lr-step2-head">
+          <div>
+            <h3 style="display:inline">Text bearbeiten</h3>
+            <p style="margin-bottom:8px">Cursor irgendwo in den Text setzen — ein kleines Menü über der Schreibmarke lässt eine Folie enden oder zwischen Folieninhalt und Zusatztext wechseln, ab genau dieser Stelle. Nichts wurde automatisch erkannt.</p>
+          </div>
+          <button class="lr-view-toggle" id="lrViewToggle">Folienansicht</button>
+        </div>
+        <div class="lr-doc" id="lrDoc" contenteditable="true"></div>
+        <div class="lr-preview" id="lrPreview" style="display:none"></div>
+        <button class="lr-generate-btn" id="lrGenerateBtn">Folien erzeugen</button>
+      </div>
+    </div>
+  </div>
+  <div class="lr-ctxmenu" id="lrCtxMenu" style="display:none">
+    <button id="lrCtxEndSlide">▪ Folie endet hier</button>
+    <button id="lrCtxToggleMode">↕ Wechsel Folientext/Zusatztext</button>
+  </div>
+
+  <div id="cards"></div>
+  <div id="items" class="items-row"></div>
+
   <?php
     $bentoDecksDir = 'media/bentos';
     $bentoDeckFiles = bentoLoadDeckOrder($bentoDecksDir); // neueste oben, sonst zuletzt gespeicherte/manuelle Reihenfolge
@@ -836,10 +916,16 @@ if (isset($_GET['proxy'])) {
         $deckMeta = bentoReadDeckMeta($deckPath);
         $deckTitle = $deckMeta['title'] !== null && $deckMeta['title'] !== '' ? $deckMeta['title'] : $deckFile;
         $deckUrl = $bentoDecksDir . '/' . $deckFile;
+        // Autostart + Endlos-Loop + 8-Sekunden-Takt, damit ein einzeln geöffneter Link (▶
+        // wie 🔗) sich genau wie eine Monitor-Slideshow verhält, obwohl die Datei selbst
+        // weiterhin bearbeitbar (nicht readonly) bleibt - siehe main.ts's #present-Handler
+        // im bento-Projekt (liest dieselben ?interval=<Sekunden>&loop-Parameter wie die
+        // schreibgeschützten "für Monitor"-Exporte).
+        $deckPlayUrl = $deckUrl . '?autostart=1&loop&interval=8#present';
         $deckSize = @filesize($deckPath);
         $deckMtime = @filemtime($deckPath);
       ?>
-      <div class="bento-deck-banner" data-file="<?php echo htmlspecialchars($deckFile); ?>" data-size="<?php echo $deckSize !== false ? (int)$deckSize : 0; ?>" style="display:flex; align-items:center; gap:10px; background:#0f0f0f; border:1px solid #2a2a2a; border-radius:8px; padding:10px 12px;">
+      <div class="bento-deck-banner" data-file="<?php echo htmlspecialchars($deckFile); ?>" data-size="<?php echo $deckSize !== false ? (int)$deckSize : 0; ?>" data-play-url="<?php echo htmlspecialchars($deckPlayUrl); ?>" style="display:flex; align-items:center; gap:10px; background:#0f0f0f; border:1px solid #2a2a2a; border-radius:8px; padding:10px 12px;">
         <div style="flex:1; min-width:0;">
           <div class="bento-deck-title" tabindex="0" title="Gedrückt halten zum Umbenennen" style="font-size:13px; color:#e2e8f0; font-weight:600; cursor:text; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; user-select:none;"><?php echo htmlspecialchars($deckTitle); ?></div>
           <div style="font-size:11px; color:#8a8a8a; margin-top:2px;">
@@ -849,7 +935,7 @@ if (isset($_GET['proxy'])) {
           </div>
         </div>
         <div style="display:flex; gap:6px; flex:0 0 auto; align-items:center;">
-          <a href="<?php echo htmlspecialchars($deckUrl); ?>#present" target="_blank" rel="noopener" title="Präsentation starten" style="width:28px; height:28px; display:flex; align-items:center; justify-content:center; background:#1e293b; color:#93c5fd; border-radius:6px; text-decoration:none;">▶</a>
+          <a href="<?php echo htmlspecialchars($deckPlayUrl); ?>" target="_blank" rel="noopener" title="Präsentation starten (Endlos-Loop, 8s/Folie)" style="width:28px; height:28px; display:flex; align-items:center; justify-content:center; background:#1e293b; color:#93c5fd; border-radius:6px; text-decoration:none;">▶</a>
           <a href="<?php echo htmlspecialchars($deckUrl); ?>" target="_blank" rel="noopener" title="Bearbeiten (im vollen Editor)" style="width:28px; height:28px; display:flex; align-items:center; justify-content:center; background:#1e293b; color:#93c5fd; border-radius:6px; text-decoration:none;">✎</a>
           <button type="button" class="bento-deck-load-btn" data-purpose="shrink" title="Hier unten laden, um Medien zu verkleinern" style="width:28px; height:28px; display:flex; align-items:center; justify-content:center; background:#1e293b; color:#93c5fd; border-radius:6px; border:none; cursor:pointer; font-size:14px;">🗜</button>
           <?php if ($deckMeta['slideCount'] === null || $deckMeta['slideCount'] > 1): ?>
@@ -866,8 +952,8 @@ if (isset($_GET['proxy'])) {
       <?php if ($deckIdx < count($bentoDeckFiles) - 1):
         $nextFile = $bentoDeckFiles[$deckIdx + 1];
       ?>
-      <div class="connector bento-deck-connector" data-file-a="<?php echo htmlspecialchars($deckFile); ?>" data-file-b="<?php echo htmlspecialchars($nextFile); ?>" style="height:30px;">
-        <button type="button" class="connector-btn bento-deck-swap-btn" title="Position tauschen" style="margin-right:8px;">⇅</button>
+      <div class="connector bento-deck-connector" data-file-a="<?php echo htmlspecialchars($deckFile); ?>" data-file-b="<?php echo htmlspecialchars($nextFile); ?>">
+        <button type="button" class="connector-btn bento-deck-swap-btn" title="Position tauschen">⇅</button>
         <button type="button" class="connector-btn bento-deck-connect-btn" title="Verbinden">✚</button>
       </div>
       <?php endif; ?>
@@ -961,14 +1047,42 @@ if (isset($_GET['proxy'])) {
     });
   });
 
-  // 🔗 Link erzeugen: kopiert die Abspiel-Adresse dieser Praesentation
-  // (dieselbe wie hinter "▶ Präsentation starten") in die Zwischenablage.
+  // 🔗 Link erzeugen: kopiert exakt dieselbe Abspiel-Adresse wie "▶ Präsentation
+  // starten" (data-play-url, serverseitig aus DERSELBEN $deckPlayUrl gerendert -
+  // keine zweite, potentiell abweichende URL-Konstruktion hier im JS) in die
+  // Zwischenablage. navigator.clipboard.writeText existiert nur in einem
+  // "secure context" (HTTPS/localhost) - auf einem reinen HTTP-Server ist
+  // navigator.clipboard schlicht undefined, ein direkter Aufruf wirft dann
+  // eine synchrone TypeError NOCH VOR dem then()/catch() (das war der Bug:
+  // "Link erzeugen" tat scheinbar gar nichts) - daher hier explizit geprueft
+  // und mit einer execCommand('copy')-Fallback-Route ueber ein verstecktes
+  // Textfeld abgesichert, bevor als letzter Ausweg ein prompt() zum manuellen
+  // Kopieren erscheint.
+  function bentoCopyToClipboard(text){
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      return navigator.clipboard.writeText(text).catch(function(){ return bentoCopyFallback(text); });
+    }
+    return bentoCopyFallback(text);
+  }
+  function bentoCopyFallback(text){
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.cssText = 'position:fixed; top:-1000px; left:-1000px;';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      var ok = document.execCommand('copy');
+      ta.remove();
+      if (ok) return Promise.resolve();
+    } catch (e) { /* faellt unten auf den Prompt zurueck */ }
+    return Promise.reject(new Error('clipboard unavailable'));
+  }
   document.querySelectorAll('.bento-deck-link-btn').forEach(function(btn){
     btn.addEventListener('click', function(){
       var banner = btn.closest('.bento-deck-banner');
-      var file = banner.getAttribute('data-file');
-      var url = new URL('media/bentos/' + encodeURIComponent(file) + '#present', location.href).href;
-      navigator.clipboard.writeText(url).then(function(){
+      var url = banner.getAttribute('data-play-url');
+      bentoCopyToClipboard(url).then(function(){
         toast('🔗 Link kopiert');
       }).catch(function(){
         prompt('Link zum manuellen Kopieren:', url);
@@ -1037,72 +1151,6 @@ if (isset($_GET['proxy'])) {
   });
   </script>
   <?php endif; ?>
-
-  <header>
-    <p class="eyebrow">PPTX → bento/slides</p>
-    <h1><span class="box"></span>Präsentationen im Browser</h1>
-    <p class="lede">
-      Diese Seite wandelt <code>.pptx</code>-Präsentationen in HTML-Dateien um, die sich in
-      jedem Browser abspielen lassen. Diese können heruntergeladen, gespeichert, im Browser
-      geändert und wiederverwendet werden. Präsentationen lassen sich per Drag &amp; Drop
-      sortieren und über die <b>✚</b>-Schaltfläche zwischen ihren Karten zu einer gemeinsamen
-      Präsentation verbinden.
-    </p>
-  </header>
-
-  <div class="bento-options">
-    <div class="bento-opt-left">
-      <button class="bento-opt bento-opt-demo" id="demoBtn">
-        <span class="bento-opt-icon">▶</span>
-        <span class="bento-opt-label">Demopräsentation zeigen</span>
-        <span class="bento-opt-sub">Feature-Tour, 17 Folien</span>
-      </button>
-      <button class="bento-opt bento-opt-paste" id="pasteTile">
-        <span class="bento-opt-icon">📋</span>
-        <span class="bento-opt-label">Text einfügen</span>
-        <span class="bento-opt-sub">Kopierter Text aus Webseite/PDF — wird auf mehrere Folien aufgeteilt</span>
-      </button>
-    </div>
-    <button class="bento-opt bento-opt-topright" id="blankBtn">
-      <span class="bento-opt-icon">✚</span>
-      <span class="bento-opt-label">Mit neuer Präsentation starten</span>
-    </button>
-    <label class="bento-opt bento-opt-botright" id="importTile">
-      <span class="bento-opt-icon">⇩</span>
-      <span class="bento-opt-label">Dateien importieren</span>
-      <input type="file" id="fileInput" accept=".pptx,.ppt,.json,.html,.htm" multiple>
-    </label>
-  </div>
-
-  <div class="paste-modal" id="pasteModal">
-    <div class="paste-modal-inner" id="pasteModalInner">
-      <button class="paste-modal-close" id="pasteModalClose">✕</button>
-      <div id="pasteStep1">
-        <h3>Text einfügen</h3>
-        <p>Text aus einer Webseite oder einem PDF kopieren, dann hier mit Strg+V (Cmd+V auf dem Mac) einfügen. Bilder im kopierten Inhalt werden mit übernommen — diese Version läuft auf einem eigenen PHP-Server und holt Bilder über einen eingebauten Proxy, unabhängig von Sicherheitsbeschränkungen (CORS) der jeweiligen Webseite.</p>
-        <div class="paste-catcher" id="pasteCatcher" contenteditable="true" data-placeholder="Hier klicken und einfügen…">Hier klicken und einfügen…</div>
-      </div>
-      <div id="pasteStep2" style="display:none">
-        <div class="lr-step2-head">
-          <div>
-            <h3 style="display:inline">Text bearbeiten</h3>
-            <p style="margin-bottom:8px">Cursor irgendwo in den Text setzen — ein kleines Menü über der Schreibmarke lässt eine Folie enden oder zwischen Folieninhalt und Zusatztext wechseln, ab genau dieser Stelle. Nichts wurde automatisch erkannt.</p>
-          </div>
-          <button class="lr-view-toggle" id="lrViewToggle">Folienansicht</button>
-        </div>
-        <div class="lr-doc" id="lrDoc" contenteditable="true"></div>
-        <div class="lr-preview" id="lrPreview" style="display:none"></div>
-        <button class="lr-generate-btn" id="lrGenerateBtn">Folien erzeugen</button>
-      </div>
-    </div>
-  </div>
-  <div class="lr-ctxmenu" id="lrCtxMenu" style="display:none">
-    <button id="lrCtxEndSlide">▪ Folie endet hier</button>
-    <button id="lrCtxToggleMode">↕ Wechsel Folientext/Zusatztext</button>
-  </div>
-
-  <div id="cards"></div>
-  <div id="items" class="items-row"></div>
 
   <div class="credit">
     → Die Grundlage dieses Projekts ist <a href="https://github.com/nyblnet/bento" target="_blank" rel="noopener">bento.page</a> —

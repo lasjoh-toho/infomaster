@@ -92,16 +92,21 @@ Präsentationskonverter), fest in Infomaster eingebaut:
   Hochladens, ein "✓ Gespeichert"-Häkchen ersetzt den Knopf, solange nichts geändert
   wurde). Das Logo oben links im Editor führt bei diesen Dateien als Home-Button zurück
   zu `infomaster.php`.
-  Gespeicherte Präsentationen erscheinen auf der `bento.php`-Startseite als eigene
+  Frisch entstehende Karten (Konvertierung, Import, Textverteilung) sehen von Anfang an
+  genauso aus wie eine spätere gespeicherte Präsentation - dieselbe schwarze Kachel,
+  dieselben dunklen Icon-Knöpfe. Die Karten-Ansicht steht oben (direkt unter den
+  Umwandlungs-Optionen), darunter folgen die gespeicherten Präsentationen als eigene
   "Banner" mit denselben Funktionen wie die Deck-Karten in moodle-mod_bentos
-  `manage.php` - nur Icons mit Tooltip, kein Text: ▶ Ansehen (startet direkt die
-  Präsentation), ✎ Bearbeiten, 🗜 Verkleinern-laden / ✂️ Aufteilen-laden (laden die
-  Präsentation unten in die Karten-Ansicht, siehe nächster Punkt), ⬇ Herunterladen,
-  ✕ Löschen, 🔗 Link erzeugen (kopiert die Abspiel-Adresse in die Zwischenablage). Der
-  Name lässt sich per langem Klick (gedrückt halten, ohne die Maus zu bewegen) umbenennen.
-  Neueste Präsentation immer oben, sonst zuletzt festgelegte Reihenfolge
-  (`media/bentos/.order.json`, selbstheilend); zwischen je zwei benachbarten Bannern -
-  genau wie im moodle-Plugin - ein Steg mit ⇅ Position tauschen und ✚ Verbinden (lädt
+  `manage.php` - nur Icons mit Tooltip, kein Text: ▶ Ansehen (startet die Präsentation als
+  Endlos-Loop im 8-Sekunden-Takt), ✎ Bearbeiten, 🗜 Verkleinern-laden / ✂️ Aufteilen-laden
+  (laden die Präsentation unten in die Karten-Ansicht, siehe nächster Punkt),
+  ⬇ Herunterladen, ✕ Löschen, 🔗 Link erzeugen (kopiert exakt dieselbe Adresse wie
+  ▶ Ansehen in die Zwischenablage). Der Name lässt sich per langem Klick (gedrückt
+  halten, ohne die Maus zu bewegen) umbenennen - ändert nur den Dateinamen, nie die
+  Position in der Liste. Neueste Präsentation immer oben, sonst zuletzt festgelegte
+  Reihenfolge (`media/bentos/.order.json`, selbstheilend); zwischen je zwei
+  benachbarten Bannern - genau wie im moodle-Plugin, eng an der Kante überlappend statt
+  in einer eigenen Zeile mit Trennstrich - ⇅ Position tauschen und ✚ Verbinden (lädt
   beide Dateien unten in die Karten-Ansicht und führt sie wie zwei frisch konvertierte
   Karten zu einer neuen, noch ungespeicherten Karte zusammen; Bestätigungsdialog mit
   Warnhinweis ab rund 20 MB kombinierter Größe). Dieselbe Karten-Ansicht (frisch
