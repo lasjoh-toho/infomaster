@@ -2265,8 +2265,27 @@ function renderAjaxBootstrap() {
     });
   }
 
+  function syncHeadStyles(newDoc){
+    // Das Dashboard hat ein eigenes, deutlich groesseres <style> im <head> (u.a.
+    // .accordion-btn, .pi-row, .card, Formularelemente) als die minimale Login-Seite
+    // (dort nur renderAjaxBootstrap()'s Toast-CSS) - direkt nach dem Login (Body-Swap
+    // von Login- auf Dashboard-HTML) fehlte dieses <style> bislang komplett, weil
+    // applyNewDocument() nur <script>, nie <style> aus dem neuen <head> uebernahm.
+    // Sichtbar erst nach einem manuellen Reload (der ja den echten Dashboard-<head>
+    // laedt). ID-basiert geprueft, damit bei jeder weiteren AJAX-Aktion innerhalb des
+    // Dashboards nicht dasselbe <style> immer wieder dupliziert eingefuegt wird.
+    Array.prototype.forEach.call(newDoc.head.querySelectorAll('style[id]'), function(styleEl){
+      if (document.getElementById(styleEl.id)) return;
+      var clone = document.createElement('style');
+      Array.prototype.forEach.call(styleEl.attributes, function(a){ clone.setAttribute(a.name, a.value); });
+      clone.textContent = styleEl.textContent;
+      document.head.appendChild(clone);
+    });
+  }
+
   function applyNewDocument(newDoc){
     if (newDoc.title) document.title = newDoc.title;
+    syncHeadStyles(newDoc);
     Array.prototype.forEach.call(Array.prototype.slice.call(document.body.attributes), function(a){ document.body.removeAttribute(a.name); });
     Array.prototype.forEach.call(newDoc.body.attributes, function(a){ document.body.setAttribute(a.name, a.value); });
     document.body.innerHTML = newDoc.body.innerHTML;
@@ -3025,7 +3044,7 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
 <head>
     <meta charset="UTF-8">
     <title>Infoscreens Master Hub</title>
-    <style>
+    <style id="im-dashboard-style">
         body { font-family: system-ui, sans-serif; background: #0b0b0b; color: #eee; margin: 0; padding-bottom: 50px; }
         .topbar { background: #1e1e1e; padding: 15px 25px; border-bottom: 3px solid #e91e63; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
         .monitors { padding: 0 25px; display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 20px; }
