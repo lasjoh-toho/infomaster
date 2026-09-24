@@ -16,6 +16,20 @@ die Clients, `nextcloud_proxy.php` erlaubt Nextcloud-Freigabeordner als Inhaltsq
    (bewusst nicht über die Weboberfläche änderbar).
 3. Raspberry Pis über den im Dashboard angezeigten Installationsbefehl anbinden.
 
+## PDF ablegen
+
+Im Dashboard unter "📄 PDF ablegen" kann eine (oder mehrere) PDF-Dateien per Drag&Drop
+oder Dateiauswahl hochgeladen werden. Jede Seite wird serverseitig einzeln als JPG
+gerendert und landet automatisch - abhängig von der erkannten Ausrichtung dieser einen
+Seite - in einem von zwei festen, ganz normalen Ordnern ("Hoch" bzw. "Quer", tauchen wie
+jeder andere Ordner in der Monitor-Inhalts-Auswahl auf). Mehrseitige PDFs bekommen
+fortlaufend nummerierte Dateinamen, damit die Wiedergabereihenfolge (Sortierung wie in
+`view.php`) erhalten bleibt, auch wenn sich die Seiten auf beide Ordner verteilen.
+Nutzt bevorzugt die PHP-Imagick-Extension (kommt ohne `exec()`/`shell_exec()` aus), sonst
+ersatzweise die Kommandozeilen-Tools `pdftoppm` (poppler-utils) oder `gs` (Ghostscript) -
+ist keines davon verfügbar, erscheint eine klare Fehlermeldung statt eines stillen
+Fehlschlags.
+
 ## Mehrere Monitore an einem Pi
 
 Wayland-Compositors (labwc, Standard bei Raspberry Pi OS Bookworm) lassen einen Client

@@ -2353,7 +2353,17 @@ function renderAjaxBootstrap() {
       // gespeichert, das muss auch so kommuniziert werden statt "Gespeichert".
       showToast('⏳ Sitzung abgelaufen – bitte erneut anmelden', 'error');
     } else {
-      showToast(fb.text, fb.kind);
+      // Ein serverseitig gesetztes "Flash"-Element (siehe setFlashMessage() in PHP) traegt
+      // eine dynamische, erst zur Laufzeit bekannte Meldung (z.B. Seitenzahl je Ordner beim
+      // PDF-Drop) - hat Vorrang vor der generischen, rein clientseitig aus dem Formular
+      // erratenen feedbackFor()-Meldung, falls vorhanden.
+      var flashEl = document.getElementById('im-flash-msg');
+      if (flashEl) {
+        showToast(flashEl.getAttribute('data-text') || fb.text, flashEl.getAttribute('data-kind') || fb.kind);
+        flashEl.remove();
+      } else {
+        showToast(fb.text, fb.kind);
+      }
       if (modalReopen) {
         var modal = document.getElementById('access-modal');
         if (modal) modal.style.display = 'flex';
@@ -2537,6 +2547,34 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             move_uploaded_file($_FILES['file_up']['tmp_name'], $uploadBase . $safeFolder . "/" . time() . "_" . $cleanName);
         }
     }
+    // PDF-Drop: eine oder mehrere PDFs werden Seite fuer Seite in JPGs gewandelt und landen
+    // je nach Ausrichtung automatisch in media/Hoch/ bzw. media/Quer/ - siehe convertPdfDrop().
+    if (!empty($_FILES['pdf_files']) && is_array($_FILES['pdf_files']['name'] ?? null)) {
+        $totalCounts = ['Hoch' => 0, 'Quer' => 0];
+        $anyProcessed = false;
+        $anyFailed = false;
+        $fileCount = count($_FILES['pdf_files']['name']);
+        for ($i = 0; $i < $fileCount; $i++) {
+            if (($_FILES['pdf_files']['error'][$i] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) continue;
+            if (($_FILES['pdf_files']['error'][$i] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) { $anyFailed = true; continue; }
+            $origName = $_FILES['pdf_files']['name'][$i];
+            if (strtolower(pathinfo($origName, PATHINFO_EXTENSION)) !== 'pdf') { $anyFailed = true; continue; }
+            $result = convertPdfDrop($_FILES['pdf_files']['tmp_name'][$i], $origName, $uploadBase);
+            if ($result === false) { $anyFailed = true; continue; }
+            $anyProcessed = true;
+            $totalCounts['Hoch'] += $result['Hoch'];
+            $totalCounts['Quer'] += $result['Quer'];
+        }
+        if ($anyProcessed) {
+            $parts = [];
+            if ($totalCounts['Hoch'] > 0) $parts[] = $totalCounts['Hoch'] . ' Hoch';
+            if ($totalCounts['Quer'] > 0) $parts[] = $totalCounts['Quer'] . ' Quer';
+            $suffix = $anyFailed ? ' (mind. eine Datei fehlgeschlagen)' : '';
+            setFlashMessage('📄 PDF konvertiert: ' . implode(', ', $parts) . ' Seite(n)' . $suffix, $anyFailed ? 'warn' : 'success');
+        } elseif ($anyFailed) {
+            setFlashMessage('❌ PDF-Konvertierung fehlgeschlagen (weder Imagick noch pdftoppm/gs verfügbar, oder Datei beschädigt)', 'error');
+        }
+    }
     if (isset($_POST['screen_id'])) {
         $id = $_POST['screen_id'];
         // playback_source wird ueber den eigenen Umschalt-Button gesetzt (siehe
@@ -2658,6 +2696,124 @@ $allFolders = array_filter(glob($uploadBase . '*'), 'is_dir');
 $folderNames = array_values(array_diff(array_map('basename', $allFolders), $archiveFolders));
 
 $install_command = "wget -qO- \"" . $baseUrl . "?install=1\" | bash";
+
+function setFlashMessage($text, $kind = 'success') {
+    // Ueberlebt den Redirect (Post-Redirect-Get, siehe Ende des POST-Blocks) fuer genau EINE
+    // GET-Anfrage - siehe Rendering von "im-flash-msg" direkt nach <body> sowie dessen
+    // Auswertung in renderAjaxBootstrap()'s handleSubmit(). Fuer Meldungen, deren Text erst
+    // zur Laufzeit feststeht (z.B. Seitenzahl je Ordner) - die statische feedbackFor()-Zuordnung
+    // im Client reicht dafuer nicht aus.
+    $_SESSION['im_flash'] = ['text' => $text, 'kind' => $kind];
+}
+
+// ============================================================================
+// PDF-DROP: eine hochgeladene PDF wird Seite fuer Seite in JPGs gewandelt - jede Seite landet
+// abhaengig von IHRER EIGENEN erkannten Ausrichtung (nicht der ganzen PDF, falls diese
+// gemischt ist) automatisch in einem von zwei festen Ordnern ("Hoch"/"Quer", analog zu
+// "Archiv Hoch"/"Archiv Quer" - anders als die Archiv-Ordner tauchen "Hoch"/"Quer" aber ganz
+// normal in der Monitor-Inhalts-Auswahl auf, das ist hier ja der Sinn).
+//
+// Bevorzugt die PHP-Imagick-Extension (kommt ohne exec()/shell_exec() aus, die auf vielen
+// eingeschraenkten Shared-Hosting-Umgebungen ohnehin gesperrt sind); ist Imagick nicht
+// installiert, weicht es auf die Kommandozeilen-Tools "pdftoppm" (poppler-utils) bzw. "gs"
+// (Ghostscript) aus, sofern shell_exec() ueberhaupt erlaubt ist.
+// ============================================================================
+
+function pdfDropEngine() {
+    static $engine = null;
+    if ($engine !== null) return $engine;
+    if (class_exists('Imagick')) { return $engine = 'imagick'; }
+    $disabled = array_map('trim', explode(',', (string)ini_get('disable_functions')));
+    $canExec = function_exists('shell_exec') && !in_array('shell_exec', $disabled, true);
+    if ($canExec) {
+        if (trim((string)@shell_exec('command -v pdftoppm 2>/dev/null')) !== '') return $engine = 'pdftoppm';
+        if (trim((string)@shell_exec('command -v gs 2>/dev/null')) !== '') return $engine = 'gs';
+    }
+    return $engine = false;
+}
+
+// Wandelt eine einzelne hochgeladene PDF-Datei um. Gibt bei Erfolg ['Hoch'=>n,'Quer'=>n]
+// zurueck (Seitenzahl je Zielordner), sonst false (kein Engine verfuegbar oder Datei kaputt).
+function convertPdfDrop($pdfTmpPath, $originalName, $uploadBase) {
+    $engine = pdfDropEngine();
+    if (!$engine) return false;
+
+    foreach (['Hoch', 'Quer'] as $folder) {
+        $dir = $uploadBase . $folder;
+        if (!is_dir($dir)) { @mkdir($dir, 0775, true); }
+    }
+
+    $baseName = preg_replace("/[^a-zA-Z0-9-_]/", "_", pathinfo($originalName, PATHINFO_FILENAME));
+    if ($baseName === '') $baseName = 'pdf';
+    // Zeitstempel+Zufall als gemeinsames Praefix je PDF, fortlaufende, null-gepadete
+    // Seitennummer dahinter - so bleibt die Abspielreihenfolge (natcasesort() in view.php)
+    // auch dann korrekt, wenn sich die Seiten EINER PDF auf beide Ordner verteilen.
+    $stamp = date('Ymd_His') . '_' . substr(md5(uniqid('', true)), 0, 4);
+    $counts = ['Hoch' => 0, 'Quer' => 0];
+
+    if ($engine === 'imagick') {
+        try {
+            $im = new Imagick();
+            $im->setResolution(150, 150);
+            $im->readImage($pdfTmpPath);
+        } catch (Exception $e) {
+            return false;
+        }
+        $i = 0;
+        foreach ($im as $frame) {
+            try {
+                $frame->setImageFormat('jpg');
+                $frame->setImageCompressionQuality(85);
+                $frame->setImageBackgroundColor('white');
+                if (defined('Imagick::ALPHACHANNEL_REMOVE')) {
+                    $frame->setImageAlphaChannel(Imagick::ALPHACHANNEL_REMOVE);
+                }
+                $w = $frame->getImageWidth();
+                $h = $frame->getImageHeight();
+                $folder = ($h >= $w) ? 'Hoch' : 'Quer';
+                $pageLabel = str_pad((string)($i + 1), 3, '0', STR_PAD_LEFT);
+                $destName = $stamp . '_' . $baseName . '_s' . $pageLabel . '.jpg';
+                $frame->writeImage($uploadBase . $folder . '/' . $destName);
+                $counts[$folder]++;
+            } catch (Exception $e) {
+                // eine einzelne kaputte Seite darf die uebrigen nicht verhindern
+            }
+            $i++;
+        }
+        $im->clear();
+        return ($counts['Hoch'] + $counts['Quer'] > 0) ? $counts : false;
+    }
+
+    // Kommandozeilen-Pfad (pdftoppm oder gs): rendert in ein temporaeres Verzeichnis, sortiert
+    // die Ausgabedateien danach rein per getimagesize() (kein Imagick/GD dafuer noetig) nach
+    // Ausrichtung ein.
+    $tmpDir = sys_get_temp_dir() . '/im_pdfdrop_' . uniqid('', true);
+    if (!@mkdir($tmpDir, 0775, true)) return false;
+    $prefix = $tmpDir . '/page';
+    $escapedPdf = escapeshellarg($pdfTmpPath);
+    if ($engine === 'pdftoppm') {
+        @shell_exec('pdftoppm -jpeg -r 150 ' . $escapedPdf . ' ' . escapeshellarg($prefix) . ' 2>&1');
+    } else { // gs
+        @shell_exec('gs -q -sDEVICE=jpeg -r150 -dJPEGQ=85 -dBATCH -dNOPAUSE -dSAFER -sOutputFile=' . escapeshellarg($prefix . '-%03d.jpg') . ' ' . $escapedPdf . ' 2>&1');
+    }
+    $pages = glob($tmpDir . '/page*.jpg');
+    natsort($pages);
+    $i = 1;
+    foreach ($pages as $pagePath) {
+        $dims = @getimagesize($pagePath);
+        if ($dims === false) { @unlink($pagePath); continue; }
+        $w = $dims[0]; $h = $dims[1];
+        $folder = ($h >= $w) ? 'Hoch' : 'Quer';
+        $pageLabel = str_pad((string)$i, 3, '0', STR_PAD_LEFT);
+        $destName = $stamp . '_' . $baseName . '_s' . $pageLabel . '.jpg';
+        @rename($pagePath, $uploadBase . $folder . '/' . $destName);
+        $counts[$folder]++;
+        $i++;
+    }
+    @array_map('unlink', glob($tmpDir . '/*'));
+    @rmdir($tmpDir);
+    return ($counts['Hoch'] + $counts['Quer'] > 0) ? $counts : false;
+}
 
 function renderFileManager($folderName, $uploadBase, $label, $hiddenFiles = []) {
     global $archiveFolders;
@@ -2944,6 +3100,9 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
 </head>
 <body data-im-page="dashboard">
 <script type="application/json" id="presets-data"><?php echo json_encode($config['presets'] ?? []); ?></script>
+<?php if (!empty($_SESSION['im_flash'])): $imFlash = $_SESSION['im_flash']; unset($_SESSION['im_flash']); ?>
+<div id="im-flash-msg" style="display:none" data-text="<?php echo htmlspecialchars($imFlash['text']); ?>" data-kind="<?php echo htmlspecialchars($imFlash['kind']); ?>"></div>
+<?php endif; ?>
 
 <div class="topbar">
     <h2 style="margin:0;">Infoscreens Master Hub</h2>
@@ -3170,6 +3329,48 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
         <?php endif; ?>
         <div style="font-size:11px; color:#475569; margin-top:8px;">Abgelaufene Einträge (Bis-Datum in der Vergangenheit) werden automatisch entfernt.</div>
         </div>
+    </div>
+
+    <div class="card">
+        <h3 style="margin-top:0;">📄 PDF ablegen</h3>
+        <p style="font-size:12px; color:#94a3b8; margin:-6px 0 12px;">Jede Seite wird automatisch als JPG einsortiert - Hochformat-Seiten nach "Hoch", Querformat-Seiten nach "Quer" (feste Ordner, tauchen ganz normal in der Monitor-Inhalts-Auswahl auf).</p>
+        <form method="POST" enctype="multipart/form-data" id="pdfDropForm">
+            <div id="pdfDropZone" style="border:2px dashed #334155; border-radius:8px; padding:26px; text-align:center; cursor:pointer; color:#64748b; font-size:13px; transition:border-color .15s, background .15s;" onclick="document.getElementById('pdfDropInput').click();">
+                📥 PDF hier hineinziehen oder klicken zum Auswählen
+            </div>
+            <input type="file" id="pdfDropInput" name="pdf_files[]" accept="application/pdf" multiple style="display:none;" onchange="this.form.requestSubmit()">
+        </form>
+        <script>
+        (function(){
+            var zone = document.getElementById('pdfDropZone');
+            if (!zone) return;
+            var idleColor = '#334155', idleBg = 'transparent';
+            ['dragenter','dragover'].forEach(function(ev){
+                zone.addEventListener(ev, function(e){ e.preventDefault(); e.stopPropagation(); zone.style.borderColor = '#38bdf8'; zone.style.background = '#0f172a'; });
+            });
+            ['dragleave','drop'].forEach(function(ev){
+                zone.addEventListener(ev, function(e){ e.preventDefault(); e.stopPropagation(); zone.style.borderColor = idleColor; zone.style.background = idleBg; });
+            });
+            zone.addEventListener('drop', function(e){
+                var files = e.dataTransfer && e.dataTransfer.files;
+                if (!files || !files.length) return;
+                var dt = new DataTransfer();
+                for (var i = 0; i < files.length; i++) {
+                    if (/\.pdf$/i.test(files[i].name)) dt.items.add(files[i]);
+                }
+                if (!dt.files.length) {
+                    var orig = zone.textContent;
+                    zone.textContent = '⚠️ Keine PDF-Datei erkannt';
+                    zone.style.borderColor = '#dc2626';
+                    setTimeout(function(){ zone.textContent = orig; zone.style.borderColor = idleColor; }, 2000);
+                    return;
+                }
+                var input = document.getElementById('pdfDropInput');
+                input.files = dt.files;
+                input.form.requestSubmit();
+            });
+        })();
+        </script>
     </div>
 
     <div class="card">
