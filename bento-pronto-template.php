@@ -94,6 +94,68 @@ function bentoFormatBytes(int $bytes): string {
     return $bytes . ' B';
 }
 
+// ============================================================================
+// Reihenfolge der gespeicherten bearbeitbaren Praesentationen: von sich aus gibt
+// es dafuer keine Ordnung ausser dem Dateisystem (mtime/Name), das reicht aber
+// nicht, sobald manuell per "Position tauschen" umsortiert werden kann. Eine
+// kleine ".order.json" im selben Ordner haelt die Reihenfolge explizit fest -
+// selbstheilend: fehlt sie oder enthaelt sie geloeschte/unbekannte Dateien,
+// baut bentoLoadDeckOrder() sie automatisch wieder aus dem tatsaechlichen
+// Dateibestand auf (neu entdeckte Dateien nach mtime absteigend ans Ende).
+// ============================================================================
+
+function bentoDeckOrderFile(string $dir): string { return $dir . '/.order.json'; }
+
+function bentoLoadDeckOrder(string $dir): array {
+    if (!is_dir($dir)) return [];
+    $existing = array_values(array_diff(scandir($dir), ['.', '..', '.order.json']));
+    $order = [];
+    $orderFile = bentoDeckOrderFile($dir);
+    if (is_file($orderFile)) {
+        $decoded = json_decode((string)@file_get_contents($orderFile), true);
+        if (is_array($decoded)) $order = array_values(array_filter($decoded, 'is_string'));
+    }
+    $order = array_values(array_intersect($order, $existing)); // nur noch existierende Dateien, gespeicherte Reihenfolge bleibt
+    $missing = array_values(array_diff($existing, $order));
+    if (!empty($missing)) {
+        usort($missing, function ($a, $b) use ($dir) {
+            return (@filemtime($dir . '/' . $b) ?: 0) <=> (@filemtime($dir . '/' . $a) ?: 0);
+        });
+        $order = array_merge($order, $missing);
+    }
+    bentoSaveDeckOrder($dir, $order);
+    return $order;
+}
+
+function bentoSaveDeckOrder(string $dir, array $order): void {
+    @file_put_contents(bentoDeckOrderFile($dir), json_encode(array_values($order)));
+}
+
+function bentoPrependToOrder(string $dir, string $filename): void {
+    $order = array_values(array_diff(bentoLoadDeckOrder($dir), [$filename]));
+    array_unshift($order, $filename);
+    bentoSaveDeckOrder($dir, $order);
+}
+
+function bentoRenameInOrder(string $dir, string $oldName, string $newName): void {
+    $order = array_map(function ($f) use ($oldName, $newName) { return $f === $oldName ? $newName : $f; }, bentoLoadDeckOrder($dir));
+    bentoSaveDeckOrder($dir, $order);
+}
+
+function bentoRemoveFromOrder(string $dir, string $filename): void {
+    bentoSaveDeckOrder($dir, array_values(array_diff(bentoLoadDeckOrder($dir), [$filename])));
+}
+
+function bentoSwapInOrder(string $dir, string $fileA, string $fileB): bool {
+    $order = bentoLoadDeckOrder($dir);
+    $i = array_search($fileA, $order, true);
+    $j = array_search($fileB, $order, true);
+    if ($i === false || $j === false) return false;
+    [$order[$i], $order[$j]] = [$order[$j], $order[$i]];
+    bentoSaveDeckOrder($dir, $order);
+    return true;
+}
+
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && (isset($_POST['bento_save_html']) || isset($_FILES['bento_save_html']))) {
     header('Content-Type: application/json');
     $uploadBase = 'media/';
@@ -173,6 +235,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && (isset($_POST['bento_sav
         echo json_encode(['ok' => false, 'error' => 'Konnte Datei nicht auf dem Server speichern.']);
         exit;
     }
+    if ($kind === 'deck') {
+        // Neueste Praesentation erscheint immer oben - siehe bentoLoadDeckOrder().
+        bentoPrependToOrder($dir, $filename);
+    }
     echo json_encode(['ok' => true, 'url' => bentoServerUrlFor($dir . '/' . $filename), 'filename' => $filename]);
     exit;
 }
@@ -184,8 +250,27 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_GET['api'] ?? '') ===
     $path = $dir . '/' . $safeFile;
     if ($safeFile !== '' && preg_match('/\.html?$/i', $safeFile) && is_file($path)) {
         @unlink($path);
+        bentoRemoveFromOrder($dir, $safeFile);
     }
     header('Location: bento.php');
+    exit;
+}
+
+// Zwei benachbarte Praesentationen in der Liste vertauschen ("Position tauschen"
+// zwischen zwei Bannern) - reine Reihenfolgen-Operation, ruehrt die Dateien
+// selbst nicht an.
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_GET['api'] ?? '') === 'swap_decks') {
+    header('Content-Type: application/json');
+    $dir = 'media/bentos';
+    $fileA = basename((string)($_POST['file_a'] ?? ''));
+    $fileB = basename((string)($_POST['file_b'] ?? ''));
+    if ($fileA === '' || $fileB === '' || !is_file($dir . '/' . $fileA) || !is_file($dir . '/' . $fileB)) {
+        http_response_code(404);
+        echo json_encode(['ok' => false, 'error' => 'Datei(en) nicht gefunden.']);
+        exit;
+    }
+    $ok = bentoSwapInOrder($dir, $fileA, $fileB);
+    echo json_encode(['ok' => $ok]);
     exit;
 }
 
@@ -259,10 +344,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_GET['api'] ?? '') ===
         echo json_encode(['ok' => false, 'error' => 'Konnte Datei nicht speichern.']);
         exit;
     }
-    if ($newFile !== $safeFile && !rename($path, $newPath)) {
-        http_response_code(500);
-        echo json_encode(['ok' => false, 'error' => 'Konnte die Datei nicht umbenennen.']);
-        exit;
+    if ($newFile !== $safeFile) {
+        if (!rename($path, $newPath)) {
+            http_response_code(500);
+            echo json_encode(['ok' => false, 'error' => 'Konnte die Datei nicht umbenennen.']);
+            exit;
+        }
+        bentoRenameInOrder($dir, $safeFile, $newFile);
     }
     echo json_encode(['ok' => true, 'filename' => $newFile, 'url' => bentoServerUrlFor($dir . '/' . $newFile)]);
     exit;
@@ -737,14 +825,13 @@ if (isset($_GET['proxy'])) {
 
   <?php
     $bentoDecksDir = 'media/bentos';
-    $bentoDeckFiles = is_dir($bentoDecksDir) ? array_values(array_diff(scandir($bentoDecksDir), ['.', '..'])) : [];
-    rsort($bentoDeckFiles); // Dateiname endet auf Zeitstempel -> neueste zuerst
+    $bentoDeckFiles = bentoLoadDeckOrder($bentoDecksDir); // neueste oben, sonst zuletzt gespeicherte/manuelle Reihenfolge
   ?>
   <?php if (!empty($bentoDeckFiles)): ?>
-  <div style="background:#151515; border:1px solid #333; border-radius:8px; padding:14px 16px; margin-bottom:18px;">
+  <div style="margin-bottom:18px;">
     <strong style="font-size:13px; color:#e2e8f0; display:block; margin-bottom:10px;">📝 Gespeicherte bearbeitbare Präsentationen</strong>
-    <div id="bentoDeckBanners" style="display:flex; flex-direction:column; gap:8px; max-height:420px; overflow-y:auto;">
-      <?php foreach ($bentoDeckFiles as $deckFile):
+    <div id="bentoDeckBanners" style="display:flex; flex-direction:column; max-height:420px; overflow-y:auto;">
+      <?php foreach ($bentoDeckFiles as $deckIdx => $deckFile):
         $deckPath = $bentoDecksDir . '/' . $deckFile;
         $deckMeta = bentoReadDeckMeta($deckPath);
         $deckTitle = $deckMeta['title'] !== null && $deckMeta['title'] !== '' ? $deckMeta['title'] : $deckFile;
@@ -752,9 +839,9 @@ if (isset($_GET['proxy'])) {
         $deckSize = @filesize($deckPath);
         $deckMtime = @filemtime($deckPath);
       ?>
-      <div class="bento-deck-banner" data-file="<?php echo htmlspecialchars($deckFile); ?>" style="display:flex; align-items:center; gap:10px; background:#0f0f0f; border:1px solid #2a2a2a; border-radius:8px; padding:10px 12px;">
+      <div class="bento-deck-banner" data-file="<?php echo htmlspecialchars($deckFile); ?>" data-size="<?php echo $deckSize !== false ? (int)$deckSize : 0; ?>" style="display:flex; align-items:center; gap:10px; background:#0f0f0f; border:1px solid #2a2a2a; border-radius:8px; padding:10px 12px;">
         <div style="flex:1; min-width:0;">
-          <div class="bento-deck-title" tabindex="0" title="Doppelklick zum Umbenennen" style="font-size:13px; color:#e2e8f0; font-weight:600; cursor:text; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><?php echo htmlspecialchars($deckTitle); ?></div>
+          <div class="bento-deck-title" tabindex="0" title="Gedrückt halten zum Umbenennen" style="font-size:13px; color:#e2e8f0; font-weight:600; cursor:text; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; user-select:none;"><?php echo htmlspecialchars($deckTitle); ?></div>
           <div style="font-size:11px; color:#8a8a8a; margin-top:2px;">
             <?php if ($deckMeta['slideCount'] !== null): ?><?php echo (int)$deckMeta['slideCount']; ?> Folie<?php echo $deckMeta['slideCount'] === 1 ? '' : 'n'; ?> · <?php endif; ?>
             <?php if ($deckSize !== false): ?><?php echo bentoFormatBytes((int)$deckSize); ?> · <?php endif; ?>
@@ -764,24 +851,50 @@ if (isset($_GET['proxy'])) {
         <div style="display:flex; gap:6px; flex:0 0 auto; align-items:center;">
           <a href="<?php echo htmlspecialchars($deckUrl); ?>#present" target="_blank" rel="noopener" title="Präsentation starten" style="width:28px; height:28px; display:flex; align-items:center; justify-content:center; background:#1e293b; color:#93c5fd; border-radius:6px; text-decoration:none;">▶</a>
           <a href="<?php echo htmlspecialchars($deckUrl); ?>" target="_blank" rel="noopener" title="Bearbeiten (im vollen Editor)" style="width:28px; height:28px; display:flex; align-items:center; justify-content:center; background:#1e293b; color:#93c5fd; border-radius:6px; text-decoration:none;">✎</a>
-          <button type="button" class="bento-deck-load-btn" title="Hier unten laden, um Medien zu verkleinern oder in Teile aufzuteilen" style="width:28px; height:28px; display:flex; align-items:center; justify-content:center; background:#1e293b; color:#93c5fd; border-radius:6px; border:none; cursor:pointer; font-size:14px;">🗜</button>
+          <button type="button" class="bento-deck-load-btn" data-purpose="shrink" title="Hier unten laden, um Medien zu verkleinern" style="width:28px; height:28px; display:flex; align-items:center; justify-content:center; background:#1e293b; color:#93c5fd; border-radius:6px; border:none; cursor:pointer; font-size:14px;">🗜</button>
+          <?php if ($deckMeta['slideCount'] === null || $deckMeta['slideCount'] > 1): ?>
+          <button type="button" class="bento-deck-load-btn" data-purpose="split" title="Hier unten laden, um in Teile aufzuteilen" style="width:28px; height:28px; display:flex; align-items:center; justify-content:center; background:#1e293b; color:#93c5fd; border-radius:6px; border:none; cursor:pointer; font-size:14px;">✂️</button>
+          <?php endif; ?>
           <a href="<?php echo htmlspecialchars($deckUrl); ?>" download title="Als .bento.html herunterladen" style="width:28px; height:28px; display:flex; align-items:center; justify-content:center; background:#1e293b; color:#93c5fd; border-radius:6px; text-decoration:none;">⬇</a>
           <form method="POST" action="?api=delete_deck" onsubmit="return confirm('&quot;<?php echo htmlspecialchars(addslashes($deckTitle)); ?>&quot; wirklich löschen?');" style="margin:0;">
             <input type="hidden" name="file" value="<?php echo htmlspecialchars($deckFile); ?>">
             <button type="submit" title="Löschen" style="width:28px; height:28px; display:flex; align-items:center; justify-content:center; background:#7f1d1d; color:#fff; border:none; border-radius:6px; cursor:pointer;">✕</button>
           </form>
+          <button type="button" class="bento-deck-link-btn" title="Link erzeugen (kopieren)" style="width:28px; height:28px; display:flex; align-items:center; justify-content:center; background:#1e293b; color:#93c5fd; border-radius:6px; border:none; cursor:pointer; font-size:14px;">🔗</button>
         </div>
       </div>
+      <?php if ($deckIdx < count($bentoDeckFiles) - 1):
+        $nextFile = $bentoDeckFiles[$deckIdx + 1];
+      ?>
+      <div class="connector bento-deck-connector" data-file-a="<?php echo htmlspecialchars($deckFile); ?>" data-file-b="<?php echo htmlspecialchars($nextFile); ?>" style="height:30px;">
+        <button type="button" class="connector-btn bento-deck-swap-btn" title="Position tauschen" style="margin-right:8px;">⇅</button>
+        <button type="button" class="connector-btn bento-deck-connect-btn" title="Verbinden">✚</button>
+      </div>
+      <?php endif; ?>
       <?php endforeach; ?>
     </div>
   </div>
   <script>
-  // Umbenennen wie bei moodle-mod_bento's eigenen Deck-Bannern: Doppelklick auf
-  // den Titel -> Inline-Eingabefeld -> Enter/Blur speichert per ?api=rename_deck,
-  // Escape bricht ab. Aendert nur den Dateinamen (siehe PHP-Endpunkt weiter oben);
-  // der interne Titel im Dokument selbst bleibt unangetastet.
+  // Umbenennen wie bei moodle-mod_bento's eigenen Deck-Bannern, aber per langem
+  // Klick statt Doppelklick (auf Wunsch): Maustaste ~550ms gedrueckt halten,
+  // ohne den Zeiger zu bewegen -> Inline-Eingabefeld -> Enter/Blur speichert
+  // per ?api=rename_deck, Escape bricht ab. Aendert nur den Dateinamen (siehe
+  // PHP-Endpunkt weiter oben); der interne Titel im Dokument selbst bleibt
+  // unangetastet.
   document.querySelectorAll('.bento-deck-title').forEach(function(titleEl){
-    titleEl.addEventListener('dblclick', function(){
+    var pressTimer = null;
+    var startX = 0, startY = 0;
+    function cancelPress(){ if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } }
+    titleEl.addEventListener('mousedown', function(ev){
+      startX = ev.clientX; startY = ev.clientY;
+      pressTimer = setTimeout(function(){ pressTimer = null; startRename(); }, 550);
+    });
+    titleEl.addEventListener('mousemove', function(ev){
+      if (pressTimer && (Math.abs(ev.clientX - startX) > 6 || Math.abs(ev.clientY - startY) > 6)) cancelPress();
+    });
+    titleEl.addEventListener('mouseup', cancelPress);
+    titleEl.addEventListener('mouseleave', cancelPress);
+    function startRename(){
       var banner = titleEl.closest('.bento-deck-banner');
       var file = banner.getAttribute('data-file');
       var original = titleEl.textContent;
@@ -814,16 +927,23 @@ if (isset($_GET['proxy'])) {
         else if (ev.key === 'Escape') { ev.preventDefault(); commit(false); }
       });
       input.addEventListener('blur', function(){ commit(true); });
-    });
+    }
   });
 
-  // "🗜 laden" bei einer bereits gespeicherten Präsentation: läd die Datei
-  // herunter und speist sie in denselben Import-Weg ein wie ein per Drag&Drop
-  // abgelegtes .bento.html (handleFiles, weiter unten definiert - wird erst
-  // beim tatsächlichen Klick aufgerufen, ist also zu diesem Zeitpunkt schon
-  // vorhanden) - so stehen für eine schon gespeicherte Präsentation dieselben
-  // Karten-Aktionen (🗜 Medien verkleinern, ✂️ In Teile aufteilen, erneut
-  // speichern, …) zur Verfügung wie für eine frisch konvertierte.
+  // Laedt eine bereits gespeicherte Praesentation unten in die Kartenansicht ein
+  // (derselbe Import-Weg wie ein per Drag&Drop abgelegtes .bento.html - handleFiles,
+  // weiter unten definiert, ist zum Zeitpunkt eines tatsaechlichen Klicks laengst
+  // vorhanden) - von dort aus stehen dieselben Karten-Aktionen (🗜 Medien
+  // verkleinern, ✂️ In Teile aufteilen, erneut speichern, …) zur Verfuegung wie
+  // fuer eine frisch konvertierte. "shrink" und "split" fuehren beide hierher,
+  // nur mit unterschiedlichem Icon/Tooltip als Eintrittspunkt.
+  async function bentoLoadDeckFileIntoCards(file){
+    var resp = await fetch('media/bentos/' + encodeURIComponent(file));
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    var text = await resp.text();
+    var blob = new Blob([text], { type: 'text/html' });
+    return new File([blob], file, { type: 'text/html' });
+  }
   document.querySelectorAll('.bento-deck-load-btn').forEach(function(btn){
     btn.addEventListener('click', function(){
       var banner = btn.closest('.bento-deck-banner');
@@ -831,16 +951,88 @@ if (isset($_GET['proxy'])) {
       var original = btn.textContent;
       btn.disabled = true;
       btn.textContent = '…';
-      fetch('media/bentos/' + encodeURIComponent(file))
-        .then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
-        .then(function(text){
-          var blob = new Blob([text], { type: 'text/html' });
-          var syntheticFile = new File([blob], file, { type: 'text/html' });
+      bentoLoadDeckFileIntoCards(file)
+        .then(function(syntheticFile){
           handleFiles([syntheticFile]);
           document.querySelector('#items')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         })
         .catch(function(e){ alert('Konnte die Datei nicht laden: ' + (e.message || e)); })
         .finally(function(){ btn.disabled = false; btn.textContent = original; });
+    });
+  });
+
+  // 🔗 Link erzeugen: kopiert die Abspiel-Adresse dieser Praesentation
+  // (dieselbe wie hinter "▶ Präsentation starten") in die Zwischenablage.
+  document.querySelectorAll('.bento-deck-link-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var banner = btn.closest('.bento-deck-banner');
+      var file = banner.getAttribute('data-file');
+      var url = new URL('media/bentos/' + encodeURIComponent(file) + '#present', location.href).href;
+      navigator.clipboard.writeText(url).then(function(){
+        toast('🔗 Link kopiert');
+      }).catch(function(){
+        prompt('Link zum manuellen Kopieren:', url);
+      });
+    });
+  });
+
+  // ⇅ Position tauschen: vertauscht zwei benachbarte Banner in der Liste
+  // (persistiert ueber ?api=swap_decks, siehe bentoSwapInOrder() in PHP).
+  document.querySelectorAll('.bento-deck-swap-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var connector = btn.closest('.bento-deck-connector');
+      var fileA = connector.getAttribute('data-file-a');
+      var fileB = connector.getAttribute('data-file-b');
+      btn.disabled = true;
+      var fd = new FormData();
+      fd.append('file_a', fileA);
+      fd.append('file_b', fileB);
+      fetch('?api=swap_decks', { method: 'POST', body: fd })
+        .then(function(r){ return r.json(); })
+        .then(function(data){
+          if (!data.ok) { alert('Konnte Reihenfolge nicht ändern: ' + (data.error || '?')); btn.disabled = false; return; }
+          location.reload();
+        })
+        .catch(function(e){ alert('Konnte Reihenfolge nicht ändern: ' + e); btn.disabled = false; });
+    });
+  });
+
+  // ✚ Verbinden (zwischen zwei bereits gespeicherten Praesentationen, wie im
+  // moodle-Plugin zwischen den Deck-Bannern): beide Dateien unten in die
+  // Kartenansicht laden und dort per derselben mergeItems()-Logik verbinden
+  // wie bei frisch konvertierten Karten - Ergebnis ist eine neue, noch
+  // UNGESPEICHERTE Karte, die erst per "Bearbeitbar speichern" persistiert
+  // wird (kein automatisches Ueberschreiben der beiden Originaldateien).
+  document.querySelectorAll('.bento-deck-connect-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var connector = btn.closest('.bento-deck-connector');
+      var fileA = connector.getAttribute('data-file-a');
+      var fileB = connector.getAttribute('data-file-b');
+      var bannerA = document.querySelector('.bento-deck-banner[data-file="' + CSS.escape(fileA) + '"]');
+      var bannerB = document.querySelector('.bento-deck-banner[data-file="' + CSS.escape(fileB) + '"]');
+      var sizeA = parseInt((bannerA && bannerA.getAttribute('data-size')) || '0', 10);
+      var sizeB = parseInt((bannerB && bannerB.getAttribute('data-size')) || '0', 10);
+      var totalMb = (sizeA + sizeB) / (1024 * 1024);
+      var msg = '"' + fileA + '" und "' + fileB + '" zu einer gemeinsamen Präsentation verbinden?';
+      if (totalMb >= 20) {
+        msg += '\n\nHinweis: Die verbundene Präsentation wird voraussichtlich rund ' + totalMb.toFixed(1) + ' MB groß - das kann je nach Verbindung länger dauern und im Browser spürbar mehr Arbeitsspeicher brauchen.';
+      }
+      if (!confirm(msg)) return;
+      btn.disabled = true;
+      Promise.all([bentoLoadDeckFileIntoCards(fileA), bentoLoadDeckFileIntoCards(fileB)])
+        .then(function(files){
+          var startLen = items.length;
+          return handleFiles(files).then(function(){
+            if (items.length === startLen + 2) {
+              mergeItems(startLen, startLen + 1);
+              document.querySelector('#items')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            } else {
+              toast('Verbinden fehlgeschlagen: mindestens eine Datei konnte nicht geladen werden.');
+            }
+          });
+        })
+        .catch(function(e){ alert('Konnte nicht verbinden: ' + (e.message || e)); })
+        .finally(function(){ btn.disabled = false; });
     });
   });
   </script>
@@ -850,11 +1042,11 @@ if (isset($_GET['proxy'])) {
     <p class="eyebrow">PPTX → bento/slides</p>
     <h1><span class="box"></span>Präsentationen im Browser</h1>
     <p class="lede">
-      Wandelt <code>.pptx</code>-Dateien um — oder importiert schon fertige
-      <code>bento/slides</code>-JSON- bzw. <code>.bento.html</code>-Dateien direkt. Alles läuft
-      lokal im Browser, nichts wird hochgeladen. Mehrere Präsentationen lassen sich per Drag &amp;
-      Drop sortieren und über die <b>✚</b>-Schaltfläche zwischen ihren Karten zu einer
-      gemeinsamen Präsentation verbinden.
+      Diese Seite wandelt <code>.pptx</code>-Präsentationen in HTML-Dateien um, die sich in
+      jedem Browser abspielen lassen. Diese können heruntergeladen, gespeichert, im Browser
+      geändert und wiederverwendet werden. Präsentationen lassen sich per Drag &amp; Drop
+      sortieren und über die <b>✚</b>-Schaltfläche zwischen ihren Karten zu einer gemeinsamen
+      Präsentation verbinden.
     </p>
   </header>
 

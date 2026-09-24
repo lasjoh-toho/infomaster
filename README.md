@@ -30,6 +30,19 @@ ersatzweise die Kommandozeilen-Tools `pdftoppm` (poppler-utils) oder `gs` (Ghost
 ist keines davon verfügbar, erscheint eine klare Fehlermeldung statt eines stillen
 Fehlschlags.
 
+## Medien-Ordner: Ausrichtung & Archiv
+
+Jeder Medien-Ordner unter "Globale Ordner-Verwaltung" lässt sich beim Aufklappen einer
+Ausrichtung zuordnen (Dropdown "Ausrichtung: – nicht zugeordnet – / Hochkant / Querformat") -
+die beiden vom PDF-Import automatisch angelegten Ordner "Hoch"/"Quer" bekommen ihre
+Ausrichtung direkt beim Anlegen zugewiesen. Statt einzelne Dateien endgültig zu löschen,
+lassen sich Bilder in normalen Ordnern stattdessen in eines von zwei festen Archiv-Ordnern
+verschieben ("Archiv Hoch"/"Archiv Quer", tauchen bewusst nicht in der Monitor-Inhalts-
+Auswahl auf). Ist die Ausrichtung eines Ordners bekannt, genügt dafür EIN Knopf (📦, führt
+direkt ins passende Archiv); ohne Zuordnung stehen sicherheitshalber weiterhin beide
+Archiv-Knöpfe (⬆/➡) zur Wahl. Innerhalb der beiden Archiv-Ordner selbst funktioniert
+Löschen unverändert endgültig.
+
 ## Mehrere Monitore an einem Pi
 
 Wayland-Compositors (labwc, Standard bei Raspberry Pi OS Bookworm) lassen einen Client
@@ -82,9 +95,16 @@ Präsentationskonverter), fest in Infomaster eingebaut:
   Gespeicherte Präsentationen erscheinen auf der `bento.php`-Startseite als eigene
   "Banner" mit denselben Funktionen wie die Deck-Karten in moodle-mod_bentos
   `manage.php` - nur Icons mit Tooltip, kein Text: ▶ Ansehen (startet direkt die
-  Präsentation), ✎ Bearbeiten, 🗜 (lädt die Präsentation unten in die Karten-Ansicht,
-  für "Medien verkleinern"/"In Teile aufteilen", siehe nächster Punkt), ⬇ Herunterladen,
-  Doppelklick auf den Namen zum Umbenennen, ✕ Löschen. Dieselbe Karten-Ansicht (frisch
+  Präsentation), ✎ Bearbeiten, 🗜 Verkleinern-laden / ✂️ Aufteilen-laden (laden die
+  Präsentation unten in die Karten-Ansicht, siehe nächster Punkt), ⬇ Herunterladen,
+  ✕ Löschen, 🔗 Link erzeugen (kopiert die Abspiel-Adresse in die Zwischenablage). Der
+  Name lässt sich per langem Klick (gedrückt halten, ohne die Maus zu bewegen) umbenennen.
+  Neueste Präsentation immer oben, sonst zuletzt festgelegte Reihenfolge
+  (`media/bentos/.order.json`, selbstheilend); zwischen je zwei benachbarten Bannern -
+  genau wie im moodle-Plugin - ein Steg mit ⇅ Position tauschen und ✚ Verbinden (lädt
+  beide Dateien unten in die Karten-Ansicht und führt sie wie zwei frisch konvertierte
+  Karten zu einer neuen, noch ungespeicherten Karte zusammen; Bestätigungsdialog mit
+  Warnhinweis ab rund 20 MB kombinierter Größe). Dieselbe Karten-Ansicht (frisch
   konvertiert, importiert oder von dort geladen) hat ebenfalls nur Icon-Knöpfe mit
   Tooltip statt Textbeschriftung.
 - **🗜 Medien verkleinern / ✂️ In Teile aufteilen** - wie in moodle-mod_bentos

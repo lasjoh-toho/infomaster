@@ -2296,6 +2296,7 @@ function renderAjaxBootstrap() {
       sync_ics: '🔄 Kalender synchronisiert',
       new_folder: '📁 Ordner angelegt',
       save_folder_visibility: '👁 Sichtbarkeit gespeichert',
+      save_folder_orientation: '📐 Ausrichtung gespeichert',
       archive_file: '📦 Ins Archiv verschoben',
       screen_id: '✓ Layout gespeichert',
       save_required_outputs: '✓ Gespeichert',
@@ -2538,6 +2539,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $config['folder_hidden_files'][$safeFolder] = $hidden;
             file_put_contents($configFile, json_encode($config, JSON_PRETTY_PRINT));
         }
+    }
+    if (!empty($_POST['save_folder_orientation']) && !empty($_POST['folder_name'])) {
+        // Legt fest, ob ein Medien-Ordner Hochkant- oder Querformat-Inhalte enthaelt - siehe
+        // renderFileManager(): nur bei bekannter Ausrichtung reicht beim Archivieren EIN
+        // Knopf statt beider ("In Archiv Hoch"/"In Archiv Quer").
+        $safeFolder = basename($_POST['folder_name']);
+        $orient = $_POST['orientation'] ?? '';
+        if (!isset($config['folder_orientation'])) $config['folder_orientation'] = [];
+        if (in_array($orient, ['hoch', 'quer'], true)) {
+            $config['folder_orientation'][$safeFolder] = $orient;
+        } else {
+            unset($config['folder_orientation'][$safeFolder]); // "- nicht zugeordnet -" gewaehlt
+        }
+        file_put_contents($configFile, json_encode($config, JSON_PRETTY_PRINT));
     }
     if (!empty($_POST['target_folder']) && !empty($_FILES['file_up']['name'])) {
         $ext = strtolower(pathinfo($_FILES['file_up']['name'], PATHINFO_EXTENSION));
@@ -2815,7 +2830,7 @@ function convertPdfDrop($pdfTmpPath, $originalName, $uploadBase) {
     return ($counts['Hoch'] + $counts['Quer'] > 0) ? $counts : false;
 }
 
-function renderFileManager($folderName, $uploadBase, $label, $hiddenFiles = []) {
+function renderFileManager($folderName, $uploadBase, $label, $hiddenFiles = [], $orientation = null) {
     global $archiveFolders;
     // Die beiden Archiv-Ordner selbst behalten die alte "endgueltig loeschen"-Funktion -
     // archivieren-statt-loeschen gilt nur fuer normale Inhalts-Ordner. Sonst gaebe es gar
@@ -2826,6 +2841,21 @@ function renderFileManager($folderName, $uploadBase, $label, $hiddenFiles = []) 
     $files = array_diff(scandir($path), ['.','..']);
     echo "<div style='background:#151515; padding:15px; border-radius:8px; margin-top:15px; border:1px solid #444;'>";
     echo "<strong style='font-size:13px; color:#4caf50; display:block; margin-bottom:10px;'>Medien in '$folderName' ($label)</strong>";
+    if (!$isArchiveFolder) {
+        // Ausrichtung dieses Ordners (Hochkant/Querformat) - legt fest, ob beim Archivieren
+        // NUR der passende Archiv-Knopf angezeigt wird (siehe unten) statt immer beider.
+        // Ohne Zuordnung bleibt sicherheitshalber die alte Auswahl (beide Knoepfe) bestehen.
+        echo "<form method='POST' style='display:flex; align-items:center; gap:6px; margin-bottom:10px; font-size:11px; color:#94a3b8;'>
+                <input type='hidden' name='save_folder_orientation' value='1'>
+                <input type='hidden' name='folder_name' value='".htmlspecialchars($folderName)."'>
+                <label for='orient_".md5($folderName)."'>Ausrichtung:</label>
+                <select id='orient_".md5($folderName)."' name='orientation' onchange='this.form.requestSubmit()' style='font-size:11px; padding:4px 6px;'>
+                    <option value=''".($orientation === null ? ' selected' : '').">– nicht zugeordnet –</option>
+                    <option value='hoch'".($orientation === 'hoch' ? ' selected' : '').">📱 Hochkant (Archiv Hoch)</option>
+                    <option value='quer'".($orientation === 'quer' ? ' selected' : '').">🖥 Querformat (Archiv Quer)</option>
+                </select>
+              </form>";
+    }
     echo "<form method='POST' enctype='multipart/form-data' style='display:flex; gap:5px; margin-bottom:10px;'>
             <input type='hidden' name='target_folder' value='".htmlspecialchars($folderName)."'>
             <input type='file' name='file_up' style='font-size:11px; padding:6px; flex:1;' onchange='this.form.requestSubmit()'>
@@ -2855,8 +2885,16 @@ function renderFileManager($folderName, $uploadBase, $label, $hiddenFiles = []) 
         } else {
             $fidHoch = 'archform_hoch_' . md5($folderName . '/' . $file);
             $fidQuer = 'archform_quer_' . md5($folderName . '/' . $file);
-            echo "<button type='submit' form='$fidHoch' title='In Archiv Hoch verschieben' style='width:24px; height:24px; padding:0; background:#1e293b; color:#94a3b8; border:none; border-radius:4px;'>⬆</button>
-                  <button type='submit' form='$fidQuer' title='In Archiv Quer verschieben' style='width:24px; height:24px; padding:0; background:#1e293b; color:#94a3b8; border:none; border-radius:4px;'>➡</button>";
+            // Ist der Ordner eindeutig zugeordnet, reicht der EINE passende Knopf - ohne
+            // Zuordnung (z.B. noch nicht sortierte Altordner) bleiben sicherheitshalber beide.
+            if ($orientation === 'hoch') {
+                echo "<button type='submit' form='$fidHoch' title='In Archiv Hoch verschieben' style='width:24px; height:24px; padding:0; background:#1e293b; color:#94a3b8; border:none; border-radius:4px;'>📦</button>";
+            } elseif ($orientation === 'quer') {
+                echo "<button type='submit' form='$fidQuer' title='In Archiv Quer verschieben' style='width:24px; height:24px; padding:0; background:#1e293b; color:#94a3b8; border:none; border-radius:4px;'>📦</button>";
+            } else {
+                echo "<button type='submit' form='$fidHoch' title='In Archiv Hoch verschieben' style='width:24px; height:24px; padding:0; background:#1e293b; color:#94a3b8; border:none; border-radius:4px;'>⬆</button>
+                      <button type='submit' form='$fidQuer' title='In Archiv Quer verschieben' style='width:24px; height:24px; padding:0; background:#1e293b; color:#94a3b8; border:none; border-radius:4px;'>➡</button>";
+            }
         }
         echo "</div>";
     }
@@ -2873,16 +2911,20 @@ function renderFileManager($folderName, $uploadBase, $label, $hiddenFiles = []) 
         } else {
             $fidHoch = 'archform_hoch_' . md5($folderName . '/' . $file);
             $fidQuer = 'archform_quer_' . md5($folderName . '/' . $file);
-            echo "<form method='POST' id='$fidHoch'>
-                    <input type='hidden' name='archive_file' value='".htmlspecialchars($file)."'>
-                    <input type='hidden' name='from_folder' value='".htmlspecialchars($folderName)."'>
-                    <input type='hidden' name='archive_target' value='Archiv Hoch'>
-                  </form>
-                  <form method='POST' id='$fidQuer'>
-                    <input type='hidden' name='archive_file' value='".htmlspecialchars($file)."'>
-                    <input type='hidden' name='from_folder' value='".htmlspecialchars($folderName)."'>
-                    <input type='hidden' name='archive_target' value='Archiv Quer'>
-                  </form>";
+            if ($orientation !== 'quer') {
+                echo "<form method='POST' id='$fidHoch'>
+                        <input type='hidden' name='archive_file' value='".htmlspecialchars($file)."'>
+                        <input type='hidden' name='from_folder' value='".htmlspecialchars($folderName)."'>
+                        <input type='hidden' name='archive_target' value='Archiv Hoch'>
+                      </form>";
+            }
+            if ($orientation !== 'hoch') {
+                echo "<form method='POST' id='$fidQuer'>
+                        <input type='hidden' name='archive_file' value='".htmlspecialchars($file)."'>
+                        <input type='hidden' name='from_folder' value='".htmlspecialchars($folderName)."'>
+                        <input type='hidden' name='archive_target' value='Archiv Quer'>
+                      </form>";
+            }
         }
     }
     echo "</div>";
@@ -3230,8 +3272,8 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
         <?php 
             $folderA = (strpos($s['type'], 'folder:') === 0) ? substr($s['type'], 7) : null;
             $folderB = ($s['split'] !== 'none' && strpos($s['typeB'], 'folder:') === 0) ? substr($s['typeB'], 7) : null;
-            if($folderA) renderFileManager($folderA, $uploadBase, "Inhalt A", $config['folder_hidden_files'][$folderA] ?? []);
-            if($folderB && $folderA !== $folderB) renderFileManager($folderB, $uploadBase, "Inhalt B", $config['folder_hidden_files'][$folderB] ?? []);
+            if($folderA) renderFileManager($folderA, $uploadBase, "Inhalt A", $config['folder_hidden_files'][$folderA] ?? [], $config['folder_orientation'][$folderA] ?? null);
+            if($folderB && $folderA !== $folderB) renderFileManager($folderB, $uploadBase, "Inhalt B", $config['folder_hidden_files'][$folderB] ?? [], $config['folder_orientation'][$folderB] ?? null);
         ?>
     </div>
     <?php endforeach; ?>
@@ -3383,6 +3425,19 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
         <?php
             $existingFolderPaths = array_filter(glob($uploadBase . '*'), 'is_dir');
             natcasesort($existingFolderPaths);
+            // Die beiden vom PDF-Drop automatisch angelegten Ordner (siehe convertPdfDrop())
+            // tragen ihre Ausrichtung schon im Namen - einmalig und selbstheilend als
+            // Standardzuordnung uebernehmen, falls noch nicht geschehen (z.B. frisch angelegt).
+            if (!isset($config['folder_orientation'])) $config['folder_orientation'] = [];
+            $existingFolderNames = array_map('basename', $existingFolderPaths);
+            $orientationDefaultsChanged = false;
+            foreach (['Hoch' => 'hoch', 'Quer' => 'quer'] as $autoName => $autoOrient) {
+                if (in_array($autoName, $existingFolderNames, true) && !isset($config['folder_orientation'][$autoName])) {
+                    $config['folder_orientation'][$autoName] = $autoOrient;
+                    $orientationDefaultsChanged = true;
+                }
+            }
+            if ($orientationDefaultsChanged) { file_put_contents($configFile, json_encode($config, JSON_PRETTY_PRINT)); }
         ?>
         <?php if (empty($existingFolderPaths)): ?>
             <div style="font-size:12px; color:#64748b;">Noch keine Ordner angelegt.</div>
@@ -3392,14 +3447,16 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
             $active = isFolderActive($folderName, $config);
             $fileCount = count(array_diff(scandir($folderPath), ['.', '..']));
             $safeId = 'folder_' . md5($folderName);
+            $folderOrient = $config['folder_orientation'][$folderName] ?? null;
+            $orientTag = $folderOrient === 'hoch' ? ' 📱' : ($folderOrient === 'quer' ? ' 🖥' : '');
         ?>
         <div style="margin-bottom:10px;">
             <button class="accordion-btn" type="button" onclick="toggleGenericAccordion('<?php echo $safeId; ?>', this)" style="<?php echo $active ? 'border-color:#22c55e; color:#22c55e;' : ''; ?>">
-                <span><?php echo $active ? '🟢' : '⚪'; ?> <?php echo htmlspecialchars($folderName); ?> <span style="font-weight:normal; opacity:0.7;">(<?php echo $fileCount; ?> Datei<?php echo $fileCount === 1 ? '' : 'en'; ?><?php echo $active ? ', aktiv verwendet' : ''; ?>)</span></span>
+                <span><?php echo $active ? '🟢' : '⚪'; ?> <?php echo htmlspecialchars($folderName); ?><?php echo $orientTag; ?> <span style="font-weight:normal; opacity:0.7;">(<?php echo $fileCount; ?> Datei<?php echo $fileCount === 1 ? '' : 'en'; ?><?php echo $active ? ', aktiv verwendet' : ''; ?>)</span></span>
                 <span class="acc-icon">➕ Aufklappen</span>
             </button>
             <div id="<?php echo $safeId; ?>" class="accordion-content">
-                <?php renderFileManager($folderName, $uploadBase, 'Ordnerinhalt', $config['folder_hidden_files'][$folderName] ?? []); ?>
+                <?php renderFileManager($folderName, $uploadBase, 'Ordnerinhalt', $config['folder_hidden_files'][$folderName] ?? [], $config['folder_orientation'][$folderName] ?? null); ?>
                 <form method="POST" onsubmit="return confirm('Ordner &quot;<?php echo htmlspecialchars(addslashes($folderName)); ?>&quot; inkl. aller Dateien wirklich löschen?');" style="margin-top:10px;">
                     <input type="hidden" name="del_folder" value="<?php echo htmlspecialchars($folderName); ?>">
                     <button type="submit" style="background:#7f1d1d; width:auto; padding:6px 14px;">🗑 Ordner löschen</button>
