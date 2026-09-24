@@ -646,16 +646,18 @@ if (isset($_GET['proxy'])) {
   .card .err-msg{ color:var(--bad); font-size:13px; margin-top:8px; line-height:1.5; }
   .card .warn-list{ margin:10px 0 0; padding-left:18px; color:var(--ink-dim); font-size:12.5px; line-height:1.6; }
   .actions{ display:flex; gap:6px; margin-top:10px; flex-wrap:wrap; }
-  .actions-icons button{
+  .actions-icons button, .actions-icons a{
     /* Gleiche Icon-Knopf-Optik wie bei den gespeicherten Bannern (siehe
        .bento-deck-banner-Buttons weiter unten) - dunkles Quadrat statt der
-       bisherigen groesseren, helleren Kreise. */
+       bisherigen groesseren, helleren Kreise. Gilt auch fuer <a> (▶/✎/⬇ bei
+       einer bereits gespeicherten Karte, wie bei den Bannern selbst). */
     width:28px; height:28px; flex:none; padding:0; font-size:14px; line-height:1;
     display:flex; align-items:center; justify-content:center; position:relative; overflow:hidden;
-    background:#1e293b; color:#93c5fd; border:none; border-radius:6px;
+    background:#1e293b; color:#93c5fd; border:none; border-radius:6px; text-decoration:none;
+    box-sizing:border-box;
   }
   .actions-icons button.primary{ background:#1e293b; color:#93c5fd; border-color:transparent; }
-  .actions-icons button:hover{ filter:brightness(1.2); }
+  .actions-icons button:hover, .actions-icons a:hover{ filter:brightness(1.2); }
   .actions-icons button.busy{ opacity:.6; cursor:wait; }
   .btn-progress{
     position:absolute; left:0; right:0; bottom:0; height:3px; background:transparent;
@@ -929,7 +931,7 @@ if (isset($_GET['proxy'])) {
         $deckSize = @filesize($deckPath);
         $deckMtime = @filemtime($deckPath);
       ?>
-      <div class="bento-deck-banner" data-file="<?php echo htmlspecialchars($deckFile); ?>" data-size="<?php echo $deckSize !== false ? (int)$deckSize : 0; ?>" data-play-url="<?php echo htmlspecialchars($deckPlayUrl); ?>" style="display:flex; align-items:center; gap:10px; background:#0f0f0f; border:1px solid #2a2a2a; border-radius:8px; padding:10px 12px;">
+      <div class="bento-deck-banner" data-file="<?php echo htmlspecialchars($deckFile); ?>" data-size="<?php echo $deckSize !== false ? (int)$deckSize : 0; ?>" data-url="<?php echo htmlspecialchars(bentoServerUrlFor($deckUrl)); ?>" data-play-url="<?php echo htmlspecialchars($deckPlayUrl); ?>" style="display:flex; align-items:center; gap:10px; background:#0f0f0f; border:1px solid #2a2a2a; border-radius:8px; padding:10px 12px;">
         <div style="flex:1; min-width:0;">
           <div class="bento-deck-title" tabindex="0" title="Gedrückt halten zum Umbenennen" style="font-size:13px; color:#e2e8f0; font-weight:600; cursor:text; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; user-select:none;"><?php echo htmlspecialchars($deckTitle); ?></div>
           <div style="font-size:11px; color:#8a8a8a; margin-top:2px;">
@@ -1038,50 +1040,27 @@ if (isset($_GET['proxy'])) {
     btn.addEventListener('click', function(){
       var banner = btn.closest('.bento-deck-banner');
       var file = banner.getAttribute('data-file');
+      var url = banner.getAttribute('data-url');
       var original = btn.textContent;
       btn.disabled = true;
       btn.textContent = '…';
       bentoLoadDeckFileIntoCards(file)
         .then(function(syntheticFile){
-          handleFiles([syntheticFile]);
-          document.querySelector('#items')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          // queueDecision:false - diese Datei liegt bereits auf dem Server,
+          // kein Speichern/Betrachten/Herunterladen-Dialog noetig; savedFile/
+          // savedUrl direkt setzen, damit die Karte sofort dieselben Knoepfe
+          // wie der Banner zeigt (▶✎🗜✂️⬇✕🔗), statt kurz als "unsaved" aufzublitzen.
+          return handleFiles([syntheticFile], { queueDecision: false }).then(function(){
+            var newItem = items[items.length - 1];
+            if (newItem) { newItem.savedFile = file; newItem.savedUrl = url; renderItems(); }
+            document.querySelector('#items')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          });
         })
         .catch(function(e){ alert('Konnte die Datei nicht laden: ' + (e.message || e)); })
         .finally(function(){ btn.disabled = false; btn.textContent = original; });
     });
   });
 
-  // 🔗 Link erzeugen: kopiert exakt dieselbe Abspiel-Adresse wie "▶ Präsentation
-  // starten" (data-play-url, serverseitig aus DERSELBEN $deckPlayUrl gerendert -
-  // keine zweite, potentiell abweichende URL-Konstruktion hier im JS) in die
-  // Zwischenablage. navigator.clipboard.writeText existiert nur in einem
-  // "secure context" (HTTPS/localhost) - auf einem reinen HTTP-Server ist
-  // navigator.clipboard schlicht undefined, ein direkter Aufruf wirft dann
-  // eine synchrone TypeError NOCH VOR dem then()/catch() (das war der Bug:
-  // "Link erzeugen" tat scheinbar gar nichts) - daher hier explizit geprueft
-  // und mit einer execCommand('copy')-Fallback-Route ueber ein verstecktes
-  // Textfeld abgesichert, bevor als letzter Ausweg ein prompt() zum manuellen
-  // Kopieren erscheint.
-  function bentoCopyToClipboard(text){
-    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-      return navigator.clipboard.writeText(text).catch(function(){ return bentoCopyFallback(text); });
-    }
-    return bentoCopyFallback(text);
-  }
-  function bentoCopyFallback(text){
-    try {
-      var ta = document.createElement('textarea');
-      ta.value = text;
-      ta.style.cssText = 'position:fixed; top:-1000px; left:-1000px;';
-      document.body.appendChild(ta);
-      ta.focus();
-      ta.select();
-      var ok = document.execCommand('copy');
-      ta.remove();
-      if (ok) return Promise.resolve();
-    } catch (e) { /* faellt unten auf den Prompt zurueck */ }
-    return Promise.reject(new Error('clipboard unavailable'));
-  }
   document.querySelectorAll('.bento-deck-link-btn').forEach(function(btn){
     btn.addEventListener('click', function(){
       var banner = btn.closest('.bento-deck-banner');
@@ -1140,7 +1119,10 @@ if (isset($_GET['proxy'])) {
       Promise.all([bentoLoadDeckFileIntoCards(fileA), bentoLoadDeckFileIntoCards(fileB)])
         .then(function(files){
           var startLen = items.length;
-          return handleFiles(files).then(function(){
+          // queueDecision:false - erst der VERBUNDENE Zwischenstand ist neu und
+          // bekommt (in mergeItems()) den Speichern/Betrachten/Herunterladen-
+          // Dialog, nicht schon die beiden einzeln nachgeladenen Originale.
+          return handleFiles(files, { queueDecision: false }).then(function(){
             if (items.length === startLen + 2) {
               mergeItems(startLen, startLen + 1);
               document.querySelector('#items')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -2107,7 +2089,7 @@ document.body.addEventListener('drop', e => {
 });
 fileInput.addEventListener('change', e => handleFiles(Array.from(e.target.files)));
 
-async function handleFiles(files){
+async function handleFiles(files, opts = {}){
   for (const file of files){
     const isPptx = /\.pptx$/i.test(file.name);
     const isPpt = /\.ppt$/i.test(file.name);
@@ -2174,8 +2156,14 @@ async function handleFiles(files){
         baseName = file.name.replace(/\.bento\.json$/i, '').replace(/\.json$/i, '');
       }
       card.remove(); // this file's own progress card is replaced by its entry in the items row
-      items.push({ baseName, doc, slideCount, warnings });
+      const newItem = { baseName, doc, slideCount, warnings };
+      items.push(newItem);
       renderItems();
+      // queueDecision:false = interner Nachlade-Weg (🗜/✂️/✚ bei einer bereits
+      // gespeicherten Praesentation, siehe deren jeweilige Klick-Handler weiter
+      // unten) - die Datei existiert dort schon auf dem Server, ein weiterer
+      // Speichern/Betrachten/Herunterladen-Dialog waere unpassend.
+      if (opts.queueDecision !== false) queueCardDecision(newItem);
     } catch(err){
       console.error(err);
       card.classList.add('error');
@@ -2194,12 +2182,194 @@ async function handleFiles(files){
 
 let draggedItem = null;
 
+// Geteilte Speichern-/Herunterladen-Logik - genutzt sowohl vom "📝 Bearbeitbar
+// speichern"-Knopf einer noch unsigespeicherten Karte als auch vom neuen
+// Speichern/Betrachten/Herunterladen-Dialog (siehe queueCardDecision() weiter
+// unten), damit beide garantiert identisch speichern.
+async function saveItemAsDeck(it){
+  // KEIN readonly hier - die Datei landet weiterhin im vollen Editor, inkl.
+  // eingebettetem bento-host-config (siehe PHP oben): der native "Speichern"-
+  // Knopf im Editor schreibt danach direkt wieder in dieselbe Datei zurück,
+  // genau wie bei einer Moodle-mod_bento-Aktivität.
+  const { filename, html } = await buildBentoHtml(it.doc, it.baseName);
+  const fd = new FormData();
+  fd.append('bento_save_html', html);
+  fd.append('bento_filename', filename);
+  fd.append('bento_kind', 'deck');
+  const resp = await fetch('', { method: 'POST', body: fd });
+  const data = await resp.json();
+  if (!resp.ok || !data.ok) throw new Error(data.error || ('Serverfehler (' + resp.status + ')'));
+  return data; // { ok, url, filename } - "url" kommt bereits absolut vom Server (bentoServerUrlFor())
+}
+async function downloadItemAsHtml(it){
+  const { filename, html } = await buildBentoHtml(it.doc, it.baseName);
+  download(filename, html, 'text/html');
+}
+// Dieselben Cycling-Parameter wie bei den PHP-gerenderten Deck-Bannern
+// ($deckPlayUrl) - ▶ und 🔗 einer bereits gespeicherten Karte sollen sich
+// exakt gleich verhalten, ob sie hier direkt frisch gespeichert wurde oder
+// erst nach einem Seiten-Reload als Banner erscheint.
+function bentoPlayUrlFor(savedUrl){
+  return savedUrl + '?autostart=1&loop&interval=8#present';
+}
+
+// Im IMMER geladenen Hauptskript (nicht im nur bei bereits vorhandenen
+// gespeicherten Praesentationen bedingt gerenderten Banner-Block!), damit
+// auch das 🔗 einer GERADE ERST hier per Dialog gespeicherten Karte
+// funktioniert, ohne dass vorher schon ein Banner existiert haben muss.
+// navigator.clipboard.writeText existiert nur in einem "secure context"
+// (HTTPS/localhost) - auf einem reinen HTTP-Server ist navigator.clipboard
+// schlicht undefined, ein direkter Aufruf wirft dann eine synchrone
+// TypeError NOCH VOR jedem then()/catch() - daher hier explizit geprueft und
+// mit einer execCommand('copy')-Fallback-Route ueber ein verstecktes
+// Textfeld abgesichert, bevor als letzter Ausweg ein prompt() zum manuellen
+// Kopieren erscheint.
+function bentoCopyToClipboard(text){
+  if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+    return navigator.clipboard.writeText(text).catch(function(){ return bentoCopyFallback(text); });
+  }
+  return bentoCopyFallback(text);
+}
+function bentoCopyFallback(text){
+  try {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed; top:-1000px; left:-1000px;';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    var ok = document.execCommand('copy');
+    ta.remove();
+    if (ok) return Promise.resolve();
+  } catch (e) { /* faellt unten auf den Prompt zurueck */ }
+  return Promise.reject(new Error('clipboard unavailable'));
+}
+
+// ============================================================================
+// Speichern/Betrachten/Herunterladen-Dialog: erscheint sofort bei jeder neu
+// entstehenden Karte (Konvertierung, Import, Text einfuegen, Verbinden, jeder
+// Teil eines Aufteilens), damit man nicht erst nach mehreren Klicks merkt,
+// dass eine Karte noch gar nicht auf dem Server liegt. Eine Warteschlange
+// sorgt dafuer, dass bei mehreren gleichzeitig neu entstandenen Karten
+// (z.B. "In Teile aufteilen") die Dialoge nacheinander statt uebereinander
+// erscheinen.
+// ============================================================================
+let cardDecisionQueue = [];
+let cardDecisionOpen = false;
+function queueCardDecision(it){
+  it._decided = false;
+  cardDecisionQueue.push(it);
+  processCardDecisionQueue();
+}
+function processCardDecisionQueue(){
+  if (cardDecisionOpen) return;
+  const it = cardDecisionQueue.shift();
+  if (!it) return;
+  // Zwischenzeitlich schon anders entschieden (z.B. durch Verbinden/Loeschen
+  // entfernt) - ueberspringen statt einen Dialog fuer eine nicht mehr
+  // vorhandene Karte zu zeigen.
+  if (it._decided || items.indexOf(it) < 0) { processCardDecisionQueue(); return; }
+  cardDecisionOpen = true;
+  openCardDecisionModal(it, () => {
+    cardDecisionOpen = false;
+    processCardDecisionQueue();
+  });
+}
+function openCardDecisionModal(it, onClose){
+  const overlay = document.createElement('div');
+  overlay.className = 'paste-modal show';
+  const box = document.createElement('div');
+  box.className = 'paste-modal-inner mb-modal-box';
+  box.style.maxWidth = '420px';
+  box.innerHTML = `
+    <button class="paste-modal-close" type="button">✕</button>
+    <h3>Neue Präsentation</h3>
+    <label style="display:block; font-size:12px; color:var(--ink-dim); margin-bottom:6px;">Name</label>
+    <input type="text" class="cd-name-input" style="width:100%; margin-bottom:18px; box-sizing:border-box;">
+    <div class="mb-modal-actions" style="justify-content:space-between; flex-wrap:wrap; gap:8px;">
+      <button type="button" class="cd-download" style="width:auto;">⬇ Herunterladen</button>
+      <button type="button" class="cd-view" style="width:auto;">👁 Erst betrachten</button>
+      <button type="button" class="primary cd-save" style="width:auto;">💾 Speichern<span class="btn-progress"></span></button>
+    </div>
+    <div class="cd-error err-msg" style="display:none; margin-top:10px;"></div>`;
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+
+  const nameInput = box.querySelector('.cd-name-input');
+  nameInput.value = (it.doc.title || it.baseName || 'Präsentation').trim();
+  nameInput.focus();
+  nameInput.select();
+
+  let closed = false;
+  function applyName(){
+    const next = nameInput.value.trim();
+    if (next) { it.baseName = next; it.doc.title = next; }
+  }
+  function close(){
+    if (closed) return; closed = true;
+    overlay.remove();
+    it._decided = true;
+    onClose();
+  }
+  box.querySelector('.paste-modal-close').addEventListener('click', close);
+  box.querySelector('.cd-view').addEventListener('click', close);
+  nameInput.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') close(); });
+
+  box.querySelector('.cd-download').addEventListener('click', async () => {
+    applyName();
+    renderItems();
+    try { await downloadItemAsHtml(it); toast('Bento-Datei heruntergeladen'); }
+    catch(e){ console.error(e); toast('Herunterladen fehlgeschlagen: ' + (e.message || e)); }
+    close();
+  });
+
+  const saveBtn = box.querySelector('.cd-save');
+  saveBtn.addEventListener('click', async () => {
+    applyName();
+    saveBtn.disabled = true;
+    saveBtn.classList.add('busy');
+    const errBox = box.querySelector('.cd-error');
+    errBox.style.display = 'none';
+    try {
+      const data = await saveItemAsDeck(it);
+      it.savedFile = data.filename;
+      it.savedUrl = data.url;
+      toast('Bearbeitbar gespeichert ✓');
+      renderItems();
+      close();
+    } catch(e){
+      console.error(e);
+      errBox.style.display = 'block';
+      errBox.textContent = 'Speichern fehlgeschlagen: ' + (e.message || e);
+      saveBtn.disabled = false;
+      saveBtn.classList.remove('busy');
+    }
+  });
+}
+
 function buildItemCard(it){
   const card = document.createElement('div');
   card.className = 'card' + (it.merged ? ' merged' : '');
   card.draggable = true;
   const json = JSON.stringify(it.doc, null, 2);
   const outName = it.baseName + '.bento.json';
+  const savedActionsHtml = `
+      <a href="${esc(bentoPlayUrlFor(it.savedUrl))}" target="_blank" rel="noopener" title="Präsentation starten (Endlos-Loop, 8s/Folie)">▶</a>
+      <a href="${esc(it.savedUrl)}" target="_blank" rel="noopener" title="Bearbeiten (im vollen Editor)">✎</a>
+      <button data-action="shrink" title="Medien verkleinern">🗜</button>
+      ${it.slideCount > 1 ? `<button data-action="split" title="In Teile aufteilen">✂️</button>` : ''}
+      <a href="${esc(it.savedUrl)}" download title="Als .bento.html herunterladen">⬇</a>
+      <button data-action="delete-saved" title="Löschen">✕</button>
+      <button data-action="copy-link" title="Link erzeugen (kopieren)">🔗</button>`;
+  const unsavedActionsHtml = `
+      <button class="primary" data-action="html" title="Als .bento.html herunterladen">⬇</button>
+      <button data-action="save-server" title="Auf Server speichern (für Monitor)">📺<span class="btn-progress"></span></button>
+      <button data-action="save-deck" title="Bearbeitbar auf Server speichern">📝<span class="btn-progress"></span></button>
+      <button data-action="open" title="Direkt öffnen (nicht gespeichert)">↗</button>
+      <button data-action="download" title="Nur JSON herunterladen">📄</button>
+      <button data-action="copy" title="JSON kopieren">📋</button>
+      <button data-action="shrink" title="Medien verkleinern">🗜</button>
+      ${it.slideCount > 1 ? `<button data-action="split" title="In Teile aufteilen">✂️</button>` : ''}`;
   card.innerHTML = `
     <div class="card-top">
       <div class="card-top-left">
@@ -2212,16 +2382,7 @@ function buildItemCard(it){
       <span class="pill ok">${it.merged ? 'verbunden' : 'fertig'}</span>
     </div>
     ${it.warnings && it.warnings.length ? `<ul class="warn-list">${it.warnings.map(w=>`<li>${esc(w)}</li>`).join('')}</ul>` : ''}
-    <div class="actions actions-icons">
-      <button class="primary" data-action="html" title="Als .bento.html herunterladen">⬇</button>
-      <button data-action="save-server" title="Auf Server speichern (für Monitor)">📺<span class="btn-progress"></span></button>
-      <button data-action="save-deck" title="Bearbeitbar auf Server speichern">📝<span class="btn-progress"></span></button>
-      <button data-action="open" title="Direkt öffnen (nicht gespeichert)">↗</button>
-      <button data-action="download" title="Nur JSON herunterladen">📄</button>
-      <button data-action="copy" title="JSON kopieren">📋</button>
-      <button data-action="shrink" title="Medien verkleinern">🗜</button>
-      ${it.slideCount > 1 ? `<button data-action="split" title="In Teile aufteilen">✂️</button>` : ''}
-    </div>
+    <div class="actions actions-icons">${it.savedFile ? savedActionsHtml : unsavedActionsHtml}</div>
     <div class="fetch-note" style="display:none" class="err-msg"></div>
     <div class="save-server-result" style="display:none; margin-top:10px; background:#0f2a1c; border:1px solid #1f6b3f; border-radius:6px; padding:10px 12px; font-size:12px; color:#bbf7d0;"></div>
     <div class="save-deck-result" style="display:none; margin-top:10px; background:#0b1f3a; border:1px solid #1e3a63; border-radius:6px; padding:10px 12px; font-size:12px; color:#bfdbfe;"></div>`;
@@ -2242,6 +2403,21 @@ function buildItemCard(it){
       if (save && next && next !== it.baseName){
         it.baseName = next;
         it.doc.title = next;
+        if (it.savedFile) {
+          // Bereits gespeichert - Dateiname UND Titel auf dem Server mitziehen,
+          // damit ▶/✎/🔗 dieser Karte weiterhin auf dem aktuellen Stand bleiben
+          // (dieselbe Logik wie beim langen Klick auf einen Deck-Banner-Namen).
+          const fd = new FormData();
+          fd.append('file', it.savedFile);
+          fd.append('new_name', next);
+          fetch('?api=rename_deck', { method: 'POST', body: fd })
+            .then((r) => r.json())
+            .then((data) => {
+              if (data.ok) { it.savedFile = data.filename; it.savedUrl = data.url; }
+              else console.error('[bento] Umbenennen auf dem Server fehlgeschlagen:', data.error);
+            })
+            .catch((e) => console.error('[bento] Umbenennen auf dem Server fehlgeschlagen:', e));
+        }
         renderItems();
         return;
       }
@@ -2255,12 +2431,11 @@ function buildItemCard(it){
   });
 
   const htmlBtn = card.querySelector('[data-action="html"]');
-  htmlBtn.addEventListener('click', async () => {
+  if (htmlBtn) htmlBtn.addEventListener('click', async () => {
     htmlBtn.disabled = true;
     htmlBtn.classList.add('busy');
     try{
-      const { filename, html } = await buildBentoHtml(it.doc, it.baseName);
-      download(filename, html, 'text/html');
+      await downloadItemAsHtml(it);
       toast('Bento-Datei heruntergeladen');
     } catch(e){
       console.error(e);
@@ -2277,7 +2452,7 @@ function buildItemCard(it){
   });
 
   const saveServerBtn = card.querySelector('[data-action="save-server"]');
-  saveServerBtn.addEventListener('click', async () => {
+  if (saveServerBtn) saveServerBtn.addEventListener('click', async () => {
     saveServerBtn.disabled = true;
     saveServerBtn.classList.add('busy');
     const resultBox = card.querySelector('.save-server-result');
@@ -2322,44 +2497,30 @@ function buildItemCard(it){
   });
 
   const saveDeckBtn = card.querySelector('[data-action="save-deck"]');
-  saveDeckBtn.addEventListener('click', async () => {
+  if (saveDeckBtn) saveDeckBtn.addEventListener('click', async () => {
     saveDeckBtn.disabled = true;
     saveDeckBtn.classList.add('busy');
-    const resultBox = card.querySelector('.save-deck-result');
     try{
-      // KEIN readonly hier - die Datei landet weiterhin im vollen Editor,
-      // inkl. eingebettetem bento-host-config (siehe PHP oben): der native
-      // "Speichern"-Knopf im Editor schreibt danach direkt wieder in
-      // dieselbe Datei zurück, genau wie bei einer Moodle-mod_bento-Aktivität.
-      const { filename, html } = await buildBentoHtml(it.doc, it.baseName);
-      const fd = new FormData();
-      fd.append('bento_save_html', html);
-      fd.append('bento_filename', filename);
-      fd.append('bento_kind', 'deck');
-      const resp = await fetch('', { method: 'POST', body: fd });
-      const data = await resp.json();
-      if (!resp.ok || !data.ok) throw new Error(data.error || ('Serverfehler (' + resp.status + ')'));
-      resultBox.style.display = 'block';
-      resultBox.innerHTML =
-        '✅ Bearbeitbar auf dem Server gespeichert. Von hier aus jederzeit weiter bearbeiten - der ' +
-        '„Speichern"-Knopf im Editor selbst schreibt direkt wieder in diese Datei zurück:<br>' +
-        '<a href="' + esc(data.url) + '" target="_blank" rel="noopener" style="display:inline-block; margin-top:6px; color:#93c5fd;">✏️ Zum Bearbeiten öffnen</a>';
+      const data = await saveItemAsDeck(it);
+      it.savedFile = data.filename;
+      it.savedUrl = data.url;
       toast('Bearbeitbar gespeichert ✓');
+      renderItems(); // wechselt ab jetzt auf denselben Button-Satz wie ein Deck-Banner
     } catch(e){
       console.error(e);
+      const resultBox = card.querySelector('.save-deck-result');
       resultBox.style.display = 'block';
       resultBox.style.background = '#2a0f0f';
       resultBox.style.borderColor = '#6b1f1f';
       resultBox.style.color = '#fecaca';
       resultBox.textContent = 'Fehler beim Speichern: ' + (e.message || e);
-    } finally {
       saveDeckBtn.disabled = false;
       saveDeckBtn.classList.remove('busy');
     }
   });
 
   const openBtn = card.querySelector('[data-action="open"]');
-  openBtn.addEventListener('click', () => {
+  if (openBtn) openBtn.addEventListener('click', () => {
     // Open the tab SYNCHRONOUSLY, in direct response to the click — once
     // an `await` happens first, some browsers no longer treat the later
     // window.open() as user-initiated and silently block it.
@@ -2405,10 +2566,38 @@ function buildItemCard(it){
     })();
   });
 
-  card.querySelector('[data-action="download"]').addEventListener('click', () => download(outName, json));
-  card.querySelector('[data-action="copy"]').addEventListener('click', async () => {
+  const downloadJsonBtn = card.querySelector('[data-action="download"]');
+  if (downloadJsonBtn) downloadJsonBtn.addEventListener('click', () => download(outName, json));
+  const copyJsonBtn = card.querySelector('[data-action="copy"]');
+  if (copyJsonBtn) copyJsonBtn.addEventListener('click', async () => {
     await navigator.clipboard.writeText(json);
     toast('JSON kopiert');
+  });
+
+  const deleteSavedBtn = card.querySelector('[data-action="delete-saved"]');
+  if (deleteSavedBtn) deleteSavedBtn.addEventListener('click', async () => {
+    if (!confirm('"' + it.baseName + '" wirklich löschen?')) return;
+    deleteSavedBtn.disabled = true;
+    try{
+      const fd = new FormData();
+      fd.append('file', it.savedFile);
+      await fetch('?api=delete_deck', { method: 'POST', body: fd });
+      const i = items.indexOf(it);
+      if (i >= 0) items.splice(i, 1);
+      renderItems();
+      toast('🗑 Gelöscht');
+    } catch(e){
+      console.error(e);
+      toast('Löschen fehlgeschlagen: ' + (e.message || e));
+      deleteSavedBtn.disabled = false;
+    }
+  });
+
+  const copyLinkBtn = card.querySelector('[data-action="copy-link"]');
+  if (copyLinkBtn) copyLinkBtn.addEventListener('click', async () => {
+    const url = bentoPlayUrlFor(it.savedUrl);
+    try { await bentoCopyToClipboard(url); toast('🔗 Link kopiert'); }
+    catch { prompt('Link zum manuellen Kopieren:', url); }
   });
 
   card.addEventListener('dragstart', () => {
@@ -2444,6 +2633,7 @@ function buildItemCard(it){
         else items.push(...newItems);
         renderItems();
         toast('In ' + newItems.length + ' Teile aufgeteilt — noch nicht gespeichert.');
+        newItems.forEach(queueCardDecision);
       });
     });
   }
@@ -2471,6 +2661,7 @@ function mergeItems(i, j){
   items.splice(i, 2, mergedItem);
   renderItems();
   toast('Verbunden: ' + mergedItem.slideCount + ' Folien');
+  queueCardDecision(mergedItem);
 }
 
 function renderItems(){
@@ -2972,26 +3163,32 @@ function buildDocFromBlocks(blocks){
 
 lrGenerateBtn.addEventListener('click', () => {
   const doc = buildDocFromBlocks(parseDocToBlocks());
-  items.push({ baseName: 'Eingefuegter-Text', doc, slideCount: doc.slides.length, warnings: [] });
+  const newItem = { baseName: 'Eingefuegter-Text', doc, slideCount: doc.slides.length, warnings: [] };
+  items.push(newItem);
   renderItems();
   closePasteModal();
   toast(doc.slides.length + ' Folie(n) erstellt');
+  queueCardDecision(newItem);
 });
 
 blankBtn.addEventListener('click', () => {
   const doc = blankBentoDoc();
-  items.push({ baseName: 'Neue-Praesentation', doc, slideCount: doc.slides.length, warnings: [] });
+  const newItem = { baseName: 'Neue-Praesentation', doc, slideCount: doc.slides.length, warnings: [] };
+  items.push(newItem);
   renderItems();
   toast('Leere Präsentation erstellt');
+  queueCardDecision(newItem);
 });
 
 demoBtn.addEventListener('click', () => {
   const b64 = document.getElementById('bento-demo-b64').textContent.replace(/\s+/g, '');
   const doc = JSON.parse(decodeURIComponent(escape(atob(b64))));
   doc.docId = (crypto.randomUUID ? crypto.randomUUID() : 'demo-' + Date.now());
-  items.push({ baseName: 'Bento-Showcase', doc, slideCount: doc.slides.length, warnings: [] });
+  const newItem = { baseName: 'Bento-Showcase', doc, slideCount: doc.slides.length, warnings: [] };
+  items.push(newItem);
   renderItems();
   toast('Demopräsentation geladen');
+  queueCardDecision(newItem);
 });
 </script>
 </body>
