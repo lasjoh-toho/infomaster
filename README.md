@@ -100,11 +100,13 @@ Präsentationskonverter), fest in Infomaster eingebaut:
   Sobald eine neue Karte entsteht (Konvertierung, Import, Text einfügen, Verbinden, jeder
   Teil eines Aufteilens), erscheint sofort ein kleiner Dialog mit einem Namensfeld
   (Vorschlag aus dem erkannten Titel, editierbar) und drei Knöpfen: 💾 Speichern (legt die
-  Karte sofort als bearbeitbare Präsentation auf dem Server an), 👁 Erst betrachten (Karte
-  bleibt vorerst nur lokal, wie bisher) und ⬇ Herunterladen (lädt die Datei direkt herunter,
-  ohne sie auf dem Server abzulegen). Erst durch 💾 Speichern bekommt eine Karte dieselben
-  Knöpfe wie eine bereits gespeicherte Präsentation (▶✎🗜✂️⬇✕🔗, siehe unten) - vorher die
-  bisherigen Karten-Aktionen (⬇📺📝↗📄📋🗜✂️). Die Karten-Ansicht steht oben (direkt unter
+  Karte sofort als bearbeitbare Präsentation auf dem Server an), ✎ Öffnen (speichert
+  ebenfalls - nötig, damit der native Speichern-Knopf im vollen Editor funktioniert - und
+  öffnet die Präsentation direkt in einem neuen Tab) und ⬇ Herunterladen (lädt die Datei
+  direkt herunter, ohne sie auf dem Server abzulegen, die Karte verschwindet danach
+  wieder). Es gibt keine eigene Button-Reihe für noch nicht entschiedene Karten mehr -
+  über 💾 oder ✎ bekommt eine Karte sofort dieselben Knöpfe wie eine bereits gespeicherte
+  Präsentation (▶✎🗜✂️⬇✕🔗, siehe unten). Die Karten-Ansicht steht oben (direkt unter
   den Umwandlungs-Optionen), darunter folgen die gespeicherten Präsentationen als eigene
   "Banner" mit denselben Funktionen wie die Deck-Karten in moodle-mod_bentos
   `manage.php` - nur Icons mit Tooltip, kein Text: ▶ Ansehen (startet die Präsentation als
