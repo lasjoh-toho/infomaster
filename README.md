@@ -32,16 +32,21 @@ Fehlschlags.
 
 ## Medien-Ordner: Ausrichtung & Archiv
 
-Jeder Medien-Ordner unter "Globale Ordner-Verwaltung" lässt sich beim Aufklappen einer
-Ausrichtung zuordnen (Dropdown "Ausrichtung: – nicht zugeordnet – / Hochkant / Querformat") -
-die beiden vom PDF-Import automatisch angelegten Ordner "Hoch"/"Quer" bekommen ihre
-Ausrichtung direkt beim Anlegen zugewiesen. Statt einzelne Dateien endgültig zu löschen,
-lassen sich Bilder in normalen Ordnern stattdessen in eines von zwei festen Archiv-Ordnern
-verschieben ("Archiv Hoch"/"Archiv Quer", tauchen bewusst nicht in der Monitor-Inhalts-
-Auswahl auf). Ist die Ausrichtung eines Ordners bekannt, genügt dafür EIN Knopf (📦, führt
+Jeder Medien-Ordner unter "Globale Ordner-Verwaltung" (linke Spalte) lässt sich beim
+Aufklappen einer Ausrichtung zuordnen (Dropdown "Ausrichtung: – nicht zugeordnet – /
+⇕ Hochkant / ⇔ Querformat") - die beiden vom PDF-Import automatisch angelegten Ordner
+"Hoch"/"Quer" bekommen ihre Ausrichtung direkt beim Anlegen zugewiesen. Aktive Ordner
+(gerade einem Monitor zugewiesen) stehen dabei immer oben. Statt einzelne Dateien
+endgültig zu löschen, lassen sich Bilder in normalen Ordnern stattdessen in eines von
+zwei festen Archiv-Ordnern verschieben - "Archiv Hoch"/"Archiv Quer" stehen dafür in
+einer eigenen zweiten Spalte direkt daneben (statt zwischen den normalen Ordnern
+aufzutauchen) und tauchen bewusst nicht in der Monitor-Inhalts-Auswahl auf. Ist die
+Ausrichtung eines Ordners bekannt, genügt für das Verschieben EIN Knopf (📦, führt
 direkt ins passende Archiv); ohne Zuordnung stehen sicherheitshalber weiterhin beide
 Archiv-Knöpfe (⬆/➡) zur Wahl. Innerhalb der beiden Archiv-Ordner selbst funktioniert
-Löschen unverändert endgültig.
+Löschen unverändert endgültig. Die von Bento-Pronto verwalteten Ordner (`bentos`,
+`bento-pronto`) tauchen hier absichtlich gar nicht auf - Zugang dazu läuft
+ausschließlich über die eigene Bento-Pronto-Seite.
 
 ## Mehrere Monitore an einem Pi
 

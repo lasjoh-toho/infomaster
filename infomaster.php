@@ -30,6 +30,11 @@ $allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf', 'mp4'];
 // vorgegeben) - anders als bei per Formular neu angelegten Ordnern ist das hier ein fest
 // einprogrammierter, vertrauenswuerdiger Name, kein Nutzereingabe, die sanitisiert werden muesste.
 $archiveFolders = ['Archiv Hoch', 'Archiv Quer'];
+// Interne Ablagen von bento-pronto (editierbare Praesentationen bzw. schreibgeschuetzte
+// Kiosk-Exporte) - werden ausschliesslich ueber bento.php selbst verwaltet (Deck-Banner
+// dort), tauchen daher weder in der "Globale Ordner-Verwaltung" noch in der Monitor-
+// Inhalts-Auswahl auf (dort waeren sie ohnehin nicht sinnvoll nutzbar).
+$bentoManagedFolders = ['bentos', 'bento-pronto'];
 
 $baseUrl = ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https://" : "http://") . $_SERVER['HTTP_HOST'] . $_SERVER['SCRIPT_NAME'];
 $serverDirUrl = dirname($baseUrl) . "/";
@@ -2724,10 +2729,10 @@ if (!empty($config['schedule']['holidays'])) {
 }
 
 $allFolders = array_filter(glob($uploadBase . '*'), 'is_dir');
-// Die beiden Archiv-Ordner sind eine Ablage, kein aktiver Inhalt - tauchen daher bewusst
-// NICHT in der Dropdown-Auswahl "Ordner: ..." fuer Monitor-Inhalte auf (sonst koennte
-// versehentlich der Archiv-Ordner selbst als Wiedergabequelle eingestellt werden).
-$folderNames = array_values(array_diff(array_map('basename', $allFolders), $archiveFolders));
+// Die beiden Archiv-Ordner sind eine Ablage, kein aktiver Inhalt, und die bento-pronto-
+// Ordner sind keine per Ordner-Zyklus abspielbaren Bildersammlungen - tauchen daher bewusst
+// NICHT in der Dropdown-Auswahl "Ordner: ..." fuer Monitor-Inhalte auf.
+$folderNames = array_values(array_diff(array_map('basename', $allFolders), $archiveFolders, $bentoManagedFolders));
 
 $install_command = "wget -qO- \"" . $baseUrl . "?install=1\" | bash";
 
@@ -2870,8 +2875,8 @@ function renderFileManager($folderName, $uploadBase, $label, $hiddenFiles = [], 
                 <label for='orient_".md5($folderName)."'>Ausrichtung:</label>
                 <select id='orient_".md5($folderName)."' name='orientation' onchange='this.form.requestSubmit()' style='font-size:11px; padding:4px 6px;'>
                     <option value=''".($orientation === null ? ' selected' : '').">– nicht zugeordnet –</option>
-                    <option value='hoch'".($orientation === 'hoch' ? ' selected' : '').">📱 Hochkant (Archiv Hoch)</option>
-                    <option value='quer'".($orientation === 'quer' ? ' selected' : '').">🖥 Querformat (Archiv Quer)</option>
+                    <option value='hoch'".($orientation === 'hoch' ? ' selected' : '').">⇕ Hochkant (Archiv Hoch)</option>
+                    <option value='quer'".($orientation === 'quer' ? ' selected' : '').">⇔ Querformat (Archiv Quer)</option>
                 </select>
               </form>";
     }
@@ -3061,6 +3066,9 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
         .accordion-btn { background: #0f172a; color: #38bdf8; cursor: pointer; padding: 12px 15px; width: 100%; border: 1px solid #334155; text-align: left; outline: none; font-size: 14px; font-weight: bold; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; }
         .accordion-btn:hover { background: #1e293b; }
         .accordion-content { padding: 15px; display: none; background: #090d16; border: 1px solid #334155; border-top: none; border-radius: 0 0 6px 6px; margin-bottom: 15px; }
+        @media (max-width: 720px) {
+            .im-folder-grid { grid-template-columns: 1fr !important; }
+        }
     </style>
     <script>
         function toggleInput(sel) {
@@ -3443,7 +3451,6 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
 
         <?php
             $existingFolderPaths = array_filter(glob($uploadBase . '*'), 'is_dir');
-            natcasesort($existingFolderPaths);
             // Die beiden vom PDF-Drop automatisch angelegten Ordner (siehe convertPdfDrop())
             // tragen ihre Ausrichtung schon im Namen - einmalig und selbstheilend als
             // Standardzuordnung uebernehmen, falls noch nicht geschehen (z.B. frisch angelegt).
@@ -3457,32 +3464,76 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
                 }
             }
             if ($orientationDefaultsChanged) { file_put_contents($configFile, json_encode($config, JSON_PRETTY_PRINT)); }
+
+            // Normale Inhalts-Ordner (ohne Archiv, ohne die bento-pronto-eigenen Ablagen -
+            // letztere werden ausschliesslich ueber bento.php verwaltet) - aktive Ordner
+            // zuerst, danach alphabetisch.
+            $normalFolderPaths = array_values(array_filter($existingFolderPaths, function ($p) use ($archiveFolders, $bentoManagedFolders) {
+                $n = basename($p);
+                return !in_array($n, $archiveFolders, true) && !in_array($n, $bentoManagedFolders, true);
+            }));
+            usort($normalFolderPaths, function ($a, $b) use ($config) {
+                $an = basename($a); $bn = basename($b);
+                $aActive = isFolderActive($an, $config) ? 0 : 1;
+                $bActive = isFolderActive($bn, $config) ? 0 : 1;
+                if ($aActive !== $bActive) return $aActive <=> $bActive;
+                return strnatcasecmp($an, $bn);
+            });
+            // Beide Archiv-Ordner immer als feste Ziele anbieten (auch bevor je etwas
+            // archiviert wurde), damit die zweite Spalte nicht "verschwindet".
+            foreach ($archiveFolders as $af) {
+                $afPath = $uploadBase . $af;
+                if (!is_dir($afPath)) { @mkdir($afPath, 0775, true); }
+            }
         ?>
-        <?php if (empty($existingFolderPaths)): ?>
+        <?php if (empty($normalFolderPaths)): ?>
             <div style="font-size:12px; color:#64748b;">Noch keine Ordner angelegt.</div>
         <?php endif; ?>
-        <?php foreach ($existingFolderPaths as $folderPath):
-            $folderName = basename($folderPath);
-            $active = isFolderActive($folderName, $config);
-            $fileCount = count(array_diff(scandir($folderPath), ['.', '..']));
-            $safeId = 'folder_' . md5($folderName);
-            $folderOrient = $config['folder_orientation'][$folderName] ?? null;
-            $orientTag = $folderOrient === 'hoch' ? ' 📱' : ($folderOrient === 'quer' ? ' 🖥' : '');
-        ?>
-        <div style="margin-bottom:10px;">
-            <button class="accordion-btn" type="button" onclick="toggleGenericAccordion('<?php echo $safeId; ?>', this)" style="<?php echo $active ? 'border-color:#22c55e; color:#22c55e;' : ''; ?>">
-                <span><?php echo $active ? '🟢' : '⚪'; ?> <?php echo htmlspecialchars($folderName); ?><?php echo $orientTag; ?> <span style="font-weight:normal; opacity:0.7;">(<?php echo $fileCount; ?> Datei<?php echo $fileCount === 1 ? '' : 'en'; ?><?php echo $active ? ', aktiv verwendet' : ''; ?>)</span></span>
-                <span class="acc-icon">➕ Aufklappen</span>
-            </button>
-            <div id="<?php echo $safeId; ?>" class="accordion-content">
-                <?php renderFileManager($folderName, $uploadBase, 'Ordnerinhalt', $config['folder_hidden_files'][$folderName] ?? [], $config['folder_orientation'][$folderName] ?? null); ?>
-                <form method="POST" onsubmit="return confirm('Ordner &quot;<?php echo htmlspecialchars(addslashes($folderName)); ?>&quot; inkl. aller Dateien wirklich löschen?');" style="margin-top:10px;">
-                    <input type="hidden" name="del_folder" value="<?php echo htmlspecialchars($folderName); ?>">
-                    <button type="submit" style="background:#7f1d1d; width:auto; padding:6px 14px;">🗑 Ordner löschen</button>
-                </form>
+        <div class="im-folder-grid" style="display:grid; grid-template-columns: 2fr 1fr; gap:20px; align-items:start;">
+            <div>
+                <?php foreach ($normalFolderPaths as $folderPath):
+                    $folderName = basename($folderPath);
+                    $active = isFolderActive($folderName, $config);
+                    $fileCount = count(array_diff(scandir($folderPath), ['.', '..']));
+                    $safeId = 'folder_' . md5($folderName);
+                    $folderOrient = $config['folder_orientation'][$folderName] ?? null;
+                    $orientTag = $folderOrient === 'hoch' ? ' ⇕' : ($folderOrient === 'quer' ? ' ⇔' : '');
+                ?>
+                <div style="margin-bottom:10px;">
+                    <button class="accordion-btn" type="button" onclick="toggleGenericAccordion('<?php echo $safeId; ?>', this)" style="<?php echo $active ? 'border-color:#22c55e; color:#22c55e;' : ''; ?>">
+                        <span><?php echo $active ? '🟢' : '⚪'; ?> <?php echo htmlspecialchars($folderName); ?><?php echo $orientTag; ?> <span style="font-weight:normal; opacity:0.7;">(<?php echo $fileCount; ?> Datei<?php echo $fileCount === 1 ? '' : 'en'; ?><?php echo $active ? ', aktiv verwendet' : ''; ?>)</span></span>
+                        <span class="acc-icon">➕ Aufklappen</span>
+                    </button>
+                    <div id="<?php echo $safeId; ?>" class="accordion-content">
+                        <?php renderFileManager($folderName, $uploadBase, 'Ordnerinhalt', $config['folder_hidden_files'][$folderName] ?? [], $config['folder_orientation'][$folderName] ?? null); ?>
+                        <form method="POST" onsubmit="return confirm('Ordner &quot;<?php echo htmlspecialchars(addslashes($folderName)); ?>&quot; inkl. aller Dateien wirklich löschen?');" style="margin-top:10px;">
+                            <input type="hidden" name="del_folder" value="<?php echo htmlspecialchars($folderName); ?>">
+                            <button type="submit" style="background:#7f1d1d; width:auto; padding:6px 14px;">🗑 Ordner löschen</button>
+                        </form>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            <div>
+                <div style="font-size:11px; color:#94a3b8; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:8px;">📦 Archiv</div>
+                <?php foreach ($archiveFolders as $folderName):
+                    $folderPath = $uploadBase . $folderName;
+                    $fileCount = count(array_diff(scandir($folderPath), ['.', '..']));
+                    $safeId = 'folder_' . md5($folderName);
+                    $orientTag = $folderName === 'Archiv Hoch' ? ' ⇕' : ' ⇔';
+                ?>
+                <div style="margin-bottom:10px;">
+                    <button class="accordion-btn" type="button" onclick="toggleGenericAccordion('<?php echo $safeId; ?>', this)">
+                        <span><?php echo htmlspecialchars($folderName); ?><?php echo $orientTag; ?> <span style="font-weight:normal; opacity:0.7;">(<?php echo $fileCount; ?> Datei<?php echo $fileCount === 1 ? '' : 'en'; ?>)</span></span>
+                        <span class="acc-icon">➕ Aufklappen</span>
+                    </button>
+                    <div id="<?php echo $safeId; ?>" class="accordion-content">
+                        <?php renderFileManager($folderName, $uploadBase, 'Archiv', $config['folder_hidden_files'][$folderName] ?? []); ?>
+                    </div>
+                </div>
+                <?php endforeach; ?>
             </div>
         </div>
-        <?php endforeach; ?>
     </div>
 
     <?php if (isset($_GET['view_reports']) && !empty($errorReports[$_GET['view_reports']])): ?>
