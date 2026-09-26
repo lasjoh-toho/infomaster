@@ -2548,6 +2548,30 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             }
         }
     }
+    // Gegenrichtung zu archive_file: eine Datei aus einem der beiden Archiv-Ordner zurueck
+    // in den gerade geoeffneten (normalen) Ordner verschieben - Button "⬅" im
+    // Archiv-Paar-Panel im Akkordion des jeweiligen Ordners (siehe renderArchivePairPanel()).
+    if (!empty($_POST['restore_file']) && !empty($_POST['archive_folder']) && !empty($_POST['target_folder'])) {
+        $safeFile = basename($_POST['restore_file']);
+        $archiveFolder = $_POST['archive_folder'];
+        $targetFolder = basename($_POST['target_folder']);
+        $targetPath = $uploadBase . $targetFolder;
+        if (in_array($archiveFolder, $archiveFolders, true)
+            && !in_array($targetFolder, $archiveFolders, true)
+            && !in_array($targetFolder, $bentoManagedFolders, true)
+            && is_dir($targetPath)) {
+            $srcPath = $uploadBase . $archiveFolder . '/' . $safeFile;
+            if (is_file($srcPath)) {
+                $destPath = $targetPath . '/' . $safeFile;
+                if (file_exists($destPath)) {
+                    $ext = pathinfo($safeFile, PATHINFO_EXTENSION);
+                    $base = pathinfo($safeFile, PATHINFO_FILENAME);
+                    $destPath = $targetPath . '/' . $base . '_' . date('Ymd_His') . ($ext !== '' ? '.' . $ext : '');
+                }
+                @rename($srcPath, $destPath);
+            }
+        }
+    }
     if (isset($_POST['save_folder_visibility']) && !empty($_POST['folder_name'])) {
         // Checkbox pro Datei: welche Dateien eines Ordners tatsaechlich in der Wiedergabe
         // (view.php) auftauchen sollen. Server ermittelt den vollstaendigen Dateibestand
@@ -2954,6 +2978,54 @@ function renderFileManager($folderName, $uploadBase, $label, $hiddenFiles = [], 
     echo "</div>";
 }
 
+// Rechte Spalte im Akkordion eines Ordners mit bekannter Ausrichtung: zeigt die Dateien
+// des dazu passenden Archiv-Ordners (Archiv Hoch/Archiv Quer), damit zwischen Archiv und
+// aktuell genutztem Ordner hin- und hergeschoben werden kann, ohne das Akkordion zu
+// verlassen. Standard-Sortierung neueste zuerst, per Dropdown auf alphabetisch umstellbar
+// (rein clientseitig anhand der data-mtime/data-name-Attribute je Zeile - kein Reload
+// noetig, da es nur um die Anzeige-Reihenfolge geht).
+function renderArchivePairPanel($archiveFolderName, $targetFolderName, $uploadBase) {
+    $path = $uploadBase . $archiveFolderName;
+    if (!is_dir($path)) { @mkdir($path, 0775, true); }
+    $files = array_values(array_diff(scandir($path), ['.', '..']));
+    usort($files, function ($a, $b) use ($path) {
+        return (@filemtime($path . '/' . $b) ?: 0) <=> (@filemtime($path . '/' . $a) ?: 0);
+    });
+    $panelId = 'archpair_' . md5($archiveFolderName . '/' . $targetFolderName);
+    echo "<div style='background:#151515; padding:15px; border-radius:8px; margin-top:15px; border:1px solid #444;'>";
+    echo "<strong style='font-size:13px; color:#94a3b8; display:block; margin-bottom:10px;'>📦 ".htmlspecialchars($archiveFolderName)."</strong>";
+    if (empty($files)) {
+        echo "<span style='color:#777; font-size:12px;'>Archiv ist leer.</span></div>";
+        return;
+    }
+    echo "<div style='display:flex; align-items:center; gap:6px; margin-bottom:10px; font-size:11px; color:#94a3b8;'>
+            <label for='{$panelId}_sort'>Sortierung:</label>
+            <select id='{$panelId}_sort' onchange=\"sortArchivePairPanel('$panelId', this.value)\" style='font-size:11px; padding:4px 6px; width:auto;'>
+                <option value='date_desc'>Neueste zuerst</option>
+                <option value='alpha'>Alphabetisch</option>
+            </select>
+          </div>";
+    echo "<div id='$panelId' style='max-height:220px; overflow-y:auto; font-size:12px;'>";
+    foreach ($files as $file) {
+        $mtime = @filemtime($path . '/' . $file) ?: 0;
+        $rfid = 'restform_' . md5($archiveFolderName . '/' . $file . '/' . $targetFolderName);
+        echo "<div class='archpair-row' data-mtime='".(int)$mtime."' data-name='".htmlspecialchars(strtolower($file), ENT_QUOTES)."' style='display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-bottom:1px solid #222; gap:8px;'>
+                <span style='flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;' title='".htmlspecialchars($file)."'>".htmlspecialchars($file)."</span>
+                <button type='submit' form='$rfid' title='Zurück in &quot;".htmlspecialchars(addslashes($targetFolderName))."&quot; verschieben' style='width:24px; height:24px; padding:0; background:#1e293b; color:#94a3b8; border:none; border-radius:4px; flex-shrink:0;'>⬅</button>
+              </div>";
+    }
+    echo "</div>";
+    echo "</div>";
+    foreach ($files as $file) {
+        $rfid = 'restform_' . md5($archiveFolderName . '/' . $file . '/' . $targetFolderName);
+        echo "<form method='POST' id='$rfid'>
+                <input type='hidden' name='restore_file' value='".htmlspecialchars($file)."'>
+                <input type='hidden' name='archive_folder' value='".htmlspecialchars($archiveFolderName)."'>
+                <input type='hidden' name='target_folder' value='".htmlspecialchars($targetFolderName)."'>
+              </form>";
+    }
+}
+
 function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
     $ip = $data['ip'] ?? '?';
     $name = $data['name'] ?? ('Raspberry Pi (' . $ip . ')');
@@ -3067,7 +3139,7 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
         .accordion-btn:hover { background: #1e293b; }
         .accordion-content { padding: 15px; display: none; background: #090d16; border: 1px solid #334155; border-top: none; border-radius: 0 0 6px 6px; margin-bottom: 15px; }
         @media (max-width: 720px) {
-            .im-folder-grid { grid-template-columns: 1fr !important; }
+            .im-folder-pair { grid-template-columns: 1fr !important; }
         }
     </style>
     <script>
@@ -3151,6 +3223,16 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
                 content.style.display = "block";
                 if (icon) icon.innerText = "➖ Zuklappen";
             }
+        }
+        function sortArchivePairPanel(panelId, mode) {
+            const panel = document.getElementById(panelId);
+            if (!panel) return;
+            const rows = Array.from(panel.querySelectorAll('.archpair-row'));
+            rows.sort((a, b) => {
+                if (mode === 'alpha') return a.dataset.name.localeCompare(b.dataset.name);
+                return Number(b.dataset.mtime) - Number(a.dataset.mtime);
+            });
+            rows.forEach(row => panel.appendChild(row));
         }
         function copyInstallCmd() {
             const cmdText = document.getElementById('cmdText').innerText;
@@ -3450,6 +3532,13 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
         </form>
 
         <?php
+            // Beide Archiv-Ordner immer als feste, eigene Ordner in der Liste anbieten (auch
+            // bevor je etwas archiviert wurde), damit sie z.B. zum endgueltigen Aufraeumen
+            // erreichbar bleiben.
+            foreach ($archiveFolders as $af) {
+                $afPath = $uploadBase . $af;
+                if (!is_dir($afPath)) { @mkdir($afPath, 0775, true); }
+            }
             $existingFolderPaths = array_filter(glob($uploadBase . '*'), 'is_dir');
             // Die beiden vom PDF-Drop automatisch angelegten Ordner (siehe convertPdfDrop())
             // tragen ihre Ausrichtung schon im Namen - einmalig und selbstheilend als
@@ -3465,12 +3554,15 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
             }
             if ($orientationDefaultsChanged) { file_put_contents($configFile, json_encode($config, JSON_PRETTY_PRINT)); }
 
-            // Normale Inhalts-Ordner (ohne Archiv, ohne die bento-pronto-eigenen Ablagen -
-            // letztere werden ausschliesslich ueber bento.php verwaltet) - aktive Ordner
-            // zuerst, danach alphabetisch.
-            $normalFolderPaths = array_values(array_filter($existingFolderPaths, function ($p) use ($archiveFolders, $bentoManagedFolders) {
+            // Alle Ordner ausser den bento-pronto-eigenen Ablagen (die werden ausschliesslich
+            // ueber bento.php verwaltet) - die beiden Archiv-Ordner bleiben als ganz normale
+            // Ordner in dieser einen Liste erreichbar (u.a. fuer endgueltiges Loeschen), tauchen
+            // aber zusaetzlich - ohne selbst eine eigene zweite Spalte zu sein - als rechte
+            // Spalte im Akkordion jedes dazu passenden Ordners auf (siehe renderArchivePairPanel()).
+            // Aktive Ordner zuerst, danach alphabetisch.
+            $normalFolderPaths = array_values(array_filter($existingFolderPaths, function ($p) use ($bentoManagedFolders) {
                 $n = basename($p);
-                return !in_array($n, $archiveFolders, true) && !in_array($n, $bentoManagedFolders, true);
+                return !in_array($n, $bentoManagedFolders, true);
             }));
             usort($normalFolderPaths, function ($a, $b) use ($config) {
                 $an = basename($a); $bn = basename($b);
@@ -3479,61 +3571,55 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
                 if ($aActive !== $bActive) return $aActive <=> $bActive;
                 return strnatcasecmp($an, $bn);
             });
-            // Beide Archiv-Ordner immer als feste Ziele anbieten (auch bevor je etwas
-            // archiviert wurde), damit die zweite Spalte nicht "verschwindet".
-            foreach ($archiveFolders as $af) {
-                $afPath = $uploadBase . $af;
-                if (!is_dir($afPath)) { @mkdir($afPath, 0775, true); }
-            }
         ?>
         <?php if (empty($normalFolderPaths)): ?>
             <div style="font-size:12px; color:#64748b;">Noch keine Ordner angelegt.</div>
         <?php endif; ?>
-        <div class="im-folder-grid" style="display:grid; grid-template-columns: 2fr 1fr; gap:20px; align-items:start;">
-            <div>
-                <?php foreach ($normalFolderPaths as $folderPath):
-                    $folderName = basename($folderPath);
-                    $active = isFolderActive($folderName, $config);
-                    $fileCount = count(array_diff(scandir($folderPath), ['.', '..']));
-                    $safeId = 'folder_' . md5($folderName);
-                    $folderOrient = $config['folder_orientation'][$folderName] ?? null;
-                    $orientTag = $folderOrient === 'hoch' ? ' ⇕' : ($folderOrient === 'quer' ? ' ⇔' : '');
-                ?>
-                <div style="margin-bottom:10px;">
-                    <button class="accordion-btn" type="button" onclick="toggleGenericAccordion('<?php echo $safeId; ?>', this)" style="<?php echo $active ? 'border-color:#22c55e; color:#22c55e;' : ''; ?>">
-                        <span><?php echo $active ? '🟢' : '⚪'; ?> <?php echo htmlspecialchars($folderName); ?><?php echo $orientTag; ?> <span style="font-weight:normal; opacity:0.7;">(<?php echo $fileCount; ?> Datei<?php echo $fileCount === 1 ? '' : 'en'; ?><?php echo $active ? ', aktiv verwendet' : ''; ?>)</span></span>
-                        <span class="acc-icon">➕ Aufklappen</span>
-                    </button>
-                    <div id="<?php echo $safeId; ?>" class="accordion-content">
-                        <?php renderFileManager($folderName, $uploadBase, 'Ordnerinhalt', $config['folder_hidden_files'][$folderName] ?? [], $config['folder_orientation'][$folderName] ?? null); ?>
-                        <form method="POST" onsubmit="return confirm('Ordner &quot;<?php echo htmlspecialchars(addslashes($folderName)); ?>&quot; inkl. aller Dateien wirklich löschen?');" style="margin-top:10px;">
-                            <input type="hidden" name="del_folder" value="<?php echo htmlspecialchars($folderName); ?>">
-                            <button type="submit" style="background:#7f1d1d; width:auto; padding:6px 14px;">🗑 Ordner löschen</button>
-                        </form>
+        <?php foreach ($normalFolderPaths as $folderPath):
+            $folderName = basename($folderPath);
+            $isArchiveFolderRow = in_array($folderName, $archiveFolders, true);
+            $active = isFolderActive($folderName, $config);
+            $fileCount = count(array_diff(scandir($folderPath), ['.', '..']));
+            $safeId = 'folder_' . md5($folderName);
+            $folderOrient = $config['folder_orientation'][$folderName] ?? null;
+            if ($isArchiveFolderRow) {
+                $orientTag = $folderName === 'Archiv Hoch' ? ' ⇕' : ' ⇔';
+            } else {
+                $orientTag = $folderOrient === 'hoch' ? ' ⇕' : ($folderOrient === 'quer' ? ' ⇔' : '');
+            }
+            // Ist eine Ausrichtung bekannt (und ist dies selbst kein Archiv-Ordner), bekommt das
+            // Akkordion beim Aufklappen eine zweite Spalte mit dem dazu passenden Archiv-Ordner
+            // (siehe renderArchivePairPanel()) - so kann direkt zwischen Archiv und aktuell
+            // genutztem Ordner verschoben werden, ohne extra dorthin navigieren zu muessen.
+            $pairedArchiveFolder = $isArchiveFolderRow ? null : ($folderOrient === 'hoch' ? 'Archiv Hoch' : ($folderOrient === 'quer' ? 'Archiv Quer' : null));
+        ?>
+        <div style="margin-bottom:10px;">
+            <button class="accordion-btn" type="button" onclick="toggleGenericAccordion('<?php echo $safeId; ?>', this)" style="<?php echo $active ? 'border-color:#22c55e; color:#22c55e;' : ''; ?>">
+                <span><?php echo $active ? '🟢' : '⚪'; ?> <?php echo htmlspecialchars($folderName); ?><?php echo $orientTag; ?> <span style="font-weight:normal; opacity:0.7;">(<?php echo $fileCount; ?> Datei<?php echo $fileCount === 1 ? '' : 'en'; ?><?php echo $active ? ', aktiv verwendet' : ''; ?>)</span></span>
+                <span class="acc-icon">➕ Aufklappen</span>
+            </button>
+            <div id="<?php echo $safeId; ?>" class="accordion-content">
+                <?php if ($pairedArchiveFolder !== null): ?>
+                <div class="im-folder-pair" style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; align-items:start;">
+                    <div>
+                        <?php renderFileManager($folderName, $uploadBase, 'Ordnerinhalt', $config['folder_hidden_files'][$folderName] ?? [], $folderOrient); ?>
+                    </div>
+                    <div>
+                        <?php renderArchivePairPanel($pairedArchiveFolder, $folderName, $uploadBase); ?>
                     </div>
                 </div>
-                <?php endforeach; ?>
-            </div>
-            <div>
-                <div style="font-size:11px; color:#94a3b8; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:8px;">📦 Archiv</div>
-                <?php foreach ($archiveFolders as $folderName):
-                    $folderPath = $uploadBase . $folderName;
-                    $fileCount = count(array_diff(scandir($folderPath), ['.', '..']));
-                    $safeId = 'folder_' . md5($folderName);
-                    $orientTag = $folderName === 'Archiv Hoch' ? ' ⇕' : ' ⇔';
-                ?>
-                <div style="margin-bottom:10px;">
-                    <button class="accordion-btn" type="button" onclick="toggleGenericAccordion('<?php echo $safeId; ?>', this)">
-                        <span><?php echo htmlspecialchars($folderName); ?><?php echo $orientTag; ?> <span style="font-weight:normal; opacity:0.7;">(<?php echo $fileCount; ?> Datei<?php echo $fileCount === 1 ? '' : 'en'; ?>)</span></span>
-                        <span class="acc-icon">➕ Aufklappen</span>
-                    </button>
-                    <div id="<?php echo $safeId; ?>" class="accordion-content">
-                        <?php renderFileManager($folderName, $uploadBase, 'Archiv', $config['folder_hidden_files'][$folderName] ?? []); ?>
-                    </div>
-                </div>
-                <?php endforeach; ?>
+                <?php else: ?>
+                    <?php renderFileManager($folderName, $uploadBase, $isArchiveFolderRow ? 'Archiv' : 'Ordnerinhalt', $config['folder_hidden_files'][$folderName] ?? [], $folderOrient); ?>
+                <?php endif; ?>
+                <?php if (!$isArchiveFolderRow): ?>
+                <form method="POST" onsubmit="return confirm('Ordner &quot;<?php echo htmlspecialchars(addslashes($folderName)); ?>&quot; inkl. aller Dateien wirklich löschen?');" style="margin-top:10px;">
+                    <input type="hidden" name="del_folder" value="<?php echo htmlspecialchars($folderName); ?>">
+                    <button type="submit" style="background:#7f1d1d; width:auto; padding:6px 14px;">🗑 Ordner löschen</button>
+                </form>
+                <?php endif; ?>
             </div>
         </div>
+        <?php endforeach; ?>
     </div>
 
     <?php if (isset($_GET['view_reports']) && !empty($errorReports[$_GET['view_reports']])): ?>

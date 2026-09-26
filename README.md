@@ -32,21 +32,30 @@ Fehlschlags.
 
 ## Medien-Ordner: Ausrichtung & Archiv
 
-Jeder Medien-Ordner unter "Globale Ordner-Verwaltung" (linke Spalte) lässt sich beim
-Aufklappen einer Ausrichtung zuordnen (Dropdown "Ausrichtung: – nicht zugeordnet – /
-⇕ Hochkant / ⇔ Querformat") - die beiden vom PDF-Import automatisch angelegten Ordner
-"Hoch"/"Quer" bekommen ihre Ausrichtung direkt beim Anlegen zugewiesen. Aktive Ordner
-(gerade einem Monitor zugewiesen) stehen dabei immer oben. Statt einzelne Dateien
-endgültig zu löschen, lassen sich Bilder in normalen Ordnern stattdessen in eines von
-zwei festen Archiv-Ordnern verschieben - "Archiv Hoch"/"Archiv Quer" stehen dafür in
-einer eigenen zweiten Spalte direkt daneben (statt zwischen den normalen Ordnern
-aufzutauchen) und tauchen bewusst nicht in der Monitor-Inhalts-Auswahl auf. Ist die
-Ausrichtung eines Ordners bekannt, genügt für das Verschieben EIN Knopf (📦, führt
-direkt ins passende Archiv); ohne Zuordnung stehen sicherheitshalber weiterhin beide
-Archiv-Knöpfe (⬆/➡) zur Wahl. Innerhalb der beiden Archiv-Ordner selbst funktioniert
-Löschen unverändert endgültig. Die von Bento-Pronto verwalteten Ordner (`bentos`,
-`bento-pronto`) tauchen hier absichtlich gar nicht auf - Zugang dazu läuft
-ausschließlich über die eigene Bento-Pronto-Seite.
+Jeder Medien-Ordner unter "Globale Ordner-Verwaltung" lässt sich beim Aufklappen einer
+Ausrichtung zuordnen (Dropdown "Ausrichtung: – nicht zugeordnet – / ⇕ Hochkant /
+⇔ Querformat") - die beiden vom PDF-Import automatisch angelegten Ordner "Hoch"/"Quer"
+bekommen ihre Ausrichtung direkt beim Anlegen zugewiesen. Aktive Ordner (gerade einem
+Monitor zugewiesen) stehen dabei immer oben. Statt einzelne Dateien endgültig zu
+löschen, lassen sich Bilder in normalen Ordnern stattdessen in eines von zwei festen
+Archiv-Ordnern verschieben ("Archiv Hoch"/"Archiv Quer", tauchen bewusst nicht in der
+Monitor-Inhalts-Auswahl auf). Ist die Ausrichtung eines Ordners bekannt, genügt für das
+Verschieben EIN Knopf (📦, führt direkt ins passende Archiv); ohne Zuordnung stehen
+sicherheitshalber weiterhin beide Archiv-Knöpfe (⬆/➡) zur Wahl.
+
+Ist einem Ordner eine Ausrichtung zugewiesen, klappt sein Akkordion beim Öffnen zweispaltig
+auf: links der gewohnte Ordnerinhalt, rechts der Inhalt des dazu passenden Archiv-Ordners
+(Archiv Hoch bzw. Archiv Quer) - so lässt sich direkt zwischen aktuell genutztem Ordner und
+Archiv hin- und herschieben, ohne extra zum Archiv-Ordner navigieren zu müssen. Die
+Archiv-Seite ist standardmäßig chronologisch sortiert (neueste zuerst), per Dropdown auch
+alphabetisch; ein "⬅"-Knopf pro Archiv-Datei verschiebt sie zurück in den gerade
+geöffneten Ordner. Ordner ohne zugewiesene Ausrichtung bleiben einspaltig, da es dafür kein
+eindeutig passendes Archiv gibt. "Archiv Hoch"/"Archiv Quer" selbst stehen ganz normal
+als eigene Ordner in derselben Liste (kein "Ordner löschen"-Knopf, aber wie gewohnt mit
+endgültigem Löschen pro Datei) - z.B. zum Aufräumen unabhängig vom Paar-Blick eines
+konkreten Ordners. Die von Bento-Pronto verwalteten Ordner (`bentos`, `bento-pronto`)
+tauchen hier absichtlich gar nicht auf - Zugang dazu läuft ausschließlich über die eigene
+Bento-Pronto-Seite.
 
 ## Mehrere Monitore an einem Pi
 
