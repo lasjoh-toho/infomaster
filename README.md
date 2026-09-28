@@ -81,11 +81,17 @@ Animation). `confirm()`-Dialoge vor dem Löschen funktionieren unverändert.
 
 ## Präsentationen für Monitore (Bento-Pronto)
 
-`bento.php` ist [bento-pronto](https://github.com/lasjoh-toho/bento-pronto) (PPTX→Bento-
+`bento.php` ist [bento-pronto](https://github.com/lasjoh-toho/bento-pronto) (PPTX/PPT→Bento-
 Präsentationskonverter), fest in Infomaster eingebaut:
 
 - **Gleicher Login** - `bento.php` nutzt dieselbe PHP-Session wie `infomaster.php` (kein
   eigener Zugang), nicht angemeldete Aufrufe werden zum Infomaster-Login umgeleitet.
+- **Import** - sowohl `.pptx` als auch altes binäres `.ppt` (PowerPoint 97–2003) werden
+  direkt im Browser gelesen (Texte inkl. Aufzählungen/Bullet-Vererbung, Formen inkl.
+  Freihand-Geometrie, Bilder mit Alt-Text, Farben/Farbschemata, Hintergründe, Tabellen,
+  Diagramme, Klick-Animationen, Übergänge, Notizen) - kein Umweg über PowerPoint/LibreOffice
+  nötig. Übernommen aus [moodle-mod_bento](https://github.com/lasjoh-toho/moodle-mod_bento)s
+  eigenem OLE2/CFB- und MS-PPT/MS-ODRAW-Parser.
 - **Für Monitore** - "💾 Auf Server speichern (für Monitor)" legt eine schreibgeschützte
   Kopie unter `media/bento-pronto/monitors/` ab (startet dort automatisch als Endlos-
   Slideshow) und zeigt die fertige URL (inkl. `?autostart=1&loop`) zum Kopieren - diese
