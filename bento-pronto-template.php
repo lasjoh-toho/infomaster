@@ -500,6 +500,36 @@ if (isset($_GET['proxy'])) {
     echo $body;
     exit;
 }
+
+// Fuer den "🔗"-Knopf einer gespeicherten Praesentation: statt den Link nur zu
+// kopieren, direkt anbieten, ihn als Inhalt A eines der in infomaster.php
+// konfigurierten Monitore zu setzen (?screen_id=...&modeA=url&valA=<Link> - siehe
+// dortigen POST-Handler). Liest dieselbe config.json wie infomaster.php selbst;
+// bleibt einfach leer, wenn die Datei fehlt oder keine Monitore eingerichtet sind
+// (eigenstaendiger bento-pronto-Betrieb ohne Infomaster) - das Modal zeigt dann
+// nur noch die "Nur Link kopieren"-Option.
+$bentoScreensForModal = [];
+if (file_exists('config.json')) {
+    $bentoCfgForScreens = json_decode(file_get_contents('config.json'), true);
+    if (is_array($bentoCfgForScreens) && !empty($bentoCfgForScreens['screens']) && is_array($bentoCfgForScreens['screens'])) {
+        foreach ($bentoCfgForScreens['screens'] as $sid => $sVal) {
+            $curType = $sVal['type'] ?? 'url';
+            if ($curType === 'url') $curLabel = trim((string)($sVal['content'] ?? '')) !== '' ? (string)$sVal['content'] : '(leer)';
+            elseif ($curType === 'nextcloud') $curLabel = 'Nextcloud-Ordner';
+            elseif (strpos($curType, 'folder:') === 0) $curLabel = 'Ordner: ' . substr($curType, 7);
+            else $curLabel = (string)$curType;
+            $bentoScreensForModal[] = [
+                'id' => (string)$sid,
+                'orient' => (string)($sVal['orient'] ?? '0'),
+                'split' => (string)($sVal['split'] ?? 'none'),
+                'duration' => (string)($sVal['duration'] ?? 10),
+                'modeB' => (string)($sVal['typeB'] ?? 'url'),
+                'valB' => (string)($sVal['contentB'] ?? ''),
+                'currentLabel' => $curLabel,
+            ];
+        }
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="de">
@@ -952,7 +982,7 @@ if (isset($_GET['proxy'])) {
             <input type="hidden" name="file" value="<?php echo htmlspecialchars($deckFile); ?>">
             <button type="submit" title="Löschen" style="width:28px; height:28px; display:flex; align-items:center; justify-content:center; background:#7f1d1d; color:#fff; border:none; border-radius:6px; cursor:pointer;">✕</button>
           </form>
-          <button type="button" class="bento-deck-link-btn" title="Link erzeugen (kopieren)" style="width:28px; height:28px; display:flex; align-items:center; justify-content:center; background:#1e293b; color:#93c5fd; border-radius:6px; border:none; cursor:pointer; font-size:14px;">🔗</button>
+          <button type="button" class="bento-deck-link-btn" title="Auf Monitor legen / Link kopieren" style="width:28px; height:28px; display:flex; align-items:center; justify-content:center; background:#1e293b; color:#93c5fd; border-radius:6px; border:none; cursor:pointer; font-size:14px;">🔗</button>
         </div>
       </div>
       <?php if ($deckIdx < count($bentoDeckFiles) - 1):
@@ -1065,11 +1095,7 @@ if (isset($_GET['proxy'])) {
     btn.addEventListener('click', function(){
       var banner = btn.closest('.bento-deck-banner');
       var url = banner.getAttribute('data-play-url');
-      bentoCopyToClipboard(url).then(function(){
-        toast('🔗 Link kopiert');
-      }).catch(function(){
-        prompt('Link zum manuellen Kopieren:', url);
-      });
+      openMonitorAssignModal(url);
     });
   });
 
@@ -1149,6 +1175,7 @@ if (isset($_GET['proxy'])) {
 
 <script type="text/plain" id="bento-demo-b64" data-source="bento starterdeck.ts">__BENTO_DEMO_B64__</script>
 <script type="text/plain" id="bento-shell-b64" data-bento-version="__BENTO_VERSION__" data-bundled="__BENTO_BUILD_DATE__">__BENTO_SHELL_B64__</script>
+<script type="application/json" id="bento-screens-json"><?php echo json_encode($bentoScreensForModal, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?></script>
 <script>
 const EMU_PER_PX = 9525; // 96 dpi
 const emuToPx = v => Math.round((v||0) / EMU_PER_PX);
@@ -4732,6 +4759,101 @@ function bentoCopyFallback(text){
   return Promise.reject(new Error('clipboard unavailable'));
 }
 
+// Die in infomaster.php konfigurierten Monitore (siehe PHP oben, $bentoScreensForModal) -
+// leer, wenn config.json fehlt oder keine Monitore eingerichtet sind (eigenstaendiger
+// bento-pronto-Betrieb ohne Infomaster).
+function bentoScreensForModal(){
+  try {
+    var el = document.getElementById('bento-screens-json');
+    if (!el || !el.textContent.trim()) return [];
+    var list = JSON.parse(el.textContent);
+    return Array.isArray(list) ? list : [];
+  } catch(e){ return []; }
+}
+
+// "🔗"-Klick auf einer gespeicherten Praesentation (Karte oder Banner, siehe
+// beide Aufrufer unten): statt den Link nur zu kopieren, zunaechst fragen, ob er
+// gleich als Inhalt A eines Monitors gesetzt werden soll - schreibt dazu direkt in
+// infomaster.php's config.json (derselbe POST wie das Monitor-Formular dort selbst,
+// siehe dessen "screen_id"-Handler: orient/split/duration/modeB/valB muessen
+// mitgeschickt werden, sonst wuerden sie durch dessen Fehlen ueberschrieben/geleert).
+// Kein eigener JSON-Endpunkt noetig - infomaster.php beantwortet das ganz normal mit
+// der neu gerenderten Seite, die hier ungenutzt bleibt; nur response.ok zaehlt.
+function openMonitorAssignModal(playUrl){
+  var screens = bentoScreensForModal();
+  var overlay = document.createElement('div');
+  overlay.className = 'paste-modal show';
+  var box = document.createElement('div');
+  box.className = 'paste-modal-inner mb-modal-box';
+  box.style.maxWidth = '440px';
+  var rowsHtml = screens.length
+    ? screens.map(function(s){
+        return '<div class="bento-screen-row" data-id="' + esc(s.id) + '" style="display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid #222;">'
+          + '<div style="flex:1; min-width:0;">'
+          + '<div style="font-size:13px; font-weight:600;">Monitor ' + esc(s.id) + '</div>'
+          + '<div style="font-size:11px; color:var(--ink-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="' + esc(s.currentLabel) + '">z.Z.: ' + esc(s.currentLabel) + '</div>'
+          + '</div>'
+          + '<button type="button" class="bento-screen-pick-btn" style="width:auto; flex:0 0 auto;">Hierher legen</button>'
+          + '</div>';
+      }).join('')
+    : '<div style="font-size:12px; color:var(--ink-dim); padding:8px 0;">Keine Monitore konfiguriert.</div>';
+  box.innerHTML = `
+    <button class="paste-modal-close" type="button">✕</button>
+    <h3>Auf Monitor legen</h3>
+    <div class="bento-screen-list" style="max-height:280px; overflow-y:auto; margin-bottom:14px;">${rowsHtml}</div>
+    <div class="mb-modal-actions" style="justify-content:space-between;">
+      <button type="button" class="bento-screen-copy-only" style="width:auto;">📋 Nur Link kopieren</button>
+    </div>
+    <div class="bento-screen-error err-msg" style="display:none; margin-top:10px;"></div>`;
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+
+  var closed = false;
+  function close(){ if (closed) return; closed = true; overlay.remove(); }
+  function showError(msg){
+    var errBox = box.querySelector('.bento-screen-error');
+    errBox.style.display = 'block';
+    errBox.textContent = msg;
+  }
+  box.querySelector('.paste-modal-close').addEventListener('click', close);
+  overlay.addEventListener('click', function(ev){ if (ev.target === overlay) close(); });
+  box.querySelector('.bento-screen-copy-only').addEventListener('click', function(){
+    bentoCopyToClipboard(playUrl).then(function(){ toast('🔗 Link kopiert'); close(); })
+      .catch(function(){ prompt('Link zum manuellen Kopieren:', playUrl); close(); });
+  });
+  box.querySelectorAll('.bento-screen-pick-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var row = btn.closest('.bento-screen-row');
+      var sid = row.getAttribute('data-id');
+      var s = screens.find(function(x){ return x.id === sid; });
+      if (!s) return;
+      btn.disabled = true;
+      var orig = btn.textContent;
+      btn.textContent = '…';
+      var fd = new FormData();
+      fd.append('screen_id', s.id);
+      fd.append('orient', s.orient);
+      fd.append('split', s.split);
+      fd.append('duration', s.duration);
+      fd.append('modeA', 'url');
+      fd.append('valA', playUrl);
+      fd.append('modeB', s.modeB);
+      fd.append('valB', s.valB);
+      fetch('infomaster.php', { method: 'POST', body: fd })
+        .then(function(resp){
+          if (!resp.ok) throw new Error('HTTP ' + resp.status);
+          toast('📺 Auf Monitor ' + sid + ' gelegt');
+          close();
+        })
+        .catch(function(e){
+          showError('Konnte Monitor ' + sid + ' nicht setzen: ' + (e.message || e));
+          btn.disabled = false;
+          btn.textContent = orig;
+        });
+    });
+  });
+}
+
 // ============================================================================
 // Speichern/Betrachten/Herunterladen-Dialog: erscheint sofort bei jeder neu
 // entstehenden Karte (Konvertierung, Import, Text einfuegen, Verbinden, jeder
@@ -4888,7 +5010,7 @@ function buildItemCard(it){
       ${it.slideCount > 1 ? `<button data-action="split" title="In Teile aufteilen">✂️</button>` : ''}
       <a href="${esc(it.savedUrl)}" download title="Als .bento.html herunterladen">⬇</a>
       <button data-action="delete-saved" title="Löschen">✕</button>
-      <button data-action="copy-link" title="Link erzeugen (kopieren)">🔗</button>`;
+      <button data-action="copy-link" title="Auf Monitor legen / Link kopieren">🔗</button>`;
   // Vor der Entscheidung im Speichern/Oeffnen/Herunterladen-Dialog (siehe
   // openCardDecisionModal(), der diese Karte sofort ueberdeckt) gibt es absichtlich
   // KEINE eigene Button-Reihe mehr - alle drei moeglichen Ausgaenge (Speichern, Oeffnen,
@@ -4972,10 +5094,8 @@ function buildItemCard(it){
   });
 
   const copyLinkBtn = card.querySelector('[data-action="copy-link"]');
-  if (copyLinkBtn) copyLinkBtn.addEventListener('click', async () => {
-    const url = bentoPlayUrlFor(it.savedUrl);
-    try { await bentoCopyToClipboard(url); toast('🔗 Link kopiert'); }
-    catch { prompt('Link zum manuellen Kopieren:', url); }
+  if (copyLinkBtn) copyLinkBtn.addEventListener('click', () => {
+    openMonitorAssignModal(bentoPlayUrlFor(it.savedUrl));
   });
 
   card.addEventListener('dragstart', () => {
