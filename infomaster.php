@@ -2717,19 +2717,45 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             }
         }
     }
+    // Bilder aus der Kopfzeilen-Dropzone (siehe topPdfDropZone unten) - automatisch nach
+    // Ausrichtung in "Hoch"/"Quer" einsortiert, kein Auswahl-Dialog noetig (anders als bei
+    // einer PDF gibt es hier nur diesen einen sinnvollen Weg).
+    if (!empty($_FILES['topbar_image_files']) && is_array($_FILES['topbar_image_files']['name'] ?? null)) {
+        $imgOk = 0; $imgFailed = false; $lastImgFolder = null;
+        $fileCount = count($_FILES['topbar_image_files']['name']);
+        for ($i = 0; $i < $fileCount; $i++) {
+            if (($_FILES['topbar_image_files']['error'][$i] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) continue;
+            if (($_FILES['topbar_image_files']['error'][$i] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) { $imgFailed = true; continue; }
+            $origName = $_FILES['topbar_image_files']['name'][$i];
+            $folder = storeRoutedImage($_FILES['topbar_image_files']['tmp_name'][$i], $origName, $uploadBase);
+            if ($folder === false) { $imgFailed = true; continue; }
+            $imgOk++;
+            $lastImgFolder = $folder;
+        }
+        if ($imgOk > 0) {
+            $suffix = $imgFailed ? ' (mind. eine Datei fehlgeschlagen)' : '';
+            setFlashMessage('🖼️ Bild gespeichert' . ($imgOk === 1 ? ' in "' . $lastImgFolder . '"' : ' (' . $imgOk . 'x)') . $suffix, $imgFailed ? 'warn' : 'success');
+        } elseif ($imgFailed) {
+            setFlashMessage('❌ Bild konnte nicht gespeichert werden (nicht lesbar oder nicht unterstütztes Format)', 'error');
+        }
+    }
     if (isset($_POST['screen_id'])) {
         $id = $_POST['screen_id'];
         // playback_source wird ueber den eigenen Umschalt-Button gesetzt (siehe
         // toggle_playback_source unten), nicht ueber dieses Formular - beim Speichern des
         // Layouts also den bisherigen Wert erhalten, statt ihn stillschweigend zurueckzusetzen.
         $existingPlaybackSource = $config['screens'][$id]['playback_source'] ?? 'local';
+        // Bei modeA/modeB === "pdf" kommt der Inhalt aus dem eigenen Datei-Dropdown
+        // (pdfFileA/pdfFileB), nicht aus dem URL-Feld valA/valB.
+        $contentA = ($_POST['modeA'] ?? '') === 'pdf' ? ($_POST['pdfFileA'] ?? '') : ($_POST['valA'] ?? '');
+        $contentB = ($_POST['modeB'] ?? '') === 'pdf' ? ($_POST['pdfFileB'] ?? '') : ($_POST['valB'] ?? '');
         $config['screens'][$id] = [
             // Wechselfrequenz darf nie leer/0 sein - clamp auf mind. 1 Sekunde, auch falls
             // das HTML5 "required"-Attribut im Browser umgangen wird.
             'orient' => $_POST['orient'], 'split' => $_POST['split'], 'duration' => max(1, (int)($_POST['duration'] ?? 10)),
-            'type' => $_POST['modeA'], 'content' => $_POST['valA'],
-            'typeB' => $_POST['modeB'], 'contentB' => $_POST['valB'],
-            // Nur relevant, wenn modeA/modeB tatsaechlich "pdf:..." ist (siehe view.php) -
+            'type' => $_POST['modeA'], 'content' => $contentA,
+            'typeB' => $_POST['modeB'], 'contentB' => $contentB,
+            // Nur relevant, wenn modeA/modeB tatsaechlich "pdf" ist (siehe view.php) -
             // ansonsten harmlos ungenutzt mitgespeichert.
             'pdfModeA' => ($_POST['pdfModeA'] ?? 'scroll') === 'paged' ? 'paged' : 'scroll',
             'pdfModeB' => ($_POST['pdfModeB'] ?? 'scroll') === 'paged' ? 'paged' : 'scroll',
@@ -2757,7 +2783,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $presetName = trim($_POST['preset_name_' . $slot] ?? '');
         if ($presetName !== '') {
             $presetType = $slot === 'A' ? ($_POST['modeA'] ?? 'url') : ($_POST['modeB'] ?? 'url');
-            $presetContent = $slot === 'A' ? ($_POST['valA'] ?? '') : ($_POST['valB'] ?? '');
+            $presetContent = $presetType === 'pdf'
+                ? ($slot === 'A' ? ($_POST['pdfFileA'] ?? '') : ($_POST['pdfFileB'] ?? ''))
+                : ($slot === 'A' ? ($_POST['valA'] ?? '') : ($_POST['valB'] ?? ''));
             $presetDuration = max(1, (int)($_POST['duration'] ?? 10));
             $presetOrientGroup = in_array($_POST['orient'] ?? '0', ['90', '270']) ? 'hochkant' : 'quer';
             if (!isset($config['presets'])) $config['presets'] = [];
@@ -3037,6 +3065,25 @@ function storeNativePdf($pdfTmpPath, $originalName, $uploadBase) {
         $destPath = $dir . '/' . $destName;
     }
     if (!@move_uploaded_file($pdfTmpPath, $destPath) && !@copy($pdfTmpPath, $destPath)) return false;
+    return $folder;
+}
+
+// Fuer ein per Kopfzeilen-Dropzone abgelegtes BILD (siehe unten): Ausrichtung ueber die
+// tatsaechlichen Pixel-Massse ermitteln und direkt in "Hoch" bzw. "Quer" einsortieren -
+// dieselben beiden Ordner, in die auch convertPdfDrop() rendert, tauchen also ganz normal in
+// der Monitor-Inhaltsauswahl auf. Gibt den Zielordnernamen zurueck, oder false bei einer
+// nicht lesbaren/nicht unterstuetzten Bilddatei.
+function storeRoutedImage($imgTmpPath, $originalName, $uploadBase) {
+    $ext = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+    if (!in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp'], true)) return false;
+    $dims = @getimagesize($imgTmpPath);
+    if ($dims === false) return false;
+    $folder = ($dims[1] >= $dims[0]) ? 'Hoch' : 'Quer';
+    $dir = $uploadBase . $folder;
+    if (!is_dir($dir)) { @mkdir($dir, 0775, true); }
+    $cleanName = preg_replace("/[^a-zA-Z0-9._-]/", "", $originalName);
+    $destPath = $dir . '/' . time() . '_' . $cleanName;
+    if (!@move_uploaded_file($imgTmpPath, $destPath) && !@copy($imgTmpPath, $destPath)) return false;
     return $folder;
 }
 
@@ -3353,8 +3400,11 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
             if (!form) return;
             const urlInput = form.querySelector('input[name="val' + suffix + '"]');
             if (urlInput) urlInput.style.display = (sel.value === 'url' || sel.value === 'nextcloud') ? 'block' : 'none';
+            const isPdf = sel.value === 'pdf';
+            const pdfFileSelect = form.querySelector('select[name="pdfFile' + suffix + '"]');
+            if (pdfFileSelect) pdfFileSelect.style.display = isPdf ? 'block' : 'none';
             const pdfModeSelect = form.querySelector('select[name="pdfMode' + suffix + '"]');
-            if (pdfModeSelect) pdfModeSelect.style.display = sel.value.indexOf('pdf:') === 0 ? 'block' : 'none';
+            if (pdfModeSelect) pdfModeSelect.style.display = isPdf ? 'block' : 'none';
         }
         // Aendert sich die Ausrichtung, bevor gespeichert wird, sollen die Preset-Felder
         // sofort auf die passende Liste (Hochkant/Quer) umschalten, statt erst nach einem
@@ -3395,9 +3445,14 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
             }
             const modeSel = form.querySelector('select[name="mode' + slot + '"]');
             const valInput = form.querySelector('input[name="val' + slot + '"]');
+            const pdfFileSelect = form.querySelector('select[name="pdfFile' + slot + '"]');
             const durInput = form.querySelector('input[name="duration"]');
             if (modeSel) { modeSel.value = preset.type; toggleInput(modeSel); }
-            if (valInput) { valInput.value = preset.content; }
+            if (preset.type === 'pdf') {
+                if (pdfFileSelect) pdfFileSelect.value = preset.content;
+            } else if (valInput) {
+                valInput.value = preset.content;
+            }
             if (durInput) { durInput.value = preset.duration; }
         }
         function toggleAccordion() {
@@ -3467,10 +3522,10 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
 <div class="topbar">
     <h2 style="margin:0;">Infoscreens Master Hub</h2>
     <div style="display:flex; gap:10px; align-items:center;">
-        <div id="topPdfDropZone" title="PDF hier hineinziehen oder klicken zum Auswählen" style="display:flex; align-items:center; gap:6px; color:#94a3b8; text-decoration:none; font-weight:bold; padding:8px 15px; background:#111; border-radius:4px; border:1px dashed #334155; cursor:pointer; font-size:13px; transition:border-color .15s, background .15s;">
-            📥 PDF hinzufügen
+        <div id="topPdfDropZone" title="PDF oder Bild hier hineinziehen oder klicken zum Auswählen - wird automatisch einsortiert" style="display:flex; align-items:center; gap:6px; color:#94a3b8; text-decoration:none; font-weight:bold; padding:8px 15px; background:#111; border-radius:4px; border:1px dashed #334155; cursor:pointer; font-size:13px; transition:border-color .15s, background .15s;">
+            📥 Datei hinzufügen
         </div>
-        <input type="file" id="topPdfDropInput" accept="application/pdf" multiple style="display:none;">
+        <input type="file" id="topPdfDropInput" accept="application/pdf,image/jpeg,image/png,image/gif,image/webp" multiple style="display:none;">
         <a href="bento.php" style="color:#38bdf8; text-decoration:none; font-weight:bold; padding:8px 15px; background:#111; border-radius:4px; border:1px solid #333;">🎬 Präsentationen (Bento-Pronto)</a>
         <a href="?logout=1" style="color:#ff5252; text-decoration:none; font-weight:bold; padding:8px 15px; background:#111; border-radius:4px; border:1px solid #333;">Abmelden</a>
     </div>
@@ -3481,6 +3536,7 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
   var input = document.getElementById('topPdfDropInput');
   if (!zone || !input) return;
   var idleColor = '#334155', idleBg = 'transparent';
+  var imageExtRe = /\.(jpe?g|png|gif|webp)$/i;
   zone.addEventListener('click', function(){ input.click(); });
   ['dragenter','dragover'].forEach(function(ev){
     zone.addEventListener(ev, function(e){ e.preventDefault(); e.stopPropagation(); zone.style.borderColor = '#38bdf8'; zone.style.background = '#0f172a'; });
@@ -3488,21 +3544,53 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
   ['dragleave','drop'].forEach(function(ev){
     zone.addEventListener(ev, function(e){ e.preventDefault(); e.stopPropagation(); zone.style.borderColor = idleColor; zone.style.background = idleBg; });
   });
+  function showTopPdfNotice(msg, isError){
+    var orig = zone.innerHTML;
+    zone.textContent = msg;
+    zone.style.borderColor = isError ? '#dc2626' : idleColor;
+    setTimeout(function(){ zone.innerHTML = orig; zone.style.borderColor = idleColor; }, 2500);
+  }
+  // Jede Datei fuer sich sofort automatisch einsortieren - keine Rueckfrage noetig: eine PDF
+  // geht immer nach "PDF Hoch"/"PDF Quer" (storeNativePdf(), Ausrichtung der ersten Seite),
+  // ein Bild immer nach "Hoch"/"Quer" (storeRoutedImage(), tatsaechliche Pixel-Masse). Eine
+  // Datei nach der anderen (nicht alle auf einmal), da jede einzelne einen kompletten
+  // Seitenaustausch ueber imAjaxSubmit() ausloest (document.body.innerHTML wird ersetzt) -
+  // gleichzeitige Requests wuerden sich gegenseitig die Antwort unter dem Body wegziehen.
+  // Absichtlich an window haengen und nur EINMAL initialisieren (nicht "var ... = []" bei
+  // jedem Skript-Rerun): sonst wuerden noch wartende Dateien eines Mehrfach-Drops genau
+  // zwischen zwei Uploads aus der Warteschlange verloren gehen.
+  if (typeof window.__imUploadQueue === 'undefined') window.__imUploadQueue = [];
+  if (typeof window.__imUploadBusy === 'undefined') window.__imUploadBusy = false;
+  function queueUploads(files){
+    Array.prototype.forEach.call(files, function(f){ window.__imUploadQueue.push(f); });
+    processUploadQueue();
+  }
+  function processUploadQueue(){
+    if (window.__imUploadBusy || !window.__imUploadQueue.length) return;
+    window.__imUploadBusy = true;
+    var file = window.__imUploadQueue.shift();
+    var isPdf = /\.pdf$/i.test(file.name);
+    var fieldName = isPdf ? 'pdf_native_files[]' : 'topbar_image_files[]';
+    var fallbackText = isPdf ? '📄 PDF verarbeitet' : '🖼️ Bild verarbeitet';
+    var fd = new FormData();
+    fd.append(fieldName, file, file.name);
+    window.imAjaxSubmit(fd, fallbackText, 'success').catch(function(e){
+      console.error(e);
+      showTopPdfNotice('⚠️ ' + file.name + ' konnte nicht gespeichert werden.', true);
+    }).finally(function(){
+      window.__imUploadBusy = false;
+      processUploadQueue();
+    });
+  }
   function handleFileList(fileList){
-    var files = Array.prototype.filter.call(fileList, function(f){ return /\.pdf$/i.test(f.name); });
+    var files = Array.prototype.filter.call(fileList, function(f){ return /\.pdf$/i.test(f.name) || imageExtRe.test(f.name); });
     var rejected = fileList.length - files.length;
     if (rejected > 0) {
       showTopPdfNotice(rejected === fileList.length
-        ? '⚠️ Nur PDF-Dateien werden unterstützt (.doc/.docx aktuell nicht).'
-        : '⚠️ ' + rejected + ' Datei(en) übersprungen - nur PDF wird unterstützt.');
+        ? '⚠️ Nur PDF/JPG/PNG/GIF/WEBP werden unterstützt (.doc/.docx aktuell nicht).'
+        : '⚠️ ' + rejected + ' Datei(en) übersprungen - Format nicht unterstützt.', true);
     }
-    if (files.length) window.imQueuePdfChoices(files);
-  }
-  function showTopPdfNotice(msg){
-    var orig = zone.innerHTML;
-    zone.textContent = msg;
-    zone.style.borderColor = '#dc2626';
-    setTimeout(function(){ zone.innerHTML = orig; zone.style.borderColor = idleColor; }, 2500);
+    if (files.length) queueUploads(files);
   }
   zone.addEventListener('drop', function(e){
     var files = e.dataTransfer && e.dataTransfer.files;
@@ -3513,71 +3601,6 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
     input.value = '';
   });
 })();
-
-// Eine Datei nach der anderen abarbeiten (statt alle Modals gleichzeitig zu oeffnen) -
-// dieselbe Warteschlangen-Idee wie bento-prontos openCardDecisionModal()/
-// processCardDecisionQueue() fuer neu entstehende Karten. Absichtlich an window haengen
-// und nur EINMAL initialisieren (nicht "var ... = []" bei jedem Skript-Rerun): jede
-// gewaehlte Option loest via imAjaxSubmit() einen kompletten Seitenaustausch aus
-// (document.body.innerHTML wird ersetzt), der dieses <script> selbst erneut ausfuehrt -
-// eine unbedingte Neuzuweisung wuerde dabei noch wartende Dateien aus der Warteschlange
-// verlieren, genau zwischen zwei Dateien eines Mehrfach-Drops.
-if (typeof window.__imPdfQueue === 'undefined') window.__imPdfQueue = [];
-if (typeof window.__imPdfQueueBusy === 'undefined') window.__imPdfQueueBusy = false;
-window.imQueuePdfChoices = function(files){
-  Array.prototype.forEach.call(files, function(f){ window.__imPdfQueue.push(f); });
-  imProcessPdfQueue();
-};
-function imProcessPdfQueue(){
-  if (window.__imPdfQueueBusy || !window.__imPdfQueue.length) return;
-  window.__imPdfQueueBusy = true;
-  var file = window.__imPdfQueue.shift();
-  openPdfChoiceModal(file, function(){
-    window.__imPdfQueueBusy = false;
-    imProcessPdfQueue();
-  });
-}
-function openPdfChoiceModal(file, onDone){
-  var overlay = document.createElement('div');
-  overlay.style.cssText = 'display:flex; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:1000; align-items:center; justify-content:center;';
-  var box = document.createElement('div');
-  box.style.cssText = 'background:#1e1e1e; border:1px solid #333; border-radius:12px; padding:24px; max-width:420px; width:90%;';
-  box.innerHTML =
-    '<h3 style="margin:0 0 6px;">📄 ' + escapeHtmlIm(file.name) + '</h3>' +
-    '<p style="font-size:12px; color:#94a3b8; margin:0 0 18px;">Wie soll diese PDF-Datei verwendet werden?</p>' +
-    '<button type="button" class="im-pdf-choice-convert" style="display:block; width:100%; margin-bottom:10px; background:#38bdf8; color:#000; padding:10px;">🖼️ Als Bilder umwandeln (Hoch/Quer)</button>' +
-    '<p style="font-size:11px; color:#64748b; margin:-6px 0 14px;">Jede Seite wird als JPG in "Hoch" bzw. "Quer" einsortiert - wie bisher.</p>' +
-    '<button type="button" class="im-pdf-choice-native" style="display:block; width:100%; margin-bottom:10px; background:#22c55e; color:#000; padding:10px;">📄 Als PDF behalten (für Monitor)</button>' +
-    '<p style="font-size:11px; color:#64748b; margin:-6px 0 14px;">Datei bleibt unveraendert, landet in "PDF Hoch"/"PDF Quer" und laesst sich direkt einem Monitor zuweisen.</p>' +
-    '<button type="button" class="im-pdf-choice-cancel" style="display:block; width:100%; background:#334155;">Abbrechen</button>' +
-    '<div class="im-pdf-choice-error" style="display:none; margin-top:10px; font-size:12px; color:#fca5a5;"></div>';
-  overlay.appendChild(box);
-  document.body.appendChild(overlay);
-  var closed = false;
-  function close(){ if (closed) return; closed = true; overlay.remove(); onDone(); }
-  overlay.addEventListener('click', function(e){ if (e.target === overlay) close(); });
-  box.querySelector('.im-pdf-choice-cancel').addEventListener('click', close);
-  function submitChoice(fieldName, btn){
-    var buttons = box.querySelectorAll('button');
-    Array.prototype.forEach.call(buttons, function(b){ b.disabled = true; });
-    var orig = btn.textContent;
-    btn.textContent = '…';
-    var fd = new FormData();
-    fd.append(fieldName, file, file.name);
-    window.imAjaxSubmit(fd, '📄 PDF verarbeitet', 'success').then(close).catch(function(){
-      var errBox = box.querySelector('.im-pdf-choice-error');
-      errBox.style.display = 'block';
-      errBox.textContent = 'Fehlgeschlagen - bitte erneut versuchen.';
-      Array.prototype.forEach.call(buttons, function(b){ b.disabled = false; });
-      btn.textContent = orig;
-    });
-  }
-  box.querySelector('.im-pdf-choice-convert').addEventListener('click', function(e){ submitChoice('pdf_files[]', e.target); });
-  box.querySelector('.im-pdf-choice-native').addEventListener('click', function(e){ submitChoice('pdf_native_files[]', e.target); });
-}
-function escapeHtmlIm(s){
-  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
 </script>
 
 <!-- INHALTE & MONITORE -->
@@ -3625,6 +3648,33 @@ function escapeHtmlIm(s){
         $previewH = 220;
         $scale = round($previewH / $iframeH, 4);
         $previewW = (int)($iframeW * $scale);
+
+        // Ordner- und PDF-Dropdowns zeigen nur Eintraege, deren zugeordnete Ausrichtung
+        // (siehe $config['folder_orientation'] bzw. der "PDF Hoch"/"PDF Quer"-Ordnername) zu
+        // diesem Monitor passt - die aktuell gespeicherte Auswahl bleibt aber IMMER sichtbar,
+        // auch bei einem Mismatch, damit ein blosses erneutes Speichern den Inhalt nicht
+        // stillschweigend aendert (z.B. nach nachtraeglichem Drehen des Monitors).
+        $monitorFamily = $isPortrait ? 'hoch' : 'quer';
+        $folderA = (strpos($s['type'], 'folder:') === 0) ? substr($s['type'], 7) : null;
+        $folderB = (strpos($s['typeB'] ?? '', 'folder:') === 0) ? substr($s['typeB'], 7) : null;
+        $monitorFolderNames = array_values(array_filter($folderNames, function($fn) use ($config, $monitorFamily, $folderA, $folderB) {
+            if ($fn === $folderA || $fn === $folderB) return true;
+            return ($config['folder_orientation'][$fn] ?? null) === $monitorFamily;
+        }));
+
+        // "pdf" ist der neue, einzige Dropdown-Eintrag; "pdf:<Pfad>" ist die alte Kodierung
+        // (vor der Auslagerung in ein eigenes Datei-Dropdown) und wird nur noch zum Lesen
+        // bereits gespeicherter Konfigurationen unterstuetzt - ein erneutes Speichern schreibt
+        // wieder das neue Format.
+        $isPdfModeA = ($s['type'] === 'pdf' || strpos($s['type'], 'pdf:') === 0);
+        $isPdfModeB = (($s['typeB'] ?? '') === 'pdf' || strpos($s['typeB'] ?? '', 'pdf:') === 0);
+        $currentPdfFileA = $s['type'] === 'pdf' ? ($s['content'] ?? '') : (strpos($s['type'], 'pdf:') === 0 ? substr($s['type'], 4) : '');
+        $currentPdfFileB = ($s['typeB'] ?? '') === 'pdf' ? ($s['contentB'] ?? '') : (strpos($s['typeB'] ?? '', 'pdf:') === 0 ? substr($s['typeB'], 4) : '');
+        $monitorPdfFileOptions = array_values(array_filter($pdfFileOptions, function($pfo) use ($monitorFamily, $currentPdfFileA, $currentPdfFileB) {
+            if ($pfo === $currentPdfFileA || $pfo === $currentPdfFileB) return true;
+            $pfoFamily = (strpos($pfo, 'PDF Hoch/') === 0) ? 'hoch' : 'quer';
+            return $pfoFamily === $monitorFamily;
+        }));
         ?>
         <div style="width:100%; display:flex; justify-content:center; margin:10px 0;">
             <div style="width:<?php echo $previewW; ?>px; height:<?php echo $previewH; ?>px; background:#000; border-radius:6px; border:1px solid #555; overflow:hidden; position:relative;">
@@ -3654,19 +3704,23 @@ function escapeHtmlIm(s){
                 <select name="modeA" onchange="toggleInput(this)" style="flex:1; width:auto;">
                     <option value="url" <?php if($s['type']=='url') echo 'selected'; ?>>Webseite (URL)</option>
                     <option value="nextcloud" <?php if($s['type']=='nextcloud') echo 'selected'; ?>>Nextcloud Ordner (URL)</option>
-                    <?php foreach($folderNames as $fn): ?>
+                    <?php foreach($monitorFolderNames as $fn): ?>
                         <option value="folder:<?php echo $fn; ?>" <?php if($s['type']=="folder:$fn") echo 'selected'; ?>>Ordner: <?php echo $fn; ?></option>
                     <?php endforeach; ?>
-                    <?php foreach($pdfFileOptions as $pfo): ?>
-                        <option value="pdf:<?php echo htmlspecialchars($pfo); ?>" <?php if($s['type']=="pdf:$pfo") echo 'selected'; ?>>📄 PDF: <?php echo htmlspecialchars($pfo); ?></option>
-                    <?php endforeach; ?>
+                    <option value="pdf" <?php if($isPdfModeA) echo 'selected'; ?>>📄 PDF</option>
                 </select>
                 <button type="submit" form="pbform-<?php echo $id; ?>" style="width:auto; flex:0 0 auto; font-size:10px; padding:6px 8px; background:<?php echo $pbSource === 'local' ? '#166534' : '#1e3a8a'; ?>;" title="<?php echo $pbSource === 'local' ? 'Lokale Wiedergabe (Standard) - klicken für Live vom Server' : 'Live vom Server - klicken für Lokale Wiedergabe'; ?>">
                     <?php echo $pbSource === 'local' ? '🏠' : '🌐'; ?>
                 </button>
             </div>
             <input type="text" name="valA" value="<?php echo htmlspecialchars($s['content']); ?>" style="display:<?php echo (in_array($s['type'],['url','nextcloud'])?'block':'none'); ?>">
-            <select name="pdfModeA" style="display:<?php echo (strpos($s['type'],'pdf:')===0?'block':'none'); ?>; margin-top:4px;" title="Wie die PDF auf dem Monitor abgespielt wird">
+            <select name="pdfFileA" style="display:<?php echo ($isPdfModeA?'block':'none'); ?>; margin-top:4px;" title="Welche PDF-Datei auf dieser Flaeche abgespielt wird">
+                <option value="">– PDF wählen –</option>
+                <?php foreach($monitorPdfFileOptions as $pfo): ?>
+                    <option value="<?php echo htmlspecialchars($pfo); ?>" <?php if($currentPdfFileA === $pfo) echo 'selected'; ?>><?php echo htmlspecialchars($pfo); ?></option>
+                <?php endforeach; ?>
+            </select>
+            <select name="pdfModeA" style="display:<?php echo ($isPdfModeA?'block':'none'); ?>; margin-top:4px;" title="Wie die PDF auf dem Monitor abgespielt wird">
                 <option value="scroll" <?php if(($s['pdfModeA']??'scroll')==='scroll') echo 'selected'; ?>>↕ Durchlaufender Scroll (Wechselfrequenz = Gesamtdauer)</option>
                 <option value="paged" <?php if(($s['pdfModeA']??'scroll')==='paged') echo 'selected'; ?>>📄 Seitenweise (Wechselfrequenz = Sek./Seite)</option>
             </select>
@@ -3684,15 +3738,19 @@ function escapeHtmlIm(s){
                 <select name="modeB" onchange="toggleInput(this)">
                     <option value="url" <?php if($s['typeB']=='url') echo 'selected'; ?>>Webseite (URL)</option>
                     <option value="nextcloud" <?php if($s['typeB']=='nextcloud') echo 'selected'; ?>>Nextcloud Ordner (URL)</option>
-                    <?php foreach($folderNames as $fn): ?>
+                    <?php foreach($monitorFolderNames as $fn): ?>
                         <option value="folder:<?php echo $fn; ?>" <?php if($s['typeB']=="folder:$fn") echo 'selected'; ?>>Ordner: <?php echo $fn; ?></option>
                     <?php endforeach; ?>
-                    <?php foreach($pdfFileOptions as $pfo): ?>
-                        <option value="pdf:<?php echo htmlspecialchars($pfo); ?>" <?php if($s['typeB']=="pdf:$pfo") echo 'selected'; ?>>📄 PDF: <?php echo htmlspecialchars($pfo); ?></option>
-                    <?php endforeach; ?>
+                    <option value="pdf" <?php if($isPdfModeB) echo 'selected'; ?>>📄 PDF</option>
                 </select>
                 <input type="text" name="valB" value="<?php echo htmlspecialchars($s['contentB']); ?>" style="display:<?php echo (in_array($s['typeB'],['url','nextcloud'])?'block':'none'); ?>">
-                <select name="pdfModeB" style="display:<?php echo (strpos($s['typeB']??'','pdf:')===0?'block':'none'); ?>; margin-top:4px;" title="Wie die PDF auf dem Monitor abgespielt wird">
+                <select name="pdfFileB" style="display:<?php echo ($isPdfModeB?'block':'none'); ?>; margin-top:4px;" title="Welche PDF-Datei auf dieser Flaeche abgespielt wird">
+                    <option value="">– PDF wählen –</option>
+                    <?php foreach($monitorPdfFileOptions as $pfo): ?>
+                        <option value="<?php echo htmlspecialchars($pfo); ?>" <?php if($currentPdfFileB === $pfo) echo 'selected'; ?>><?php echo htmlspecialchars($pfo); ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <select name="pdfModeB" style="display:<?php echo ($isPdfModeB?'block':'none'); ?>; margin-top:4px;" title="Wie die PDF auf dem Monitor abgespielt wird">
                     <option value="scroll" <?php if(($s['pdfModeB']??'scroll')==='scroll') echo 'selected'; ?>>↕ Durchlaufender Scroll (Wechselfrequenz = Gesamtdauer)</option>
                     <option value="paged" <?php if(($s['pdfModeB']??'scroll')==='paged') echo 'selected'; ?>>📄 Seitenweise (Wechselfrequenz = Sek./Seite)</option>
                 </select>
@@ -3709,9 +3767,8 @@ function escapeHtmlIm(s){
             <button type="submit" style="margin-top:10px;">Layout Speichern</button>
         </form>
 
-        <?php 
-            $folderA = (strpos($s['type'], 'folder:') === 0) ? substr($s['type'], 7) : null;
-            $folderB = ($s['split'] !== 'none' && strpos($s['typeB'], 'folder:') === 0) ? substr($s['typeB'], 7) : null;
+        <?php
+            $folderB = ($s['split'] === 'none') ? null : $folderB;
             if($folderA) renderFileManager($folderA, $uploadBase, "Inhalt A", $config['folder_hidden_files'][$folderA] ?? [], $config['folder_orientation'][$folderA] ?? null);
             if($folderB && $folderA !== $folderB) renderFileManager($folderB, $uploadBase, "Inhalt B", $config['folder_hidden_files'][$folderB] ?? [], $config['folder_orientation'][$folderB] ?? null);
         ?>
@@ -3814,56 +3871,6 @@ function escapeHtmlIm(s){
     </div>
 
     <div class="card">
-        <h3 style="margin-top:0;">📄 PDF ablegen</h3>
-        <p style="font-size:12px; color:#94a3b8; margin:-6px 0 12px;">Jede Seite wird automatisch als JPG einsortiert - Hochformat-Seiten nach "Hoch", Querformat-Seiten nach "Quer" (feste Ordner, tauchen ganz normal in der Monitor-Inhalts-Auswahl auf).</p>
-        <form method="POST" enctype="multipart/form-data" id="pdfDropForm">
-            <div id="pdfDropZone" style="border:2px dashed #334155; border-radius:8px; padding:26px; text-align:center; cursor:pointer; color:#64748b; font-size:13px; transition:border-color .15s, background .15s;" onclick="document.getElementById('pdfDropInput').click();">
-                📥 PDF hier hineinziehen oder klicken zum Auswählen
-            </div>
-            <input type="file" id="pdfDropInput" name="pdf_files[]" accept="application/pdf" multiple style="display:none;" onchange="this.form.requestSubmit()">
-        </form>
-        <script>
-        (function(){
-            var zone = document.getElementById('pdfDropZone');
-            if (!zone) return;
-            var idleColor = '#334155', idleBg = 'transparent';
-            ['dragenter','dragover'].forEach(function(ev){
-                zone.addEventListener(ev, function(e){ e.preventDefault(); e.stopPropagation(); zone.style.borderColor = '#38bdf8'; zone.style.background = '#0f172a'; });
-            });
-            ['dragleave','drop'].forEach(function(ev){
-                zone.addEventListener(ev, function(e){ e.preventDefault(); e.stopPropagation(); zone.style.borderColor = idleColor; zone.style.background = idleBg; });
-            });
-            zone.addEventListener('drop', function(e){
-                var files = e.dataTransfer && e.dataTransfer.files;
-                if (!files || !files.length) return;
-                var dt = new DataTransfer();
-                for (var i = 0; i < files.length; i++) {
-                    if (/\.pdf$/i.test(files[i].name)) dt.items.add(files[i]);
-                }
-                if (!dt.files.length) {
-                    var orig = zone.textContent;
-                    zone.textContent = '⚠️ Keine PDF-Datei erkannt';
-                    zone.style.borderColor = '#dc2626';
-                    setTimeout(function(){ zone.textContent = orig; zone.style.borderColor = idleColor; }, 2000);
-                    return;
-                }
-                var input = document.getElementById('pdfDropInput');
-                input.files = dt.files;
-                input.form.requestSubmit();
-            });
-        })();
-        </script>
-    </div>
-
-    <div class="card">
-        <h3 style="margin-top:0;">📄 Native PDF-Dateien (unverändert, für Monitor)</h3>
-        <p style="font-size:12px; color:#94a3b8; margin:-6px 0 12px;">Über "📥 PDF hinzufügen" oben in der Kopfzeile mit der Option "Als PDF behalten" abgelegt - unverändert, wird direkt einem Monitor zugewiesen (siehe dortiges "Inhalt A/B"-Auswahlfeld) statt in Bilder umgewandelt zu werden.</p>
-        <?php foreach ($pdfFolders as $pf): ?>
-        <?php renderPdfFileList($pf, $uploadBase); ?>
-        <?php endforeach; ?>
-    </div>
-
-    <div class="card">
         <h3 style="margin-top:0;">Globale Ordner-Verwaltung</h3>
         <form method="POST" style="display:flex; gap:10px; margin-bottom:15px;">
             <input type="text" name="new_folder" placeholder="Neuer Ordner Name" required>
@@ -3893,16 +3900,24 @@ function escapeHtmlIm(s){
             }
             if ($orientationDefaultsChanged) { file_put_contents($configFile, json_encode($config, JSON_PRETTY_PRINT)); }
 
+            // Beide nativen PDF-Ordner immer als feste, eigene Ordner in der Liste anbieten
+            // (auch bevor je eine PDF dort abgelegt wurde) - genau wie die beiden Archiv-Ordner
+            // oben.
+            foreach ($pdfFolders as $pf) {
+                $pfPath = $uploadBase . $pf;
+                if (!is_dir($pfPath)) { @mkdir($pfPath, 0775, true); }
+            }
+            $existingFolderPaths = array_filter(glob($uploadBase . '*'), 'is_dir');
+
             // Alle Ordner ausser den bento-pronto-eigenen Ablagen (die werden ausschliesslich
-            // ueber bento.php verwaltet) und den nativen PDF-Ordnern (eigener Abschnitt weiter
-            // unten, siehe renderPdfFileList()) - die beiden Archiv-Ordner bleiben als ganz normale
-            // Ordner in dieser einen Liste erreichbar (u.a. fuer endgueltiges Loeschen), tauchen
-            // aber zusaetzlich - ohne selbst eine eigene zweite Spalte zu sein - als rechte
-            // Spalte im Akkordion jedes dazu passenden Ordners auf (siehe renderArchivePairPanel()).
-            // Aktive Ordner zuerst, danach alphabetisch.
-            $normalFolderPaths = array_values(array_filter($existingFolderPaths, function ($p) use ($bentoManagedFolders, $pdfFolders) {
+            // ueber bento.php verwaltet) - die Archiv- UND die nativen PDF-Ordner bleiben als
+            // ganz normale Ordner in dieser einen Liste erreichbar (u.a. fuer endgueltiges
+            // Loeschen), die Archiv-Ordner tauchen zusaetzlich - ohne selbst eine eigene zweite
+            // Spalte zu sein - als rechte Spalte im Akkordion jedes dazu passenden Ordners auf
+            // (siehe renderArchivePairPanel()). Aktive Ordner zuerst, danach alphabetisch.
+            $normalFolderPaths = array_values(array_filter($existingFolderPaths, function ($p) use ($bentoManagedFolders) {
                 $n = basename($p);
-                return !in_array($n, $bentoManagedFolders, true) && !in_array($n, $pdfFolders, true);
+                return !in_array($n, $bentoManagedFolders, true);
             }));
             usort($normalFolderPaths, function ($a, $b) use ($config) {
                 $an = basename($a); $bn = basename($b);
@@ -3918,20 +3933,24 @@ function escapeHtmlIm(s){
         <?php foreach ($normalFolderPaths as $folderPath):
             $folderName = basename($folderPath);
             $isArchiveFolderRow = in_array($folderName, $archiveFolders, true);
+            $isPdfFolderRow = in_array($folderName, $pdfFolders, true);
             $active = isFolderActive($folderName, $config);
             $fileCount = count(array_diff(scandir($folderPath), ['.', '..']));
             $safeId = 'folder_' . md5($folderName);
             $folderOrient = $config['folder_orientation'][$folderName] ?? null;
             if ($isArchiveFolderRow) {
                 $orientTag = $folderName === 'Archiv Hoch' ? ' ⇕' : ' ⇔';
+            } elseif ($isPdfFolderRow) {
+                $orientTag = $folderName === 'PDF Hoch' ? ' ⇕' : ' ⇔';
             } else {
                 $orientTag = $folderOrient === 'hoch' ? ' ⇕' : ($folderOrient === 'quer' ? ' ⇔' : '');
             }
-            // Ist eine Ausrichtung bekannt (und ist dies selbst kein Archiv-Ordner), bekommt das
-            // Akkordion beim Aufklappen eine zweite Spalte mit dem dazu passenden Archiv-Ordner
-            // (siehe renderArchivePairPanel()) - so kann direkt zwischen Archiv und aktuell
-            // genutztem Ordner verschoben werden, ohne extra dorthin navigieren zu muessen.
-            $pairedArchiveFolder = $isArchiveFolderRow ? null : ($folderOrient === 'hoch' ? 'Archiv Hoch' : ($folderOrient === 'quer' ? 'Archiv Quer' : null));
+            // Ist eine Ausrichtung bekannt (und ist dies selbst weder ein Archiv- noch ein
+            // PDF-Ordner), bekommt das Akkordion beim Aufklappen eine zweite Spalte mit dem
+            // dazu passenden Archiv-Ordner (siehe renderArchivePairPanel()) - so kann direkt
+            // zwischen Archiv und aktuell genutztem Ordner verschoben werden, ohne extra
+            // dorthin navigieren zu muessen.
+            $pairedArchiveFolder = ($isArchiveFolderRow || $isPdfFolderRow) ? null : ($folderOrient === 'hoch' ? 'Archiv Hoch' : ($folderOrient === 'quer' ? 'Archiv Quer' : null));
         ?>
         <div style="margin-bottom:10px;">
             <button class="accordion-btn" type="button" onclick="toggleGenericAccordion('<?php echo $safeId; ?>', this)" style="<?php echo $active ? 'border-color:#22c55e; color:#22c55e;' : ''; ?>">
@@ -3939,7 +3958,9 @@ function escapeHtmlIm(s){
                 <span class="acc-icon">➕ Aufklappen</span>
             </button>
             <div id="<?php echo $safeId; ?>" class="accordion-content">
-                <?php if ($pairedArchiveFolder !== null): ?>
+                <?php if ($isPdfFolderRow): ?>
+                    <?php renderPdfFileList($folderName, $uploadBase); ?>
+                <?php elseif ($pairedArchiveFolder !== null): ?>
                 <div class="im-folder-pair" style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; align-items:start;">
                     <div>
                         <?php renderFileManager($folderName, $uploadBase, 'Ordnerinhalt', $config['folder_hidden_files'][$folderName] ?? [], $folderOrient); ?>
@@ -3951,7 +3972,7 @@ function escapeHtmlIm(s){
                 <?php else: ?>
                     <?php renderFileManager($folderName, $uploadBase, $isArchiveFolderRow ? 'Archiv' : 'Ordnerinhalt', $config['folder_hidden_files'][$folderName] ?? [], $folderOrient); ?>
                 <?php endif; ?>
-                <?php if (!$isArchiveFolderRow): ?>
+                <?php if (!$isArchiveFolderRow && !$isPdfFolderRow): ?>
                 <form method="POST" onsubmit="return confirm('Ordner &quot;<?php echo htmlspecialchars(addslashes($folderName)); ?>&quot; inkl. aller Dateien wirklich löschen?');" style="margin-top:10px;">
                     <input type="hidden" name="del_folder" value="<?php echo htmlspecialchars($folderName); ?>">
                     <button type="submit" style="background:#7f1d1d; width:auto; padding:6px 14px;">🗑 Ordner löschen</button>

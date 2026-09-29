@@ -16,34 +16,52 @@ die Clients, `nextcloud_proxy.php` erlaubt Nextcloud-Freigabeordner als Inhaltsq
    (bewusst nicht über die Weboberfläche änderbar).
 3. Raspberry Pis über den im Dashboard angezeigten Installationsbefehl anbinden.
 
-## PDF ablegen
+## PDF/Bild ablegen
 
-Ganz oben in der Kopfzeile steht "📥 PDF hinzufügen" (Drag&Drop oder Klick zum Auswählen -
-nur `.pdf`, `.doc`/`.docx` werden aktuell abgelehnt). Für jede abgelegte Datei öffnet sich
-ein Dialog mit zwei Optionen:
+Ganz oben in der Kopfzeile steht "📥 Datei hinzufügen" (Drag&Drop oder Klick zum Auswählen -
+PDF, JPG, PNG, GIF und WEBP werden akzeptiert, `.doc`/`.docx` aktuell nicht). Jede abgelegte
+Datei wird sofort automatisch einsortiert, ganz ohne Rückfrage:
 
-- **🖼️ Als Bilder umwandeln** - dieselbe Umwandlung wie bisher: jede Seite wird serverseitig
-  einzeln als JPG gerendert und landet automatisch - abhängig von der erkannten Ausrichtung
-  dieser einen Seite - in einem von zwei festen, ganz normalen Ordnern ("Hoch" bzw. "Quer",
-  tauchen wie jeder andere Ordner in der Monitor-Inhalts-Auswahl auf). Mehrseitige PDFs
-  bekommen fortlaufend nummerierte Dateinamen, damit die Wiedergabereihenfolge (Sortierung
-  wie in `view.php`) erhalten bleibt, auch wenn sich die Seiten auf beide Ordner verteilen.
-- **📄 Als PDF behalten (für Monitor)** - die Datei bleibt unverändert (kein Rendern zu
-  Bildern) und landet, je nach Ausrichtung der ersten Seite, in "PDF Hoch" bzw. "PDF Quer"
-  (eigener Abschnitt "📄 Native PDF-Dateien" im Dashboard, unabhängig von der normalen
-  Ordner-Verwaltung). Von dort lässt sie sich bei jedem Monitor direkt im "Inhalt A/B"-Feld
-  als eigene Auswahl ("📄 PDF: …") zuweisen - unabhängig von einem Bilder-Ordner. Zwei
-  Wiedergabe-Modi stehen je Monitor zur Wahl: **Scroll** (die PDF läuft einmal komplett
-  von oben nach unten durch, Gesamtdauer = die Wechselfrequenz des Monitors, springt danach
-  wieder an den Anfang) oder **Seitenweise** (blättert alle X Sekunden - die Wechselfrequenz -
-  eine Seite weiter und beginnt nach der letzten Seite wieder bei Seite 1). Beide Modi nutzen
-  den nativen Browser-PDF-Viewer (kein eigenes Rendering, funktioniert daher auch ohne
-  Internetzugang auf dem Pi).
+- Eine **PDF** landet unverändert (kein Rendern zu Bildern), je nach Ausrichtung der ersten
+  Seite, in "PDF Hoch" bzw. "PDF Quer".
+- Ein **Bild** (JPG/PNG/GIF/WEBP) landet, je nach tatsächlichen Pixel-Maßen, in "Hoch" bzw.
+  "Quer".
 
-Beide Wege nutzen dieselbe Engine-Erkennung: bevorzugt die PHP-Imagick-Extension (kommt ohne
-`exec()`/`shell_exec()` aus), sonst ersatzweise die Kommandozeilen-Tools `pdftoppm`
-(poppler-utils) oder `gs` (Ghostscript) - ist keines davon verfügbar, erscheint eine klare
-Fehlermeldung statt eines stillen Fehlschlags. Der "seitenweise"-Modus ermittelt die
+Mehrere Dateien gemischten Typs lassen sich auf einmal hineinziehen - jede wird einzeln
+nacheinander hochgeladen und landet automatisch am richtigen Ort.
+
+"PDF Hoch"/"PDF Quer" erscheinen wie jeder andere Medien-Ordner unter "Globale
+Ordner-Verwaltung" (inkl. eigenem Formular zum manuellen Hochladen einzelner Dateien);
+anders als Bilder-Ordner haben sie aber keine Ausrichtungs-Zuordnung und keinen
+"🗑 Ordner löschen"-Knopf, da ihre Ausrichtung schon über den Ordnernamen feststeht.
+
+Bei jedem Monitor lässt sich im "Inhalt A/B"-Dropdown ein einzelner Eintrag "📄 PDF"
+auswählen (statt einer Liste einzelner Dateien) - darunter erscheinen dann, genau wie bei
+"Webseite (URL)" das URL-Feld, zwei weitere Auswahlfelder: welche PDF-Datei abgespielt
+werden soll, und der Wiedergabe-Modus. Sowohl das Ordner- als auch das PDF-Datei-Dropdown
+zeigen dabei nur Einträge, deren Ausrichtung zur Ausrichtung dieses Monitors passt (siehe
+"Medien-Ordner: Ausrichtung & Archiv" unten) - Archiv-Ordner erscheinen dort nie. Eine bereits
+gespeicherte Auswahl bleibt auch bei einem nachträglichen Ausrichtungs-Mismatch (z.B. nach
+Drehen des Monitors) sichtbar, damit ein bloßes erneutes Speichern den Inhalt nicht
+stillschweigend ändert.
+
+Zwei Wiedergabe-Modi stehen je Monitor zur Wahl: **Scroll** (die PDF läuft einmal komplett
+von oben nach unten durch, Gesamtdauer = die Wechselfrequenz des Monitors, springt danach
+wieder an den Anfang - bei einer einseitigen PDF wird die Seite stattdessen ruhig/statisch
+angezeigt, da es nichts zu scrollen gibt) oder **Seitenweise** (blättert alle X Sekunden -
+die Wechselfrequenz - eine Seite weiter und beginnt nach der letzten Seite wieder bei
+Seite 1). Beide Modi nutzen den nativen Browser-PDF-Viewer (kein eigenes Rendering,
+funktioniert daher auch ohne Internetzugang auf dem Pi).
+
+Die Umwandlung von PDF-Seiten in einzelne JPGs (aus einer früheren Version dieser Funktion)
+ist serverseitig weiterhin vorhanden, aktuell aber in keinem Dropdown/Formular der
+Oberfläche mehr aufrufbar.
+
+Die Ausrichtungs-Erkennung sowie die native PDF-Anzeige nutzen dieselbe Engine-Erkennung:
+bevorzugt die PHP-Imagick-Extension (kommt ohne `exec()`/`shell_exec()` aus), sonst
+ersatzweise die Kommandozeilen-Tools `pdftoppm` (poppler-utils) oder `gs` (Ghostscript) - ist
+keines davon verfügbar, erscheint eine klare Fehlermeldung statt eines stillen Fehlschlags.
+Der "seitenweise"-Modus (und die Scroll-Erkennung einer einseitigen PDF) ermittelt die
 Gesamtseitenzahl zusätzlich über `pdfinfo` (falls vorhanden) oder einen kleinen
 `gs`-Seitenzähler.
 

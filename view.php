@@ -43,6 +43,13 @@ function countPdfPages($path) {
 }
 
 function getPlaylist($type, $content, $uploadBase, $hiddenFiles = []) {
+    // "pdf" + $content ist das aktuelle Format (siehe infomaster.php); "pdf:<Pfad>" ist die
+    // alte Kodierung (vor der Auslagerung in ein eigenes Datei-Dropdown) und wird nur noch
+    // zum Lesen bereits gespeicherter Konfigurationen unterstuetzt.
+    if ($type === 'pdf') {
+        $path = $uploadBase . $content;
+        return is_file($path) ? [$path] : [];
+    }
     if ($type && strpos($type, 'pdf:') === 0) {
         $path = $uploadBase . substr($type, 4);
         return is_file($path) ? [$path] : [];
@@ -83,8 +90,14 @@ $duration = (int)($s['duration'] ?? 10);
 // tatsaechlich gebraucht (paged + type ist eine PDF), sonst unnoetiger Arbeitsaufwand.
 $pdfModeA = ($s['pdfModeA'] ?? 'scroll') === 'paged' ? 'paged' : 'scroll';
 $pdfModeB = ($s['pdfModeB'] ?? 'scroll') === 'paged' ? 'paged' : 'scroll';
-$pdfPagesA = ($pdfModeA === 'paged' && !empty($playlistA) && strpos($s['type'] ?? '', 'pdf:') === 0) ? countPdfPages($playlistA[0]) : 1;
-$pdfPagesB = ($pdfModeB === 'paged' && !empty($playlistB) && strpos($s['typeB'] ?? '', 'pdf:') === 0) ? countPdfPages($playlistB[0]) : 1;
+$isPdfTypeA = ($s['type'] ?? '') === 'pdf' || strpos($s['type'] ?? '', 'pdf:') === 0;
+$isPdfTypeB = ($s['typeB'] ?? '') === 'pdf' || strpos($s['typeB'] ?? '', 'pdf:') === 0;
+// Seitenzahl wird unabhaengig vom Abspielmodus ermittelt: "paged" braucht sie, um am Ende
+// wieder bei Seite 1 anzufangen, "scroll" braucht sie, um bei einer einseitigen PDF die
+// Scroll-Animation zu unterdruecken (siehe renderPdfScroll) statt sinnlos "auf der Stelle"
+// zu laufen.
+$pdfPagesA = (!empty($playlistA) && $isPdfTypeA) ? countPdfPages($playlistA[0]) : 1;
+$pdfPagesB = (!empty($playlistB) && $isPdfTypeB) ? countPdfPages($playlistB[0]) : 1;
 // Pass nextcloud URLs to JS for async fetching
 $ncUrlA = ($s && $s['type'] === 'nextcloud') ? ($s['content'] ?? '') : '';
 $ncUrlB = ($s && ($s['typeB'] ?? '') === 'nextcloud') ? ($s['contentB'] ?? '') : '';
@@ -223,7 +236,14 @@ $ncUrlB = ($s && ($s['typeB'] ?? '') === 'nextcloud') ? ($s['contentB'] ?? '') :
     // untereinander im "FitW"-Fortlaufmodus) plus einer CSS-Transform-Animation, die das
     // iframe selbst nach oben schiebt. Kein PDF.js/eigenes Rendering noetig, daher auch ohne
     // Internetzugang auf dem Pi lauffaehig.
-    function renderPdfScroll(pane, file, seconds) {
+    function renderPdfScroll(pane, file, seconds, numPages) {
+        // Bei einer einseitigen PDF gibt es nichts zum Durchscrollen - die Animation wuerde nur
+        // sinnlos "auf der Stelle stehen" bzw. am Ende der Seite ins Leere fahren. Dann statt
+        // dessen die eine Seite einfach ruhig/statisch anzeigen (wie renderPdfPage).
+        if (numPages === 1) {
+            pane.innerHTML = `<iframe src="${file}#toolbar=0&navpanes=0&scrollbar=0&view=FitW"></iframe>`;
+            return;
+        }
         // Scroll-Distanz: 100vh pro 5 Sekunden Dauer
         const scrollDist = Math.max(100, (seconds / 5) * 100);
         pane.innerHTML = `
@@ -257,13 +277,13 @@ $ncUrlB = ($s && ($s['typeB'] ?? '') === 'nextcloud') ? ($s['contentB'] ?? '') :
             if(!pane.querySelector('iframe') || pane.querySelector('iframe').src !== url) {
                 pane.innerHTML = `<iframe src="${url}"></iframe>`;
             }
-        } else if (type.startsWith('pdf:')) {
+        } else if (type === 'pdf' || type.startsWith('pdf:')) {
             if (playlist.length > 0) {
                 const file = playlist[0];
                 if (pdfMode === 'paged') {
                     renderPdfPage(pane, file, (index % Math.max(1, numPages)) + 1);
                 } else {
-                    renderPdfScroll(pane, file, durationSec);
+                    renderPdfScroll(pane, file, durationSec, numPages);
                 }
             } else {
                 pane.innerHTML = '<div style="color:#222;font-size:12px;padding:20px;">Datei nicht gefunden</div>';
