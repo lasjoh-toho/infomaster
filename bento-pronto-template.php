@@ -171,6 +171,39 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && (isset($_POST['bento_sav
         exit;
     }
 
+    // EyeCandy Studio (eigenstaendige eyecandy.html, siehe infomaster.php's Topbar-Link) hat
+    // keinen eigenen Server - ihr "Im Infomaster speichern"-Knopf schreibt hierueber direkt
+    // in denselben Ordner wie bearbeitbare Bento-Decks (media/bentos/), aber OHNE das
+    // bento-host-config-Meta-Tag (das ist bento-eigenes Format, wuerde beim naechsten
+    // Praesentieren nur verwirren) und ohne in bentoLoadDeckOrder()'s Liste zu landen (die
+    // "shrink"/"split"-Knoepfe der Bento-Praesentationsliste erwarten Bento's eigene
+    // Karten-Struktur, nicht die von EyeCandy erzeugte). Zusaetzlich zur ohnehin noetigen
+    // Login-Session ein eigenes Token, das infomaster.php beim ersten Aufruf einmalig
+    // generiert und dem Editor-Link anhaengt - verhindert, dass eine x-beliebige, von aussen
+    // erreichbare Kopie von eyecandy.html hier unbemerkt Dateien ablegen koennte.
+    if (($_POST['bento_kind'] ?? '') === 'eyecandy') {
+        $eyecandyCfg = file_exists('config.json') ? json_decode(file_get_contents('config.json'), true) : null;
+        $expectedToken = is_array($eyecandyCfg) ? (string)($eyecandyCfg['eyecandy_token'] ?? '') : '';
+        $providedToken = (string)($_POST['eyecandy_token'] ?? '');
+        if ($expectedToken === '' || !hash_equals($expectedToken, $providedToken)) {
+            http_response_code(403);
+            echo json_encode(['ok' => false, 'error' => 'Ungültiges oder fehlendes Token - EyeCandy Studio bitte erneut über den Link im Infomaster-Dashboard öffnen.']);
+            exit;
+        }
+        $dir = $uploadBase . 'bentos';
+        if (!is_dir($dir)) { @mkdir($dir, 0775, true); }
+        $rawName = bentoSafeBaseName((string)($_POST['bento_filename'] ?? 'eyecandy'));
+        $filename = 'eyecandy_' . $rawName . '_' . date('Ymd_His') . '.html';
+        $path = $dir . '/' . $filename;
+        if (!is_dir($dir) || file_put_contents($path, $html) === false) {
+            http_response_code(500);
+            echo json_encode(['ok' => false, 'error' => 'Konnte Datei nicht auf dem Server speichern.']);
+            exit;
+        }
+        echo json_encode(['ok' => true, 'url' => bentoServerUrlFor($dir . '/' . $filename), 'filename' => $filename]);
+        exit;
+    }
+
     $api = $_GET['api'] ?? '';
     if ($api === 'save_deck') {
         // Ueberschreiben einer BEREITS bestehenden bearbeitbaren Praesentation

@@ -1,0 +1,2851 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EyeCandy Studio — Presentation Editor</title>
+  <meta name="description" content="Professioneller Präsentationseditor mit Spotlight-Effekt, Grainy Gradients, Wegpunkten und HTML-Export.">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;600;700&family=Syne:wght@700;800&family=Montserrat:wght@400;600;800;900&family=Playfair+Display:ital,wght@0,600;0,800;1,400&display=swap" rel="stylesheet">
+  <style id="dynamic-google-fonts"></style>
+  <style>
+    :root {
+      --accent: #6366f1;
+      --accent-glow: rgba(99,102,241,0.25);
+      --surface: rgba(15,23,42,0.92);
+      --border: rgba(255,255,255,0.08);
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; overflow: hidden; font-family: 'Inter', sans-serif; background: #030712; color: #f1f5f9; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 99px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); }
+
+    /* ============ LAYOUT ============ */
+    #app { display: flex; flex-direction: column; width: 100%; height: 100%; position: relative; }
+
+    /* Presentation canvas fills everything */
+    #stage-wrap { flex: 1; position: relative; overflow: hidden; }
+    #presentation-stage {
+      width: 100%; height: 100%; position: relative; overflow: hidden;
+      transition: background 0.6s ease;
+    }
+    #slide-content { position: absolute; inset: 0; z-index: 10; }
+    #spotlight-canvas, #glitter-canvas {
+      pointer-events: none; position: absolute; inset: 0; width: 100%; height: 100%;
+    }
+    #glitter-canvas { z-index: 15; }
+    #spotlight-canvas { z-index: 25; }
+
+    /* ============ TOP TOOLBAR ============ */
+    #top-toolbar {
+      position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+      z-index: 60; display: flex; align-items: center; gap: 10px;
+      background: rgba(9,11,20,0.88); backdrop-filter: blur(24px);
+      border: 1px solid var(--border); border-radius: 18px;
+      padding: 6px 14px; box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+      transition: opacity 0.35s ease, transform 0.35s ease;
+    }
+    #top-toolbar.hidden-ui { opacity: 0; pointer-events: none; transform: translateX(-50%) translateY(-16px); }
+
+    /* ============ SIDEBAR ============ */
+    #editor-sidebar {
+      position: absolute; top: 14px; right: 14px; bottom: 14px; width: 340px;
+      background: rgba(9,11,20,0.94); backdrop-filter: blur(28px);
+      border: 1px solid var(--border); border-radius: 20px;
+      display: flex; flex-direction: column; z-index: 50;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+      transition: opacity 0.35s ease, transform 0.35s ease;
+    }
+    #editor-sidebar.hidden-ui { opacity: 0; pointer-events: none; transform: translateX(20px); }
+
+    /* Tab header */
+    .tab-header {
+      display: flex; padding: 6px; gap: 4px;
+      border-bottom: 1px solid var(--border); background: rgba(0,0,0,0.25);
+      border-radius: 20px 20px 0 0; flex-shrink: 0; flex-wrap: wrap;
+    }
+    .tab-btn {
+      flex: 1; min-width: 50px; padding: 6px 4px; border-radius: 10px; font-size: 10px; font-weight: 500;
+      text-align: center; cursor: pointer; border: none; background: transparent;
+      color: rgba(148,163,184,0.8); transition: all 0.2s; white-space: nowrap;
+    }
+    .tab-btn.active {
+      background: rgba(99,102,241,0.18); color: #a5b4fc;
+      border: 1px solid rgba(99,102,241,0.3); font-weight: 600;
+    }
+    .tab-btn:not(.active):hover { background: rgba(255,255,255,0.05); color: #e2e8f0; }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* Sidebar scroll area */
+    #sidebar-content { flex: 1; overflow-y: auto; padding: 14px; }
+
+    /* ============ CONTROL STYLES ============ */
+    .ctrl-label { display: block; font-size: 10px; color: rgba(148,163,184,0.8); margin-bottom: 5px; font-weight: 500; letter-spacing: 0.03em; }
+    .ctrl-section { background: rgba(255,255,255,0.035); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 10px; }
+    .ctrl-section-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: rgba(148,163,184,0.65); margin-bottom: 10px; }
+    input[type="range"] { width: 100%; accent-color: #6366f1; }
+    input[type="color"] { width: 100%; height: 30px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: rgba(255,255,255,0.04); padding: 2px; }
+    input[type="number"], input[type="text"], select, textarea {
+      width: 100%; background: rgba(255,255,255,0.04); border: 1px solid var(--border);
+      border-radius: 8px; padding: 6px 10px; font-size: 11px; color: #e2e8f0;
+      outline: none; transition: border-color 0.2s;
+    }
+    input[type="number"]:focus, input[type="text"]:focus, select:focus { border-color: rgba(99,102,241,0.5); }
+    select option { background: #0f172a; }
+    .btn-sm {
+      display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px;
+      border-radius: 9px; font-size: 11px; font-weight: 500; cursor: pointer;
+      border: 1px solid var(--border); background: rgba(255,255,255,0.05);
+      color: #e2e8f0; transition: all 0.2s; white-space: nowrap;
+    }
+    .btn-sm:hover { background: rgba(255,255,255,0.09); }
+    .btn-sm.accent { background: rgba(99,102,241,0.2); border-color: rgba(99,102,241,0.35); color: #a5b4fc; }
+    .btn-sm.accent:hover { background: rgba(99,102,241,0.35); }
+    .btn-sm.danger { background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.25); color: #fca5a5; }
+    .btn-sm.danger:hover { background: rgba(239,68,68,0.25); }
+    .btn-sm.success { background: rgba(16,185,129,0.15); border-color: rgba(16,185,129,0.3); color: #6ee7b7; }
+    .btn-sm.success:hover { background: rgba(16,185,129,0.28); }
+
+    /* ============ SLIDE ELEMENTS ============ */
+    .slide-el {
+      position: absolute; cursor: move; user-select: none;
+    }
+    .slide-el.selected-el {
+      outline: 2px dashed rgba(99,102,241,0.7);
+      outline-offset: 5px;
+      box-shadow: 0 0 18px rgba(99,102,241,0.2);
+    }
+    .slide-el .inline-txt[contenteditable="true"] {
+      outline: 2px solid #38bdf8 !important;
+      background: rgba(15,23,42,0.7);
+      border-radius: 6px; padding: 3px 8px; color: #fff !important;
+    }
+    .slide-el .drag-handle {
+      position: absolute; top: -14px; left: 50%; transform: translateX(-50%);
+      width: 20px; height: 8px; border-radius: 4px; background: rgba(99,102,241,0.6);
+      cursor: grab; display: none;
+    }
+    .slide-el.selected-el .drag-handle { display: block; }
+
+    /* Glass card template styles */
+    .glass-card {
+      background: rgba(15,23,42,0.55); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 20px 50px rgba(0,0,0,0.4);
+      border-radius: 16px; padding: 32px;
+    }
+
+    /* ============ SLIDE THUMBNAIL ============ */
+    .slide-thumb {
+      position: relative; aspect-ratio: 16/9; border-radius: 10px; overflow: hidden;
+      cursor: pointer; border: 2px solid rgba(255,255,255,0.07);
+      transition: border-color 0.2s; margin-bottom: 8px;
+    }
+    .slide-thumb.active-thumb { border-color: #6366f1; box-shadow: 0 0 12px rgba(99,102,241,0.35); }
+    .slide-thumb:hover:not(.active-thumb) { border-color: rgba(255,255,255,0.18); }
+    .slide-thumb canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+    /* ============ WAYPOINT ITEM ============ */
+    .wp-item {
+      display: flex; align-items: center; gap: 6px; padding: 7px 10px;
+      background: rgba(255,255,255,0.035); border: 1px solid var(--border); border-radius: 10px;
+      margin-bottom: 6px; cursor: pointer; transition: border-color 0.2s;
+    }
+    .wp-item.selected-wp { border-color: rgba(99,102,241,0.5); background: rgba(99,102,241,0.08); }
+    .wp-dot { width: 10px; height: 10px; border-radius: 50%; background: #6366f1; flex-shrink: 0; }
+
+    /* ============ DRAGGABLE WAYPOINT MARKERS (on stage) ============ */
+    #waypoints-overlay { position: absolute; inset: 0; z-index: 30; pointer-events: none; }
+    .wp-marker {
+      position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px;
+      border-radius: 50%; border: 2px solid #fff; cursor: grab;
+      pointer-events: auto; box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 9px; font-weight: 700; color: #fff; user-select: none;
+      transition: transform 0.1s;
+    }
+    .wp-marker:hover { transform: scale(1.15); }
+    .wp-marker.dragging { cursor: grabbing; transform: scale(1.2); z-index: 2; }
+    .wp-marker.selected-marker { outline: 2px solid #fff; outline-offset: 2px; }
+
+    /* ============ COLOR STOP ITEM ============ */
+    .cs-item {
+      display: flex; align-items: center; gap: 7px; padding: 7px 10px;
+      background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 10px;
+      margin-bottom: 6px; cursor: pointer; transition: border-color 0.2s;
+    }
+    .cs-item.selected-cs { border-color: rgba(99,102,241,0.5); background: rgba(99,102,241,0.06); }
+    .cs-swatch { width: 20px; height: 20px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); flex-shrink: 0; }
+
+    /* Gradient preview bar */
+    #gradient-preview-bar { height: 28px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 12px; }
+
+    /* ============ PRESENTATION FULLSCREEN ============ */
+    #pres-overlay {
+      position: fixed; inset: 0; z-index: 9000; background: #000;
+      display: flex; align-items: center; justify-content: center;
+      overflow: hidden;
+    }
+    #pres-overlay.hidden-ui { display: none; }
+    #pres-stage-full { position: absolute; inset: 0; overflow: hidden; }
+    #pres-content-full { position: absolute; inset: 0; z-index: 10; }
+    #pres-spotlight-canvas, #pres-glitter-canvas {
+      pointer-events: none; position: absolute; inset: 0; width: 100%; height: 100%;
+    }
+    #pres-glitter-canvas { z-index: 15; }
+    #pres-spotlight-canvas { z-index: 25; }
+
+    /* Subtle nav hint in presentation - eingeblendet per JS NUR bei tatsaechlicher
+       Mausbewegung ueber der Folie (siehe setupPresMouseIdle()), nicht per :hover (das
+       wuerde permanent sichtbar bleiben, solange der Zeiger nur irgendwo stillsteht). */
+    #pres-nav {
+      position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
+      z-index: 30; display: flex; align-items: center; gap: 8px;
+      opacity: 0; transition: opacity 0.4s; pointer-events: none;
+    }
+    #pres-overlay.nav-visible #pres-nav { opacity: 1; pointer-events: auto; }
+    #pres-counter {
+      position: absolute; top: 14px; right: 20px; z-index: 30;
+      font-size: 11px; color: rgba(255,255,255,0.35); font-variant-numeric: tabular-nums;
+      opacity: 0; transition: opacity 0.4s;
+    }
+    #pres-overlay.nav-visible #pres-counter { opacity: 1; }
+    #pres-overlay { cursor: none; }
+    #pres-overlay.nav-visible { cursor: default; }
+
+    /* ============ MISC ============ */
+    .badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 99px; font-size: 10px; font-weight: 600; }
+    .badge-indigo { background: rgba(99,102,241,0.15); color: #a5b4fc; border: 1px solid rgba(99,102,241,0.25); }
+    .badge-emerald { background: rgba(16,185,129,0.12); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.25); }
+    .sep { height: 1px; background: var(--border); margin: 12px 0; }
+
+    /* Preset swatch btn */
+    .preset-btn {
+      border-radius: 10px; overflow: hidden; cursor: pointer; border: 2px solid transparent;
+      transition: all 0.2s; display: flex; flex-direction: column; gap: 0;
+    }
+    .preset-btn:hover { border-color: rgba(99,102,241,0.4); transform: scale(1.02); }
+    .preset-bar { height: 20px; width: 100%; }
+    .preset-label { background: rgba(0,0,0,0.5); padding: 3px 6px; font-size: 9px; font-weight: 600; color: rgba(255,255,255,0.7); text-align: center; }
+
+    /* Font catalog */
+    .font-catalog-item {
+      display: flex; align-items: center; justify-content: space-between; padding: 7px 10px;
+      background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 6px;
+    }
+    details > summary { list-style: none; cursor: pointer; }
+    details > summary::-webkit-details-marker { display: none; }
+
+    /* ============ LAYER LIST (Elemente-Tab) ============ */
+    .layer-item {
+      display: flex; align-items: center; gap: 6px; padding: 6px 8px;
+      background: rgba(255,255,255,0.035); border: 1px solid var(--border); border-radius: 8px;
+      margin-bottom: 4px; cursor: pointer; transition: border-color 0.2s;
+    }
+    .layer-item.selected-layer { border-color: rgba(99,102,241,0.6); background: rgba(99,102,241,0.1); }
+    .layer-item .layer-label { flex: 1; min-width: 0; font-size: 11px; color: #e2e8f0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .layer-item .layer-order-btn { width: 20px; height: 20px; padding: 0; font-size: 10px; flex-shrink: 0; }
+  </style>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ════════════════════ TOP TOOLBAR ════════════════════ -->
+  <header id="top-toolbar" class="hidden-ui">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <div style="width:28px;height:28px;border-radius:10px;background:linear-gradient(135deg,#6366f1,#8b5cf6);display:flex;align-items:center;justify-content:center;">
+        <i data-lucide="sparkles" style="width:14px;height:14px;color:#fff;"></i>
+      </div>
+      <span style="font-size:12px;font-weight:700;background:linear-gradient(to right,#a5b4fc,#e879f9);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">EyeCandy Studio</span>
+      <span id="presentation-status" class="badge badge-emerald">Editor</span>
+    </div>
+
+    <!-- Slide Controls -->
+    <div style="display:flex;align-items:center;gap:6px;background:rgba(0,0,0,0.3);padding:4px;border-radius:12px;border:1px solid var(--border);">
+      <button onclick="App.prevSlide()" class="btn-sm" style="padding:4px 8px;border-radius:7px;" title="Vorherige Folie">
+        <i data-lucide="chevron-left" style="width:14px;height:14px;"></i>
+      </button>
+      <span id="slide-indicator" style="font-size:11px;font-variant-numeric:tabular-nums;min-width:70px;text-align:center;color:#94a3b8;">Folie 1 / 1</span>
+      <button onclick="App.nextSlide()" class="btn-sm" style="padding:4px 8px;border-radius:7px;" title="Nächste Folie">
+        <i data-lucide="chevron-right" style="width:14px;height:14px;"></i>
+      </button>
+      <div style="width:1px;height:20px;background:var(--border);margin:0 2px;"></div>
+      <button id="btn-toggle-play" onclick="App.toggleAutoplay()" class="btn-sm accent" style="font-size:10px;">
+        <i id="play-icon" data-lucide="play" style="width:12px;height:12px;"></i>
+        <span id="play-text">Auto</span>
+      </button>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:6px;">
+      <button onclick="App.startPresentation()" class="btn-sm success" title="Präsentation starten (Fullscreen)">
+        <i data-lucide="monitor-play" style="width:13px;height:13px;"></i> Präsentieren
+      </button>
+      <button onclick="App.confirmReset()" class="btn-sm danger" title="Zurücksetzen">
+        <i data-lucide="rotate-ccw" style="width:12px;height:12px;"></i>
+      </button>
+      <button onclick="App.toggleEditor()" class="btn-sm" id="btn-toggle-mode" title="Editor ein-/ausblenden (ESC)">
+        <i id="mode-icon" data-lucide="edit-3" style="width:12px;height:12px;"></i>
+        <span id="mode-label">Editor</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ════════════════════ MAIN STAGE ════════════════════ -->
+  <div id="stage-wrap">
+    <div id="presentation-stage">
+      <div id="slide-content"></div>
+      <canvas id="spotlight-canvas"></canvas>
+      <canvas id="glitter-canvas"></canvas>
+      <div id="waypoints-overlay"></div>
+    </div>
+
+    <!-- ════════════════════ EDITOR SIDEBAR ════════════════════ -->
+    <aside id="editor-sidebar" class="hidden-ui">
+
+      <!-- Tab Header -->
+      <div class="tab-header">
+        <button class="tab-btn active" data-tab="slides" onclick="App.setTab('slides')">Folien</button>
+        <button class="tab-btn" data-tab="elements" onclick="App.setTab('elements')">Elemente</button>
+        <button class="tab-btn" data-tab="background" onclick="App.setTab('background')">Hintergrund</button>
+        <button class="tab-btn" data-tab="spotlight" onclick="App.setTab('spotlight')">Spotlight</button>
+        <button class="tab-btn" data-tab="fonts" onclick="App.setTab('fonts')">Fonts</button>
+      </div>
+
+      <!-- Scrollable content -->
+      <div id="sidebar-content">
+
+        <!-- ===== TAB: SLIDES ===== -->
+        <div class="tab-panel active" id="tab-slides">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <span class="ctrl-section-title" style="margin:0;">Folien-Verwaltung</span>
+            <div style="display:flex;gap:5px;">
+              <button onclick="App.duplicateSlide()" class="btn-sm" title="Folie duplizieren">
+                <i data-lucide="copy" style="width:11px;height:11px;"></i>
+              </button>
+              <button onclick="App.addSlide()" class="btn-sm accent" title="Neue Folie">
+                <i data-lucide="plus" style="width:11px;height:11px;"></i> Neu
+              </button>
+            </div>
+          </div>
+          <div id="slides-list" style="margin-bottom:12px;"></div>
+
+          <div class="ctrl-section">
+            <div class="ctrl-section-title">Folie-Einstellungen</div>
+            <label class="ctrl-label">Anzeigedauer (Sekunden)</label>
+            <input type="number" id="slide-duration-input" min="1" max="120" value="6" oninput="App.updateSlideDuration(this.value)">
+            <label class="ctrl-label" style="margin-top:8px;">Übergang zwischen Folien</label>
+            <select id="transition-mode-select" onchange="App.setTransitionMode(this.value)">
+              <option value="slide">↔ Gleiten (beide Folien ziehen gemeinsam weiter)</option>
+              <option value="fade">◐ Überblenden (Ab-/Aufblenden)</option>
+              <option value="none">— Kein Übergang (harter Schnitt)</option>
+            </select>
+          </div>
+
+          <!-- Template Layouts from Grainy Editor -->
+          <div class="ctrl-section">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+              <span class="ctrl-section-title" style="margin:0;">Layout-Vorlagen</span>
+              <label style="display:flex;align-items:center;gap:5px;font-size:10px;color:#94a3b8;cursor:pointer;" title="Weichzeichner-Hintergrund (Glass-Effekt) hinter Vorlagen an/aus - gilt fuer neu angewendete Vorlagen und sofort fuer die aktuelle Folie.">
+                <input type="checkbox" id="template-glass-toggle" checked onchange="App.toggleTemplateGlass(this.checked)" style="accent-color:#6366f1;width:13px;height:13px;">
+                🌫️ Blur
+              </label>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+              <button onclick="App.applyTemplate('centered')" class="btn-sm" style="justify-content:flex-start;font-size:10px;">
+                <i data-lucide="align-center" style="width:11px;height:11px;color:#a5b4fc;"></i> Titel & Untertitel
+              </button>
+              <button onclick="App.applyTemplate('left-aligned')" class="btn-sm" style="justify-content:flex-start;font-size:10px;">
+                <i data-lucide="align-left" style="width:11px;height:11px;color:#fbbf24;"></i> Klassisch Links
+              </button>
+              <button onclick="App.applyTemplate('two-column')" class="btn-sm" style="justify-content:flex-start;font-size:10px;">
+                <i data-lucide="columns" style="width:11px;height:11px;color:#34d399;"></i> 2 Spalten
+              </button>
+              <button onclick="App.applyTemplate('big-stat')" class="btn-sm" style="justify-content:flex-start;font-size:10px;">
+                <i data-lucide="hash" style="width:11px;height:11px;color:#22d3ee;"></i> Große Zahl
+              </button>
+              <button onclick="App.applyTemplate('bullets')" class="btn-sm" style="justify-content:flex-start;font-size:10px;">
+                <i data-lucide="list-checks" style="width:11px;height:11px;color:#c084fc;"></i> Stichpunkte
+              </button>
+              <button onclick="App.applyTemplate('blank')" class="btn-sm" style="justify-content:flex-start;font-size:10px;">
+                <i data-lucide="square" style="width:11px;height:11px;color:#64748b;"></i> Leer
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== TAB: ELEMENTS ===== -->
+        <div class="tab-panel" id="tab-elements">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px;">
+            <button onclick="App.addTextElement()" class="btn-sm" style="justify-content:center;">
+              <i data-lucide="type" style="width:13px;height:13px;color:#a5b4fc;"></i> Text
+            </button>
+            <label class="btn-sm" style="justify-content:center;cursor:pointer;">
+              <i data-lucide="image" style="width:13px;height:13px;color:#34d399;"></i> Bild
+              <input type="file" accept="image/*" style="display:none;" onchange="App.handleImageUpload(event)">
+            </label>
+          </div>
+          <div class="ctrl-section">
+            <div class="ctrl-section-title">Ebenen dieser Folie</div>
+            <p style="font-size:10px;color:rgba(148,163,184,0.55);margin:-4px 0 8px;">Oben = im Vordergrund. Zum Auswählen/Bearbeiten anklicken (gerade bei Vorlagen einfacher als auf der Folie selbst zu klicken) - mit ▲/▼ die Reihenfolge (und damit was vorne liegt) ändern.</p>
+            <div id="layers-list"></div>
+          </div>
+          <div class="sep"></div>
+          <div id="element-inspector">
+            <p style="font-size:11px;color:rgba(148,163,184,0.6);font-style:italic;text-align:center;padding:20px 0;">Klicke auf ein Element der Folie oder in der Ebenen-Liste oben, um es zu bearbeiten.</p>
+          </div>
+        </div>
+
+        <!-- ===== TAB: BACKGROUND ===== -->
+        <div class="tab-panel" id="tab-background">
+
+          <!-- Gradient type toggle -->
+          <div class="ctrl-section">
+            <div class="ctrl-section-title">Hintergrund-Typ</div>
+            <select id="bg-type" onchange="App.onBgTypeChange()" style="margin-bottom:8px;">
+              <option value="custom-linear">Linearer Verlauf (Custom Stops)</option>
+              <option value="custom-radial">Radialer Verlauf (Custom Stops)</option>
+              <option value="grainy">Grainy Gradient (Mesh)</option>
+              <option value="solid">Einfarbig</option>
+              <option value="image">Hintergrundbild</option>
+            </select>
+
+            <!-- BG Image upload -->
+            <div id="bg-image-upload" style="display:none;">
+              <label class="ctrl-label">Hintergrundbild hochladen</label>
+              <input type="file" accept="image/*" onchange="App.handleBgImageUpload(event)" style="font-size:10px;color:#94a3b8;">
+            </div>
+
+            <!-- Solid color -->
+            <div id="bg-solid-color" style="display:none;">
+              <label class="ctrl-label">Hintergrundfarbe</label>
+              <input type="color" id="bg-solid-col" value="#090d16" onchange="App.applyBackground()">
+            </div>
+          </div>
+
+          <!-- ─── CUSTOM GRADIENT (LINEAR / RADIAL) ─── -->
+          <div id="bg-custom-gradient-panel">
+            <!-- Gradient preview -->
+            <div id="gradient-preview-bar"></div>
+
+            <!-- Color Stops -->
+            <div class="ctrl-section">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                <span class="ctrl-section-title" style="margin:0;">Farb-Stops</span>
+                <button onclick="App.addColorStop()" class="btn-sm accent" style="font-size:10px;padding:3px 8px;">
+                  <i data-lucide="plus" style="width:10px;height:10px;"></i> Stop
+                </button>
+              </div>
+              <div id="color-stops-list"></div>
+
+              <!-- Selected stop controls -->
+              <div id="stop-controls" style="display:none;margin-top:10px;">
+                <div class="sep" style="margin:8px 0;"></div>
+                <label class="ctrl-label">Ausgewählter Stop</label>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:end;">
+                  <div>
+                    <label class="ctrl-label">Farbe</label>
+                    <input type="color" id="stop-color-input" onchange="App.updateSelectedStop('color', this.value)">
+                  </div>
+                  <div>
+                    <label class="ctrl-label">Position: <span id="stop-pos-val">50</span>%</label>
+                    <input type="range" id="stop-pos-input" min="0" max="100" value="50" oninput="App.updateSelectedStop('pos', parseInt(this.value))">
+                  </div>
+                </div>
+                <button onclick="App.deleteSelectedStop()" class="btn-sm danger" style="margin-top:8px;width:100%;justify-content:center;">
+                  <i data-lucide="trash-2" style="width:11px;height:11px;"></i> Stop löschen
+                </button>
+              </div>
+            </div>
+
+            <!-- Linear options -->
+            <div id="bg-linear-opts" class="ctrl-section">
+              <div class="ctrl-section-title">Linearer Verlauf</div>
+              <label class="ctrl-label">Winkel: <span id="bg-angle-val">135</span>°</label>
+              <input type="range" id="bg-angle" min="0" max="360" value="135" oninput="App.applyBackground()">
+            </div>
+
+            <!-- Radial options -->
+            <div id="bg-radial-opts" class="ctrl-section" style="display:none;">
+              <div class="ctrl-section-title">Radialer Verlauf</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                <div>
+                  <label class="ctrl-label">Zentrum X: <span id="bg-cx-val">50</span>%</label>
+                  <input type="range" id="bg-cx" min="0" max="100" value="50" oninput="App.applyBackground()">
+                </div>
+                <div>
+                  <label class="ctrl-label">Zentrum Y: <span id="bg-cy-val">50</span>%</label>
+                  <input type="range" id="bg-cy" min="0" max="100" value="50" oninput="App.applyBackground()">
+                </div>
+              </div>
+              <label class="ctrl-label" style="margin-top:8px;">Form</label>
+              <select id="bg-radial-shape" onchange="App.applyBackground()">
+                <option value="circle">Circle</option>
+                <option value="ellipse">Ellipse</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- ─── GRAINY GRADIENT (MESH) ─── -->
+          <div id="bg-grainy-panel" style="display:none;">
+            <!-- Presets -->
+            <div class="ctrl-section">
+              <div class="ctrl-section-title">Grainy Presets</div>
+              <div id="grainy-presets" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;"></div>
+            </div>
+            <div class="ctrl-section">
+              <div class="ctrl-section-title">Grainy Farben</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+                <div><label class="ctrl-label">Hintergrund</label><input type="color" id="grainy-bg" value="#090d16" oninput="App.applyBackground()"></div>
+                <div><label class="ctrl-label">Spot 1</label><input type="color" id="grainy-c1" value="#f43f5e" oninput="App.applyBackground()"></div>
+                <div><label class="ctrl-label">Spot 2</label><input type="color" id="grainy-c2" value="#fb923c" oninput="App.applyBackground()"></div>
+                <div><label class="ctrl-label">Spot 3</label><input type="color" id="grainy-c3" value="#eab308" oninput="App.applyBackground()"></div>
+              </div>
+            </div>
+            <div class="ctrl-section">
+              <div class="ctrl-section-title">Effekt Parameter</div>
+              <label class="ctrl-label">Körnung: <span id="grainy-noise-val">35</span>%</label>
+              <input type="range" id="grainy-noise" min="0" max="100" value="35" oninput="App.applyBackground()">
+              <label class="ctrl-label" style="margin-top:8px;">Skalierung: <span id="grainy-scale-val">100</span>%</label>
+              <input type="range" id="grainy-scale" min="50" max="200" value="100" oninput="App.applyBackground()">
+              <label class="ctrl-label" style="margin-top:8px;">Winkel: <span id="grainy-angle-val">45</span>°</label>
+              <input type="range" id="grainy-angle" min="0" max="360" value="45" oninput="App.applyBackground()">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
+                <label class="ctrl-label" style="margin:0;">Motion-Animation</label>
+                <input type="checkbox" id="grainy-motion" style="accent-color:#6366f1;width:16px;height:16px;" onchange="App.toggleGrainyMotion()">
+              </div>
+            </div>
+          </div>
+
+          <!-- Glitter System -->
+          <details class="ctrl-section" style="margin-top:10px;" open>
+            <summary style="display:flex;justify-content:space-between;align-items:center;">
+              <span class="ctrl-section-title" style="margin:0;">✦ Glitzer & Partikel</span>
+              <input type="checkbox" id="glitter-toggle" checked onchange="App.S.glitter.enabled = this.checked" onclick="event.stopPropagation()" style="accent-color:#6366f1;width:15px;height:15px;">
+            </summary>
+            <div style="padding-top:10px;">
+              <label class="ctrl-label">Anzahl: <span id="particle-count-val">80</span></label>
+              <input type="range" id="particle-count" min="10" max="300" value="80" oninput="App.updateParticleSettings()">
+              <label class="ctrl-label" style="margin-top:8px;">Größe (px)</label>
+              <input type="range" id="particle-size" min="1" max="8" value="2" oninput="App.updateParticleSettings()">
+              <label class="ctrl-label" style="margin-top:8px;">Drift-Geschwindigkeit</label>
+              <input type="range" id="particle-speed" min="0" max="10" value="1" oninput="App.updateParticleSettings()">
+              <label class="ctrl-label" style="margin-top:8px;">Glitzer-Farbe</label>
+              <input type="color" id="particle-color" value="#cbd5e1" onchange="App.updateParticleSettings()">
+            </div>
+          </details>
+
+          <!-- Global gradient apply -->
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:10px;margin-top:6px;">
+            <span style="font-size:10px;color:#94a3b8;">Auf alle Folien anwenden</span>
+            <input type="checkbox" id="check-global-gradient" style="accent-color:#6366f1;width:15px;height:15px;">
+          </div>
+        </div>
+
+        <!-- ===== TAB: SPOTLIGHT ===== -->
+        <div class="tab-panel" id="tab-spotlight">
+
+          <div class="ctrl-section">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+              <span class="ctrl-section-title" style="margin:0;">Spotlight aktivieren</span>
+              <input type="checkbox" id="beam-enabled" checked onchange="App.S.beam.enabled=this.checked" style="accent-color:#6366f1;width:16px;height:16px;">
+            </div>
+
+            <label class="ctrl-label">Bewegungs-Muster</label>
+            <select id="beam-pattern" onchange="App.updateBeamSettings()" style="margin-bottom:8px;">
+              <option value="waypoints">Wegpunkt-Modus ★</option>
+              <option value="figure8">Achter-Schleife</option>
+              <option value="bounce">Bounce / Abprallen</option>
+              <option value="sine">Sinus-Welle</option>
+              <option value="mouse">Maus folgen</option>
+            </select>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+              <div>
+                <label class="ctrl-label">Spot-Größe</label>
+                <input type="range" id="beam-size" min="100" max="800" value="340" oninput="App.updateBeamSettings()">
+              </div>
+              <div>
+                <label class="ctrl-label">Weichzeichnung</label>
+                <input type="range" id="beam-blur" min="5" max="150" value="45" oninput="App.updateBeamSettings()">
+              </div>
+              <div>
+                <label class="ctrl-label">Geschwindigkeit</label>
+                <input type="range" id="beam-speed" min="1" max="10" value="1" oninput="App.updateBeamSettings()">
+              </div>
+              <div>
+                <label class="ctrl-label">Resthelligkeit: <span id="ambience-val">10</span>%</label>
+                <input type="range" id="beam-ambience" min="0" max="100" value="10" oninput="App.updateBeamSettings()">
+              </div>
+            </div>
+            <label class="ctrl-label" style="margin-top:8px;">Lichtfarbe</label>
+            <input type="color" id="beam-color" value="#ffffff" onchange="App.updateBeamSettings()">
+          </div>
+
+          <!-- ─── WAYPOINTS ─── -->
+          <div id="waypoints-panel" class="ctrl-section">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+              <span class="ctrl-section-title" style="margin:0;">★ Wegpunkte</span>
+              <button onclick="App.addWaypoint()" class="btn-sm accent" style="font-size:10px;padding:3px 8px;">
+                <i data-lucide="plus" style="width:10px;height:10px;"></i> Punkt
+              </button>
+            </div>
+            <p style="font-size:10px;color:rgba(148,163,184,0.55);margin-bottom:8px;">Im Wegpunkt-Modus fährt der Spotlight sanft zwischen den definierten Positionen. Per Klick auf die Folie im Editor kannst du Punkte platzieren.</p>
+            <div id="waypoints-list"></div>
+
+            <!-- Selected waypoint controls -->
+            <div id="waypoint-controls" style="display:none;">
+              <div class="sep" style="margin:8px 0;"></div>
+              <label class="ctrl-label">Ausgewählter Wegpunkt</label>
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
+                <div>
+                  <label class="ctrl-label">X (%)</label>
+                  <input type="number" id="wp-x" min="0" max="100" step="0.5" oninput="App.updateSelectedWaypoint('x', parseFloat(this.value))">
+                </div>
+                <div>
+                  <label class="ctrl-label">Y (%)</label>
+                  <input type="number" id="wp-y" min="0" max="100" step="0.5" oninput="App.updateSelectedWaypoint('y', parseFloat(this.value))">
+                </div>
+                <div>
+                  <label class="ctrl-label">Pause (s)</label>
+                  <input type="number" id="wp-pause" min="0" max="30" step="0.5" value="2" oninput="App.updateSelectedWaypoint('pause', parseFloat(this.value))">
+                </div>
+              </div>
+              <button onclick="App.deleteSelectedWaypoint()" class="btn-sm danger" style="margin-top:8px;width:100%;justify-content:center;font-size:10px;">
+                <i data-lucide="trash-2" style="width:10px;height:10px;"></i> Wegpunkt löschen
+              </button>
+            </div>
+
+            <p id="wp-click-hint" style="font-size:10px;color:rgba(99,102,241,0.7);margin-top:8px;display:none;">
+              ✦ Klicke auf die Folie, um einen Wegpunkt zu platzieren.
+            </p>
+          </div>
+        </div>
+
+        <!-- ===== TAB: FONTS ===== -->
+        <div class="tab-panel" id="tab-fonts">
+          <div class="ctrl-section">
+            <div class="ctrl-section-title">Google Fonts Katalog</div>
+            <select id="font-category-select" onchange="App.renderFontCatalog()" style="margin-bottom:8px;">
+              <option value="improvisiert">Improvisiert / Marker</option>
+              <option value="party">Party & Festlich</option>
+              <option value="scifi">Sci-Fi & Futuristisch</option>
+              <option value="horror">Horror & Grusel</option>
+              <option value="fraktur">Fraktur & Gotisch</option>
+              <option value="stencil">Stencil & Military</option>
+              <option value="effekt">Effekt / Rubik</option>
+            </select>
+            <div id="font-catalog-list"></div>
+          </div>
+          <div class="ctrl-section">
+            <div class="ctrl-section-title">Eigene Schriftart hinzufügen</div>
+            <div id="font-dropzone" style="border:2px dashed #334155; border-radius:8px; padding:16px; text-align:center; cursor:pointer; color:#64748b; font-size:11px; transition:border-color .15s, background .15s;" onclick="document.getElementById('font-file-input').click();">
+              📥 Schriftdatei hier hineinziehen oder klicken (.ttf/.otf/.woff/.woff2)
+            </div>
+            <input type="file" id="font-file-input" accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2" multiple style="display:none;" onchange="App.handleFontFiles(this.files)">
+          </div>
+          <div class="ctrl-section">
+            <div class="ctrl-section-title">Eingebundene Fonts</div>
+            <div id="installed-fonts-list"></div>
+          </div>
+        </div>
+
+      </div><!-- /sidebar-content -->
+
+      <!-- Sidebar Footer -->
+      <div style="padding:10px;border-top:1px solid var(--border);flex-shrink:0;display:flex;gap:6px;">
+        <button onclick="App.exportHTML()" class="btn-sm success" style="flex:1;justify-content:center;padding:9px;" title="Als Datei herunterladen">
+          <i data-lucide="download" style="width:14px;height:14px;"></i> Herunterladen
+        </button>
+        <button id="save-server-btn" onclick="App.saveToServer()" class="btn-sm accent" style="flex:1;justify-content:center;padding:9px;display:none;" title="Im selben Ordner wie Bento-Pronto-Präsentationen auf dem Infomaster-Server speichern">
+          <i data-lucide="server" style="width:14px;height:14px;"></i> Im Infomaster speichern
+        </button>
+      </div>
+    </aside>
+  </div><!-- /stage-wrap -->
+
+  <!-- Grainy canvas (hidden, used for drawing) -->
+  <canvas id="grainy-canvas" style="display:none;"></canvas>
+
+</div><!-- /app -->
+
+<!-- ════════════════════ FULLSCREEN PRESENTATION ════════════════════ -->
+<div id="pres-overlay" class="hidden-ui">
+  <div id="pres-stage-full">
+    <div id="pres-content-full"></div>
+    <canvas id="pres-spotlight-canvas"></canvas>
+    <canvas id="pres-glitter-canvas"></canvas>
+  </div>
+  <div id="pres-counter">1 / 1</div>
+  <div id="pres-nav">
+    <button onclick="App.pressPrev()" style="padding:8px 20px;background:rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.1);border-radius:99px;color:rgba(255,255,255,0.7);cursor:pointer;font-size:12px;">← Zurück</button>
+    <button onclick="App.pressNext()" style="padding:8px 20px;background:rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.1);border-radius:99px;color:rgba(255,255,255,0.7);cursor:pointer;font-size:12px;">Weiter →</button>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  CONSTANTS
+// ═══════════════════════════════════════════════════════════════
+
+const CLASSIC_FONTS = [
+  { name:'Arial', family:'Arial, sans-serif' },
+  { name:'Times New Roman', family:'"Times New Roman", serif' },
+  { name:'Georgia', family:'Georgia, serif' },
+  { name:'Impact', family:'Impact, sans-serif' },
+  { name:'Courier New', family:'"Courier New", monospace' },
+  { name:'Trebuchet MS', family:'"Trebuchet MS", sans-serif' },
+  { name:'Verdana', family:'Verdana, sans-serif' },
+  { name:'Helvetica', family:'Helvetica, sans-serif' }
+];
+
+const FONT_CATALOG = {
+  improvisiert:[
+    {name:'Barrio',family:'Barrio',url:'https://fonts.googleapis.com/css2?family=Barrio&display=swap'},
+    {name:'Barriecito',family:'Barriecito',url:'https://fonts.googleapis.com/css2?family=Barriecito&display=swap'},
+    {name:'Permanent Marker',family:'Permanent Marker',url:'https://fonts.googleapis.com/css2?family=Permanent+Marker&display=swap'},
+    {name:'Gochi Hand',family:'Gochi Hand',url:'https://fonts.googleapis.com/css2?family=Gochi+Hand&display=swap'},
+    {name:'Rock Salt',family:'Rock Salt',url:'https://fonts.googleapis.com/css2?family=Rock+Salt&display=swap'}
+  ],
+  party:[
+    {name:'Monoton',family:'Monoton',url:'https://fonts.googleapis.com/css2?family=Monoton&display=swap'},
+    {name:'Bungee',family:'Bungee',url:'https://fonts.googleapis.com/css2?family=Bungee&display=swap'},
+    {name:'Shrikhand',family:'Shrikhand',url:'https://fonts.googleapis.com/css2?family=Shrikhand&display=swap'},
+    {name:'Nabla',family:'Nabla',url:'https://fonts.googleapis.com/css2?family=Nabla&display=swap'},
+    {name:'Faster One',family:'Faster One',url:'https://fonts.googleapis.com/css2?family=Faster+One&display=swap'}
+  ],
+  scifi:[
+    {name:'Orbitron',family:'Orbitron',url:'https://fonts.googleapis.com/css2?family=Orbitron:wght@600;900&display=swap'},
+    {name:'Press Start 2P',family:'Press Start 2P',url:'https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap'},
+    {name:'Audiowide',family:'Audiowide',url:'https://fonts.googleapis.com/css2?family=Audiowide&display=swap'},
+    {name:'Michroma',family:'Michroma',url:'https://fonts.googleapis.com/css2?family=Michroma&display=swap'},
+    {name:'Silkscreen',family:'Silkscreen',url:'https://fonts.googleapis.com/css2?family=Silkscreen&display=swap'}
+  ],
+  horror:[
+    {name:'Creepster',family:'Creepster',url:'https://fonts.googleapis.com/css2?family=Creepster&display=swap'},
+    {name:'Nosifer',family:'Nosifer',url:'https://fonts.googleapis.com/css2?family=Nosifer&display=swap'},
+    {name:'Butcherman',family:'Butcherman',url:'https://fonts.googleapis.com/css2?family=Butcherman&display=swap'},
+    {name:'Frijole',family:'Frijole',url:'https://fonts.googleapis.com/css2?family=Frijole&display=swap'},
+    {name:'Lacquer',family:'Lacquer',url:'https://fonts.googleapis.com/css2?family=Lacquer&display=swap'}
+  ],
+  fraktur:[
+    {name:'UnifrakturMaguntia',family:'UnifrakturMaguntia',url:'https://fonts.googleapis.com/css2?family=UnifrakturMaguntia&display=swap'},
+    {name:'MedievalSharp',family:'MedievalSharp',url:'https://fonts.googleapis.com/css2?family=MedievalSharp&display=swap'},
+    {name:'New Rocker',family:'New Rocker',url:'https://fonts.googleapis.com/css2?family=New+Rocker&display=swap'},
+    {name:'Pirata One',family:'Pirata One',url:'https://fonts.googleapis.com/css2?family=Pirata+One&display=swap'}
+  ],
+  stencil:[
+    {name:'Black Ops One',family:'Black Ops One',url:'https://fonts.googleapis.com/css2?family=Black+Ops+One&display=swap'},
+    {name:'Allerta Stencil',family:'Allerta Stencil',url:'https://fonts.googleapis.com/css2?family=Allerta+Stencil&display=swap'},
+    {name:'Wallpoet',family:'Wallpoet',url:'https://fonts.googleapis.com/css2?family=Wallpoet&display=swap'},
+    {name:'Plaster',family:'Plaster',url:'https://fonts.googleapis.com/css2?family=Plaster&display=swap'}
+  ],
+  effekt:[
+    {name:'Rubik Glitch',family:'Rubik Glitch',url:'https://fonts.googleapis.com/css2?family=Rubik+Glitch&display=swap'},
+    {name:'Rubik Microbe',family:'Rubik Microbe',url:'https://fonts.googleapis.com/css2?family=Rubik+Microbe&display=swap'},
+    {name:'Rubik Puddles',family:'Rubik Puddles',url:'https://fonts.googleapis.com/css2?family=Rubik+Puddles&display=swap'},
+    {name:'Rubik Iso',family:'Rubik Iso',url:'https://fonts.googleapis.com/css2?family=Rubik+Iso&display=swap'},
+    {name:'Rubik Mono One',family:'Rubik Mono One',url:'https://fonts.googleapis.com/css2?family=Rubik+Mono+One&display=swap'}
+  ]
+};
+
+const GRAINY_PRESETS = [
+  {name:'Sunset Grain',colors:{bg:'#0c0a09',c1:'#f43f5e',c2:'#fb923c',c3:'#facc15'},noise:42,scale:110,angle:30},
+  {name:'Cyberpunk',colors:{bg:'#090d16',c1:'#d946ef',c2:'#06b6d4',c3:'#3b82f6'},noise:35,scale:100,angle:120},
+  {name:'Acid Emerald',colors:{bg:'#022c22',c1:'#10b981',c2:'#06b6d4',c3:'#84cc16'},noise:30,scale:120,angle:210},
+  {name:'Midnight Gold',colors:{bg:'#09090b',c1:'#b45309',c2:'#f59e0b',c3:'#fef08a'},noise:45,scale:90,angle:45},
+  {name:'Pastel Dream',colors:{bg:'#18181b',c1:'#f472b6',c2:'#38bdf8',c3:'#c084fc'},noise:28,scale:130,angle:180},
+  {name:'Deep Cosmos',colors:{bg:'#020617',c1:'#4f46e5',c2:'#7c3aed',c3:'#06b6d4'},noise:38,scale:115,angle:60}
+];
+
+// ─── COLOR HELPERS (Kontrast-/Negativfarbe fuer Text) ───
+// Negativfarbe: einfache RGB-Invertierung (255-r,255-g,255-b) - schneller, direkter
+// "Kontrast"-Knopf statt einer eigenen Farbwahl, funktioniert fuer jede Ausgangsfarbe.
+function invertHexColor(hex) {
+  let h=(hex||'#ffffff').replace('#','');
+  if (h.length===3) h=h.split('').map(c=>c+c).join('');
+  if (h.length!==6) return '#ffffff';
+  const r=255-parseInt(h.substring(0,2),16);
+  const g=255-parseInt(h.substring(2,4),16);
+  const b=255-parseInt(h.substring(4,6),16);
+  return '#'+[r,g,b].map(v=>Math.max(0,Math.min(255,v)).toString(16).padStart(2,'0')).join('');
+}
+// Schwarz/Weiss je nach wahrgenommener Helligkeit der Ausgangsfarbe - fuer den Fall, dass
+// die Negativfarbe selbst (z.B. bei einem mittleren Grauton) zu wenig Kontrast liefert.
+function contrastHexColor(hex) {
+  let h=(hex||'#ffffff').replace('#','');
+  if (h.length===3) h=h.split('').map(c=>c+c).join('');
+  if (h.length!==6) return '#000000';
+  const r=parseInt(h.substring(0,2),16), g=parseInt(h.substring(2,4),16), b=parseInt(h.substring(4,6),16);
+  const luminance=(0.299*r+0.587*g+0.114*b)/255;
+  return luminance>0.55 ? '#000000' : '#ffffff';
+}
+
+// Fuer per innerHTML eingefuegten, frei eingegebenen Text (z.B. Layer-Labels aus
+// el.content) - verhindert, dass Zeichen wie "<" darin als HTML interpretiert werden.
+function escapeHtmlEc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// Nur Google-Fonts-Katalogeintraege (haben eine `url`) werden per @import geladen - eigene,
+// per Drag & Drop hinzugefuegte Schriftarten (haben stattdessen `dataUrl`) sind bereits
+// direkt per FontFace-API in document.fonts registriert, siehe App.handleFontFiles().
+function syncGoogleFontImports() {
+  const styleTag=document.getElementById('dynamic-google-fonts');
+  if (!styleTag) return;
+  styleTag.innerHTML=S.installedFonts.filter(f=>f.url).map(f=>`@import url('${f.url}');`).join('\n');
+}
+
+// Default color stops for custom gradient
+function defaultColorStops() {
+  return [
+    {id:'cs-'+Date.now(), color:'#090d16', pos:0},
+    {id:'cs-'+(Date.now()+1), color:'#1e1b4b', pos:100}
+  ];
+}
+
+function defaultSlide(num=1) {
+  return {
+    id:'slide-'+Date.now()+Math.random(),
+    duration:6,
+    template: null,
+    elements:[
+      {id:'el-'+Date.now(), type:'text', content:'EYECANDY STUDIO', fontFamily:'Inter, sans-serif', fontSize:56, color:'#ffffff', textAlign:'center', fontWeight:'800', x:5, y:30, width:90},
+      {id:'el-'+(Date.now()+1), type:'text', content:'Drücke ESC für den Editor · Doppelklick zum Editieren', fontFamily:'Inter, sans-serif', fontSize:18, color:'#94a3b8', textAlign:'center', fontWeight:'400', x:5, y:55, width:90}
+    ],
+    background:{
+      type:'custom-linear',
+      colorStops: defaultColorStops(),
+      angle:135,
+      cx:50, cy:50, radialShape:'ellipse',
+      solidColor:'#090d16',
+      grainy:{colors:{bg:'#090d16',c1:'#6366f1',c2:'#8b5cf6',c3:'#06b6d4'},noise:38,scale:100,angle:45},
+      image:null
+    }
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  GLOBAL STATE
+// ═══════════════════════════════════════════════════════════════
+const S = {
+  isEditor: false,
+  activeSlideIndex: 0,
+  selectedElementId: null,
+  selectedStopId: null,
+  selectedWaypointIdx: -1,
+  isPlaying: false,
+  autoplayTimer: null,
+  activeTab: 'slides',
+  addingWaypoint: false,
+  installedFonts: [],
+  launchToken: null, // gueltig gesetzt, wenn die Seite mit ?token=... geoeffnet wurde - siehe setupSaveToServer()
+  transitionMode: 'slide', // 'slide' | 'fade' | 'none' - siehe transitionElements()
+
+  beam:{
+    enabled:true, pattern:'waypoints',
+    size:340, blur:45, speed:2, color:'#ffffff', ambience:10,
+    x:50, y:50,
+    // Waypoint traversal state
+    waypoints:[ // default waypoints
+      {x:25, y:30, pause:2},
+      {x:75, y:25, pause:2.5},
+      {x:60, y:70, pause:2},
+      {x:30, y:65, pause:3}
+    ],
+    _wpIdx:0, _wpTimer:0, _wpPhase:'move', // 'move' | 'pause'
+    _currentX:50, _currentY:50,
+    _targetX:50, _targetY:50
+  },
+
+  glitter:{enabled:true,count:80,size:2,speed:1,color:'#cbd5e1'},
+  slides:[ defaultSlide(1) ],
+
+  presSlideIndex:0,
+  presIsPlaying:true,
+  presAutoTimer:null,
+  presBeamAngle:0
+};
+
+// ═══════════════════════════════════════════════════════════════
+//  PARTICLES
+// ═══════════════════════════════════════════════════════════════
+let _editorParticles = [];
+let _presParticles = [];
+let _beamAngle = 0;
+let _grainyAnimOffset = 0;
+let _grainyAnimReq = null;
+
+// ═══════════════════════════════════════════════════════════════
+//  CANVAS SETUP
+// ═══════════════════════════════════════════════════════════════
+function resizeCanvas(canvas, container) {
+  canvas.width = container.clientWidth;
+  canvas.height = container.clientHeight;
+}
+
+// ─── GRAINY GRADIENT RENDERER ───
+function renderGrainy(targetCanvas, g, angleOffset=0) {
+  if (!targetCanvas || !targetCanvas.isConnected) return;
+  const ctx = targetCanvas.getContext('2d');
+  const w = targetCanvas.width = targetCanvas.clientWidth || targetCanvas.width || 800;
+  const h = targetCanvas.height = targetCanvas.clientHeight || targetCanvas.height || 450;
+  if (w===0||h===0) return;
+
+  ctx.fillStyle = g.colors.bg;
+  ctx.fillRect(0,0,w,h);
+
+  const rad = ((g.angle + angleOffset) * Math.PI) / 180;
+  const cx = w/2, cy = h/2, sc = g.scale/100;
+
+  const spots = [
+    [cx+Math.cos(rad)*(w*0.3*sc), cy+Math.sin(rad)*(h*0.3*sc), w*0.55*sc, g.colors.c1],
+    [cx+Math.cos(rad+2.1)*(w*0.35*sc), cy+Math.sin(rad+2.1)*(h*0.35*sc), w*0.6*sc, g.colors.c2],
+    [cx+Math.cos(rad+4.2)*(w*0.25*sc), cy+Math.sin(rad+4.2)*(h*0.25*sc), w*0.5*sc, g.colors.c3],
+  ];
+  spots.forEach(([x,y,r,col])=>{
+    const gr = ctx.createRadialGradient(x,y,10,x,y,r);
+    gr.addColorStop(0,col); gr.addColorStop(1,'transparent');
+    ctx.fillStyle = gr; ctx.fillRect(0,0,w,h);
+  });
+
+  if (g.noise>0) {
+    const id = ctx.getImageData(0,0,w,h);
+    const d = id.data;
+    const amt = (g.noise/100)*80;
+    for (let i=0;i<d.length;i+=4) {
+      const n=(Math.random()-0.5)*amt;
+      d[i]=Math.min(255,Math.max(0,d[i]+n));
+      d[i+1]=Math.min(255,Math.max(0,d[i+1]+n));
+      d[i+2]=Math.min(255,Math.max(0,d[i+2]+n));
+    }
+    ctx.putImageData(id,0,0);
+  }
+}
+
+// ─── CUSTOM GRADIENT BUILD ───
+function buildCSSGradient(slide) {
+  const bg = slide.background;
+  const stops = bg.colorStops || [];
+  const sorted = [...stops].sort((a,b)=>a.pos-b.pos);
+  const stopStr = sorted.map(s=>`${s.color} ${s.pos}%`).join(', ');
+
+  if (bg.type==='custom-linear') {
+    const angle = bg.angle !== undefined ? bg.angle : 135;
+    return `linear-gradient(${angle}deg, ${stopStr})`;
+  } else if (bg.type==='custom-radial') {
+    const shape = bg.radialShape||'ellipse';
+    const cx = bg.cx !== undefined ? bg.cx : 50;
+    const cy = bg.cy !== undefined ? bg.cy : 50;
+    return `radial-gradient(${shape} at ${cx}% ${cy}%, ${stopStr})`;
+  }
+  return '#090d16';
+}
+
+// ─── APPLY BG TO STAGE ───
+function applyBgToStage(stage, slide, grainyCanvas) {
+  const bg = slide.background;
+  if (!bg) return;
+  // Clear grainy canvas visibility
+  if (grainyCanvas) grainyCanvas.style.display='none';
+
+  if (bg.type==='custom-linear' || bg.type==='custom-radial') {
+    stage.style.background = buildCSSGradient(slide);
+  } else if (bg.type==='grainy') {
+    stage.style.background = bg.grainy.colors.bg;
+    if (grainyCanvas) {
+      grainyCanvas.style.display='block';
+      grainyCanvas.style.position='absolute';
+      grainyCanvas.style.inset='0';
+      grainyCanvas.style.width='100%';
+      grainyCanvas.style.height='100%';
+      grainyCanvas.style.zIndex='1';
+      renderGrainy(grainyCanvas, bg.grainy, _grainyAnimOffset);
+    }
+  } else if (bg.type==='solid') {
+    stage.style.background = bg.solidColor||'#090d16';
+  } else if (bg.type==='image' && bg.image) {
+    stage.style.background = `url(${bg.image}) center/cover no-repeat`;
+  } else {
+    stage.style.background = '#090d16';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  GRADIENT PREVIEW BAR
+// ═══════════════════════════════════════════════════════════════
+function updateGradientPreview() {
+  const bar = document.getElementById('gradient-preview-bar');
+  if (!bar) return;
+  const slide = S.slides[S.activeSlideIndex];
+  if (!slide) return;
+  if (slide.background.type==='custom-linear'||slide.background.type==='custom-radial') {
+    bar.style.background = buildCSSGradient(slide);
+  } else {
+    bar.style.display='none'; return;
+  }
+  bar.style.display='block';
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  TEMPLATE BUILDER
+// ═══════════════════════════════════════════════════════════════
+function buildTemplateElements(template, slide) {
+  const tc = slide.template_textColor || '#ffffff';
+  const ac = slide.template_accentColor || '#6366f1';
+  const glass = slide.template_glass !== false;
+
+  const templates = {
+    centered:[
+      {id:'t-'+Date.now()+'1', type:'template', template:'centered', textColor:tc, accentColor:ac, useGlass:glass,
+        title:'Titel eingeben', subtitle:'Untertitel', body:'Beschreibung des Inhalts hier eintragen.',
+        fontClass:'font-inter', x:5, y:10, width:90}
+    ],
+    'left-aligned':[
+      {id:'t-'+Date.now()+'1', type:'template', template:'left-aligned', textColor:tc, accentColor:ac, useGlass:glass,
+        subtitle:'KATEGORIE', title:'Überschrift eingeben', body:'Fließtext...',
+        fontClass:'font-inter', x:5, y:10, width:55}
+    ],
+    'two-column':[
+      {id:'t-'+Date.now()+'1', type:'template', template:'two-column', textColor:tc, accentColor:ac, useGlass:glass,
+        title:'Spalten Überschrift', subtitle:'Untertitel', body:'Erste Spalte Inhalt...', col2:'Zweite Spalte Inhalt...',
+        fontClass:'font-inter', x:5, y:10, width:90}
+    ],
+    'big-stat':[
+      {id:'t-'+Date.now()+'1', type:'template', template:'big-stat', textColor:tc, accentColor:ac, useGlass:glass,
+        title:'100%', subtitle:'Kennzahl', body:'Beschreibung',
+        fontClass:'font-inter', x:5, y:5, width:90}
+    ],
+    bullets:[
+      {id:'t-'+Date.now()+'1', type:'template', template:'bullets', textColor:tc, accentColor:ac, useGlass:glass,
+        title:'Stichpunkte', subtitle:'Übersicht', bullets:['Erster Punkt','Zweiter Punkt','Dritter Punkt'],
+        fontClass:'font-inter', x:5, y:5, width:90}
+    ],
+    blank:[]
+  };
+  return templates[template] || [];
+}
+
+function renderTemplateElement(el, isEditor) {
+  const tc = el.textColor||'#ffffff';
+  const ac = el.accentColor||'#6366f1';
+  const glassClass = el.useGlass ? 'glass-card' : '';
+  const editAttr = isEditor ? 'contenteditable="true" spellcheck="false"' : '';
+
+  switch(el.template) {
+    case 'centered': return `
+      <div class="${glassClass}" style="text-align:center;max-width:720px;margin:auto;padding:${el.useGlass?'32px':'0'};">
+        <h1 ${editAttr} data-field="title" style="font-size:clamp(28px,5vw,60px);font-weight:800;color:${tc};margin:0 0 12px;line-height:1.1;">${el.title||'Titel'}</h1>
+        <p ${editAttr} data-field="subtitle" style="font-size:clamp(16px,2.5vw,26px);font-weight:500;color:${ac};margin:0 0 12px;">${el.subtitle||'Untertitel'}</p>
+        <p ${editAttr} data-field="body" style="font-size:clamp(12px,1.6vw,18px);color:${tc};opacity:0.85;max-width:540px;margin:auto;">${el.body||'Beschreibung'}</p>
+      </div>`;
+    case 'left-aligned': return `
+      <div class="${glassClass}" style="text-align:left;max-width:640px;padding:${el.useGlass?'32px':'0'};">
+        <span ${editAttr} data-field="subtitle" style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:${ac};background:rgba(255,255,255,0.08);padding:3px 10px;border-radius:99px;display:inline-block;margin-bottom:14px;">${el.subtitle||'KATEGORIE'}</span>
+        <h1 ${editAttr} data-field="title" style="font-size:clamp(24px,4vw,52px);font-weight:800;color:${tc};margin:0 0 12px;line-height:1.15;">${el.title||'Überschrift'}</h1>
+        <p ${editAttr} data-field="body" style="font-size:clamp(13px,1.7vw,18px);color:${tc};opacity:0.88;line-height:1.7;">${el.body||'Fließtext'}</p>
+      </div>`;
+    case 'two-column': return `
+      <div class="${glassClass}" style="width:100%;padding:${el.useGlass?'32px':'0'};">
+        <h1 ${editAttr} data-field="title" style="font-size:clamp(22px,3.5vw,44px);font-weight:800;color:${tc};margin:0 0 6px;">${el.title||'Überschrift'}</h1>
+        <p ${editAttr} data-field="subtitle" style="font-size:clamp(13px,2vw,20px);color:${ac};margin:0 0 16px;">${el.subtitle||'Untertitel'}</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
+          <div ${editAttr} data-field="body" style="font-size:clamp(12px,1.5vw,16px);color:${tc};opacity:0.88;line-height:1.7;">${el.body||'Erste Spalte'}</div>
+          <div ${editAttr} data-field="col2" style="font-size:clamp(12px,1.5vw,16px);color:${tc};opacity:0.88;line-height:1.7;">${el.col2||'Zweite Spalte'}</div>
+        </div>
+      </div>`;
+    case 'big-stat': return `
+      <div class="${glassClass}" style="text-align:center;padding:${el.useGlass?'40px':'0'};">
+        <div ${editAttr} data-field="title" style="font-size:clamp(60px,12vw,120px);font-weight:900;color:${ac};line-height:1;margin-bottom:8px;">${el.title||'100%'}</div>
+        <div ${editAttr} data-field="subtitle" style="font-size:clamp(18px,3vw,36px);font-weight:700;color:${tc};margin-bottom:10px;">${el.subtitle||'Kennzahl'}</div>
+        <p ${editAttr} data-field="body" style="font-size:clamp(11px,1.4vw,16px);color:${tc};opacity:0.75;max-width:480px;margin:auto;">${el.body||'Beschreibung'}</p>
+      </div>`;
+    case 'bullets':
+      const items = el.bullets && el.bullets.length>0 ? el.bullets : ['Erster Punkt','Zweiter Punkt'];
+      return `
+      <div class="${glassClass}" style="max-width:700px;padding:${el.useGlass?'32px':'0'};">
+        <h1 ${editAttr} data-field="title" style="font-size:clamp(22px,4vw,44px);font-weight:800;color:${tc};margin:0 0 6px;">${el.title||'Stichpunkte'}</h1>
+        <p ${editAttr} data-field="subtitle" style="font-size:clamp(12px,1.8vw,20px);color:${ac};margin:0 0 18px;">${el.subtitle||'Übersicht'}</p>
+        <ul style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:10px;">
+          ${items.map((item,i)=>`
+          <li style="display:flex;align-items:flex-start;gap:10px;font-size:clamp(12px,1.6vw,17px);color:${tc};opacity:0.9;">
+            <span style="width:8px;height:8px;border-radius:50%;background:${ac};flex-shrink:0;margin-top:6px;"></span>
+            <span ${editAttr} data-bullet-idx="${i}">${item}</span>
+          </li>`).join('')}
+        </ul>
+      </div>`;
+    default: return '';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SLIDE RENDERING
+// ═══════════════════════════════════════════════════════════════
+function renderSlideContent(slide, container, isEditor, stageEl) {
+  container.innerHTML = '';
+  stageEl = stageEl || container.parentElement;
+  const autoFitQueue = [];
+
+  slide.elements.forEach(el => {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'slide-el';
+    wrapper.dataset.id = el.id;
+    wrapper.style.left = `${el.x||0}%`;
+    wrapper.style.top  = `${el.y||0}%`;
+    wrapper.style.width= `${el.width||80}%`;
+    wrapper.style.zIndex = 10;
+
+    if (isEditor && S.selectedElementId===el.id) wrapper.classList.add('selected-el');
+
+    const dragH = document.createElement('div');
+    dragH.className='drag-handle';
+    wrapper.appendChild(dragH);
+
+    if (el.type==='text') {
+      const div=document.createElement('div');
+      div.className='inline-txt';
+      div.style.fontFamily = el.fontFamily||'Inter, sans-serif';
+      div.style.fontSize   = `${el.fontSize||28}px`;
+      div.style.color      = el.color||'#fff';
+      div.style.textAlign  = el.textAlign||'left';
+      div.style.fontWeight = el.fontWeight||'400';
+      div.style.lineHeight = '1.3';
+      div.innerText = el.content||'';
+
+      if (isEditor) {
+        div.ondblclick = evt => {
+          evt.stopPropagation();
+          div.contentEditable='true'; div.focus();
+        };
+        div.onblur = () => {
+          div.contentEditable='false';
+          el.content = div.innerText;
+          App.renderInspector();
+        };
+      }
+      wrapper.appendChild(div);
+      if (el.autoFit) autoFitQueue.push({div, wrapper, base: el.fontSize||28});
+
+    } else if (el.type==='image') {
+      const img=document.createElement('img');
+      img.src=el.src; img.style.width='100%'; img.style.borderRadius='12px'; img.style.boxShadow='0 20px 60px rgba(0,0,0,0.5)';
+      wrapper.appendChild(img);
+
+    } else if (el.type==='template') {
+      wrapper.innerHTML += renderTemplateElement(el, isEditor);
+      if (isEditor) attachTemplateEditing(wrapper, slide, el);
+    }
+
+    // Drag to reposition in editor
+    if (isEditor) {
+      makeDraggable(wrapper, el);
+      wrapper.addEventListener('click', evt => {
+        evt.stopPropagation();
+        if (S.addingWaypoint) return;
+        S.selectedElementId = el.id;
+        App.render(); App.renderInspector();
+      });
+    }
+    container.appendChild(wrapper);
+  });
+
+  // Auto-Skalierung erst NACHDEM alle Elemente angehaengt sind (stabiles Layout) - siehe
+  // fitTextToBox(): Schriftgroesse als Maximum, wird verkleinert bis Text in die Breite des
+  // Kastens und die verbleibende Hoehe bis zum unteren Folienrand passt.
+  autoFitQueue.forEach(({div, wrapper, base}) => fitTextToBox(div, wrapper, stageEl, base));
+}
+
+function attachTemplateEditing(wrapper, slide, el) {
+  wrapper.querySelectorAll('[contenteditable]').forEach(edt => {
+    edt.addEventListener('blur', () => {
+      const field = edt.getAttribute('data-field');
+      const bidx  = edt.getAttribute('data-bullet-idx');
+      if (bidx !== null) {
+        if (!el.bullets) el.bullets=[];
+        el.bullets[parseInt(bidx)] = edt.innerHTML;
+      } else if (field) {
+        el[field] = edt.innerHTML;
+      }
+    });
+  });
+}
+
+// ─── DRAG ELEMENT ───
+function makeDraggable(el, data) {
+  let startX, startY, startLeft, startTop, isDragging=false;
+  const stage = document.getElementById('presentation-stage');
+
+  el.addEventListener('mousedown', e => {
+    if (e.target.closest('[contenteditable="true"]')) return;
+    e.preventDefault(); isDragging=true;
+    startX=e.clientX; startY=e.clientY;
+    startLeft=data.x; startTop=data.y;
+    document.body.style.userSelect='none';
+    document.body.style.cursor='move';
+  });
+  window.addEventListener('mousemove', e => {
+    if (!isDragging) return;
+    const stageRect = stage.getBoundingClientRect();
+    const dx=(e.clientX-startX)/stageRect.width*100;
+    const dy=(e.clientY-startY)/stageRect.height*100;
+    data.x = Math.max(0,Math.min(90,startLeft+dx));
+    data.y = Math.max(0,Math.min(90,startTop+dy));
+    el.style.left=`${data.x}%`;
+    el.style.top=`${data.y}%`;
+  });
+  window.addEventListener('mouseup', () => {
+    if (!isDragging) return;
+    isDragging=false;
+    document.body.style.userSelect='';
+    document.body.style.cursor='';
+    App.renderInspector();
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SPOTLIGHT / BEAM ENGINE
+// ═══════════════════════════════════════════════════════════════
+function initSpotlightCanvas(canvas, glitterCanvas, getParticles, stageEl) {
+  function resize() {
+    canvas.width = stageEl.clientWidth;
+    canvas.height = stageEl.clientHeight;
+    glitterCanvas.width = stageEl.clientWidth;
+    glitterCanvas.height = stageEl.clientHeight;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+  return resize;
+}
+
+// Easing: smooth step
+function smoothStep(t) { return t*t*(3-2*t); }
+function lerp(a,b,t) { return a+(b-a)*t; }
+
+// ─── AUTO-FIT TEXT ───
+// Verkleinert die Schriftgroesse schrittweise, bis der Text sowohl in die Breite des
+// Kastens (wrapper) als auch in die verbleibende Hoehe bis zum unteren Folienrand passt -
+// "baseFontSize" (die im Inspector eingestellte Groesse) wirkt dabei als Maximum. Wird
+// wrapper/div noch nicht im DOM gerendert (Groesse 0), passiert nichts (kein Division-
+// durch-0/Endlosschleifen-Risiko, einfach der Basiswert bleibt stehen).
+function fitTextToBox(div, wrapper, stageEl, baseFontSize) {
+  const floor = 8;
+  let size = Math.max(floor, baseFontSize||28);
+  div.style.fontSize = size + 'px';
+  const stageRect = stageEl.getBoundingClientRect();
+  const wrapRect = wrapper.getBoundingClientRect();
+  if (wrapRect.width===0 || stageRect.height===0) return size;
+  const maxHeight = Math.max(20, stageRect.bottom - wrapRect.top - 4);
+  let guard = 0;
+  while (size > floor && guard < 80 && (div.scrollWidth > wrapper.clientWidth + 1 || div.scrollHeight > maxHeight)) {
+    size -= 1;
+    div.style.fontSize = size + 'px';
+    guard++;
+  }
+  return size;
+}
+
+// ─── FOLIENUEBERGANG (Gleiten/Ueberblenden statt hartem Schnitt) ───
+// Rendert die naechste Folie in ein temporaeres Overlay-Div und animiert dann ENTWEDER
+// beide Inhalts-Ebenen gemeinsam seitlich weiter ("slide" - wirkt wie ein durchgehender
+// Filmstreifen statt zweier getrennter Schnitte) ODER blendet die neue Ebene ueber die
+// alte ("fade"). "container" ist die persistente Elemente-Ebene der jeweiligen Buehne
+// (#slide-content im Editor, #pres-content-full im Vollbild) - deren direkter Elternteil
+// (position:relative/absolute, siehe CSS) liefert den Bezugsrahmen fuer beide Ebenen.
+function transitionElements(container, slide, isEditor, mode) {
+  if (mode === 'none' || !container.firstChild) {
+    container.innerHTML = '';
+    renderSlideContent(slide, container, isEditor);
+    return;
+  }
+  const parent = container.parentElement;
+  const temp = document.createElement('div');
+  temp.style.cssText = 'position:absolute; inset:0; z-index:10;';
+  parent.appendChild(temp);
+  renderSlideContent(slide, temp, isEditor);
+
+  function finish() {
+    container.innerHTML = '';
+    while (temp.firstChild) container.appendChild(temp.firstChild);
+    container.style.transition = ''; container.style.opacity = ''; container.style.transform = '';
+    temp.remove();
+  }
+
+  if (mode === 'fade') {
+    temp.style.opacity = '0';
+    temp.style.transition = 'opacity 0.6s ease';
+    container.style.transition = 'opacity 0.6s ease';
+    requestAnimationFrame(() => { temp.style.opacity = '1'; container.style.opacity = '0'; });
+    setTimeout(finish, 620);
+  } else { // 'slide' - beide Ebenen ziehen gemeinsam nach links weiter, nahtlos wie ein Streifen
+    temp.style.transform = 'translateX(100%)';
+    temp.style.transition = 'transform 0.5s cubic-bezier(.4,0,.2,1)';
+    container.style.transition = 'transform 0.5s cubic-bezier(.4,0,.2,1)';
+    requestAnimationFrame(() => { temp.style.transform = 'translateX(0%)'; container.style.transform = 'translateX(-100%)'; });
+    setTimeout(finish, 520);
+  }
+}
+
+function tickBeam(beam, dt, canvasW, canvasH) {
+  // Compute current position
+  if (beam.pattern==='waypoints' && beam.waypoints && beam.waypoints.length>0) {
+    const wps = beam.waypoints;
+    const wp = wps[beam._wpIdx % wps.length];
+
+    if (beam._wpPhase==='move') {
+      // Move towards target
+      beam._targetX = wp.x; beam._targetY = wp.y;
+      const speed = beam.speed * 0.03;
+      const dx = beam._targetX - beam._currentX;
+      const dy = beam._targetY - beam._currentY;
+      const dist = Math.sqrt(dx*dx+dy*dy);
+      if (dist < 0.3) {
+        beam._currentX = beam._targetX; beam._currentY = beam._targetY;
+        beam._wpPhase = 'pause'; beam._wpTimer = wp.pause || 2;
+      } else {
+        const step = Math.min(speed * dt * 60, dist);
+        beam._currentX += (dx/dist)*step;
+        beam._currentY += (dy/dist)*step;
+      }
+    } else {
+      // Pause
+      beam._wpTimer = Math.max(0, beam._wpTimer - dt);
+      if (beam._wpTimer <= 0) {
+        beam._wpIdx = (beam._wpIdx+1) % wps.length;
+        beam._wpPhase = 'move';
+      }
+    }
+    return { x: (beam._currentX/100)*canvasW, y: (beam._currentY/100)*canvasH };
+
+  } else if (beam.pattern==='figure8') {
+    _beamAngle += 0.003 * beam.speed;
+    return { x:(0.5+Math.sin(_beamAngle)*0.3)*canvasW, y:(0.5+Math.sin(_beamAngle*2)*0.22)*canvasH };
+  } else if (beam.pattern==='sine') {
+    _beamAngle += 0.003 * beam.speed;
+    return { x:(0.5+Math.sin(_beamAngle)*0.33)*canvasW, y:(0.5+Math.cos(_beamAngle*0.8)*0.18)*canvasH };
+  } else if (beam.pattern==='bounce') {
+    _beamAngle += 0.004 * beam.speed;
+    return { x:(0.5+Math.sin(_beamAngle*1.2)*0.33)*canvasW, y:(0.15+Math.abs(Math.sin(_beamAngle*1.5))*0.7)*canvasH };
+  } else if (beam.pattern==='mouse') {
+    return { x:(beam.x/100)*canvasW, y:(beam.y/100)*canvasH };
+  }
+  return {x:canvasW/2, y:canvasH/2};
+}
+
+function drawSpotlight(ctx, pos, beam) {
+  ctx.clearRect(0,0,ctx.canvas.width,ctx.canvas.height);
+  if (!beam.enabled) return;
+
+  const {x,y}=pos, r=beam.size/2;
+  const dark=1-(beam.ambience/100);
+  ctx.fillStyle=`rgba(0,0,0,${dark})`;
+  ctx.fillRect(0,0,ctx.canvas.width,ctx.canvas.height);
+
+  ctx.save();
+  ctx.globalCompositeOperation='destination-out';
+  const g=ctx.createRadialGradient(x,y,Math.max(0,r-beam.blur),x,y,r);
+  g.addColorStop(0,'rgba(0,0,0,1)'); g.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+
+  ctx.save();
+  ctx.globalCompositeOperation='screen';
+  const gg=ctx.createRadialGradient(x,y,0,x,y,r);
+  gg.addColorStop(0,beam.color); gg.addColorStop(1,'transparent');
+  ctx.fillStyle=gg; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+function drawGlitter(ctx, particles, glitter) {
+  ctx.clearRect(0,0,ctx.canvas.width,ctx.canvas.height);
+  if (!glitter.enabled) return;
+  ctx.fillStyle=glitter.color;
+  particles.forEach(p=>{
+    if (glitter.speed>0) {
+      p.y+=p.speedY; p.alpha+=(Math.random()-0.5)*0.04;
+      if (p.alpha<0.1) p.alpha=0.15; if (p.alpha>0.9) p.alpha=0.8;
+      if (p.y<0) p.y=ctx.canvas.height; if (p.y>ctx.canvas.height) p.y=0;
+    }
+    ctx.globalAlpha=p.alpha;
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.size,0,Math.PI*2); ctx.fill();
+  });
+  ctx.globalAlpha=1;
+}
+
+function createParticles(canvas, glitter) {
+  const ps=[];
+  for (let i=0;i<glitter.count;i++) ps.push({
+    x:Math.random()*canvas.width, y:Math.random()*canvas.height,
+    size:Math.random()*glitter.size+0.5, alpha:Math.random(),
+    speedY:(Math.random()-0.5)*(glitter.speed*0.4)
+  });
+  return ps;
+}
+
+// ─── EDITOR CANVAS LOOP ───
+let _lastEditor = 0;
+function startEditorCanvasLoop() {
+  const spotCanvas = document.getElementById('spotlight-canvas');
+  const glitCanvas = document.getElementById('glitter-canvas');
+  const stage      = document.getElementById('presentation-stage');
+  const spotCtx    = spotCanvas.getContext('2d');
+  const glitCtx    = glitCanvas.getContext('2d');
+
+  _editorParticles = createParticles(glitCanvas, S.glitter);
+
+  function resize() {
+    spotCanvas.width=stage.clientWidth; spotCanvas.height=stage.clientHeight;
+    glitCanvas.width=stage.clientWidth; glitCanvas.height=stage.clientHeight;
+    _editorParticles=createParticles(glitCanvas,S.glitter);
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  // Mouse tracking for beam
+  stage.addEventListener('mousemove', evt => {
+    if (S.beam.pattern==='mouse') {
+      const r=stage.getBoundingClientRect();
+      S.beam.x=((evt.clientX-r.left)/r.width)*100;
+      S.beam.y=((evt.clientY-r.top)/r.height)*100;
+    }
+    if (S.addingWaypoint) {
+      const r=stage.getBoundingClientRect();
+      S._wpPreviewX=((evt.clientX-r.left)/r.width)*100;
+      S._wpPreviewY=((evt.clientY-r.top)/r.height)*100;
+    }
+  });
+
+  stage.addEventListener('click', evt => {
+    if (S.addingWaypoint && S.isEditor) {
+      const r=stage.getBoundingClientRect();
+      const x=Math.round(((evt.clientX-r.left)/r.width)*1000)/10;
+      const y=Math.round(((evt.clientY-r.top)/r.height)*1000)/10;
+      S.beam.waypoints.push({x,y,pause:2});
+      App.renderWaypointsList();
+      renderWaypointMarkers();
+      S.addingWaypoint=false;
+      document.getElementById('wp-click-hint').style.display='none';
+    } else if (!evt.target.closest('.slide-el') && S.isEditor) {
+      S.selectedElementId=null;
+      App.renderInspector();
+      const els=document.querySelectorAll('.slide-el');
+      els.forEach(e=>e.classList.remove('selected-el'));
+    }
+  });
+
+  let lastT=0;
+  function loop(t) {
+    const dt=(t-lastT)/1000; lastT=t;
+    const pos=tickBeam(S.beam, dt, spotCanvas.width, spotCanvas.height);
+    drawSpotlight(spotCtx, pos, S.beam);
+    drawGlitter(glitCtx, _editorParticles, S.glitter);
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+}
+
+// ─── PRESENTATION CANVAS LOOP ───
+let _presLoopId=null;
+function startPresCanvasLoop() {
+  const spotCanvas = document.getElementById('pres-spotlight-canvas');
+  const glitCanvas = document.getElementById('pres-glitter-canvas');
+  const stage      = document.getElementById('pres-stage-full');
+  const spotCtx    = spotCanvas.getContext('2d');
+  const glitCtx    = glitCanvas.getContext('2d');
+
+  function resize() {
+    spotCanvas.width=window.innerWidth; spotCanvas.height=window.innerHeight;
+    glitCanvas.width=window.innerWidth; glitCanvas.height=window.innerHeight;
+    _presParticles=createParticles(glitCanvas,S.glitter);
+  }
+  resize();
+
+  // Separate beam state for presentation
+  const presBeam = JSON.parse(JSON.stringify(S.beam));
+  presBeam._currentX=S.beam._currentX; presBeam._currentY=S.beam._currentY;
+  presBeam._wpIdx=0; presBeam._wpPhase='move'; presBeam._wpTimer=0;
+
+  let lastT=0;
+  function loop(t) {
+    if (!_presLoopId) return;
+    const dt=(t-lastT)/1000; lastT=t;
+    const pos=tickBeam(presBeam, dt, spotCanvas.width, spotCanvas.height);
+    drawSpotlight(spotCtx, pos, presBeam);
+    drawGlitter(glitCtx, _presParticles, S.glitter);
+    _presLoopId = requestAnimationFrame(loop);
+  }
+  _presLoopId = requestAnimationFrame(loop);
+}
+
+function stopPresCanvasLoop() {
+  if (_presLoopId) { cancelAnimationFrame(_presLoopId); _presLoopId=null; }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  THUMBNAIL RENDERER
+// ═══════════════════════════════════════════════════════════════
+function renderThumbs() {
+  const list = document.getElementById('slides-list');
+  if (!list) return;
+  list.innerHTML='';
+
+  S.slides.forEach((slide, idx) => {
+    const wrap=document.createElement('div');
+    wrap.className='slide-thumb'+(idx===S.activeSlideIndex?' active-thumb':'');
+
+    // Mini canvas bg
+    const tc=document.createElement('canvas');
+    tc.style.position='absolute'; tc.style.inset='0'; tc.style.width='100%'; tc.style.height='100%';
+    wrap.appendChild(tc);
+
+    const overlay=document.createElement('div');
+    overlay.style.cssText='position:absolute;inset:0;z-index:2;display:flex;flex-direction:column;justify-content:flex-end;padding:6px;background:linear-gradient(transparent,rgba(0,0,0,0.5));';
+    overlay.innerHTML=`
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <span style="font-size:9px;font-weight:700;color:rgba(255,255,255,0.7);">Folie ${idx+1} · ${slide.duration}s</span>
+        <button class="del-slide-btn" data-idx="${idx}" style="width:18px;height:18px;border-radius:5px;background:rgba(239,68,68,0.7);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;opacity:0;transition:opacity 0.2s;">✕</button>
+      </div>`;
+    wrap.appendChild(overlay);
+
+    // Hover show delete
+    wrap.addEventListener('mouseenter',()=>overlay.querySelector('.del-slide-btn').style.opacity='1');
+    wrap.addEventListener('mouseleave',()=>overlay.querySelector('.del-slide-btn').style.opacity='0');
+
+    wrap.addEventListener('click', e => {
+      if (e.target.closest('.del-slide-btn')) {
+        e.stopPropagation();
+        App.deleteSlide(idx); return;
+      }
+      App.goToSlide(idx);
+    });
+
+    list.appendChild(wrap);
+
+    // Draw thumbnail bg
+    setTimeout(()=>{
+      tc.width=tc.clientWidth*2; tc.height=tc.clientHeight*2;
+      if (slide.background.type==='grainy') {
+        renderGrainy(tc, slide.background.grainy);
+      } else if (slide.background.type==='custom-linear'||slide.background.type==='custom-radial') {
+        const ctx=tc.getContext('2d');
+        const grad = buildCSSGradient(slide);
+        // Approximate with solid bg color
+        const sorted=[...slide.background.colorStops].sort((a,b)=>a.pos-b.pos);
+        if (sorted.length>0) { ctx.fillStyle=sorted[0].color; ctx.fillRect(0,0,tc.width,tc.height); }
+        if (sorted.length>1) { // simple overlay
+          const g=ctx.createLinearGradient(0,0,tc.width,tc.height);
+          sorted.forEach(s=>g.addColorStop(s.pos/100,s.color));
+          ctx.fillStyle=g; ctx.fillRect(0,0,tc.width,tc.height);
+        }
+      } else {
+        const ctx=tc.getContext('2d');
+        ctx.fillStyle=slide.background.solidColor||'#090d16';
+        ctx.fillRect(0,0,tc.width,tc.height);
+      }
+    },20);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  GRAINY PRESETS UI
+// ═══════════════════════════════════════════════════════════════
+// ─── PRESENTATION NAV: NUR BEI MAUSBEWEGUNG UEBER DER FOLIE EINBLENDEN ───
+// Ersetzt das reine ":hover"-Verhalten (bliebe sichtbar, solange der Zeiger nur irgendwo
+// auf der Folie ruht) durch echte Bewegungs-Erkennung: Menue/Cursor erscheinen bei
+// mousemove und verschwinden nach kurzer Bewegungslosigkeit automatisch wieder.
+let _presIdleTimer=null;
+function setupPresMouseIdle() {
+  const overlay=document.getElementById('pres-overlay');
+  if (!overlay) return;
+  overlay.addEventListener('mousemove', () => {
+    overlay.classList.add('nav-visible');
+    clearTimeout(_presIdleTimer);
+    _presIdleTimer=setTimeout(()=>overlay.classList.remove('nav-visible'), 2500);
+  });
+}
+
+// ─── SAVE-TO-SERVER BUTTON: NUR MIT ?token=... SICHTBAR ───
+// EyeCandy bleibt eine eigenstaendige, serverlose HTML-Datei - ob der "Im Infomaster
+// speichern"-Knopf ueberhaupt auftaucht, entscheidet rein clientseitig, ob die Seite mit
+// einem (nicht-leeren) Token-Parameter geoeffnet wurde. Die eigentliche Pruefung, ob dieses
+// Token auch WIRKLICH gueltig ist, passiert serverseitig bei jedem Speicherversuch selbst
+// (siehe App.saveToServer() -> bento.php) - ein manipulierter/frei erfundener Parameter in
+// der URL wuerde den Knopf zwar anzeigen, der eigentliche Speichervorgang wuerde aber vom
+// Server abgelehnt.
+function setupSaveToServer() {
+  const token=new URLSearchParams(location.search).get('token');
+  if (token && token.trim() !== '') {
+    S.launchToken=token.trim();
+    const btn=document.getElementById('save-server-btn');
+    if (btn) btn.style.display='flex';
+  }
+}
+
+// ─── FONT DRAG & DROP ───
+function setupFontDropzone() {
+  const zone=document.getElementById('font-dropzone');
+  if (!zone) return;
+  const idleColor='#334155', idleBg='transparent';
+  ['dragenter','dragover'].forEach(ev=>{
+    zone.addEventListener(ev, e=>{ e.preventDefault(); e.stopPropagation(); zone.style.borderColor='#38bdf8'; zone.style.background='#0f172a'; });
+  });
+  ['dragleave','drop'].forEach(ev=>{
+    zone.addEventListener(ev, e=>{ e.preventDefault(); e.stopPropagation(); zone.style.borderColor=idleColor; zone.style.background=idleBg; });
+  });
+  zone.addEventListener('drop', e=>{
+    const files=e.dataTransfer && e.dataTransfer.files;
+    if (files && files.length) App.handleFontFiles(files);
+  });
+}
+
+function buildGrainyPresetsUI() {
+  const container = document.getElementById('grainy-presets');
+  if (!container) return;
+  container.innerHTML='';
+  GRAINY_PRESETS.forEach(p=>{
+    const btn=document.createElement('button');
+    btn.className='preset-btn';
+    btn.innerHTML=`
+      <div class="preset-bar" style="background:linear-gradient(90deg,${p.colors.c1},${p.colors.c2},${p.colors.c3});"></div>
+      <div class="preset-label">${p.name}</div>`;
+    btn.addEventListener('click',()=>{
+      const slide=S.slides[S.activeSlideIndex];
+      slide.background.type='grainy';
+      slide.background.grainy={colors:{...p.colors},noise:p.noise,scale:p.scale,angle:p.angle};
+      // Sync controls
+      document.getElementById('grainy-bg').value=p.colors.bg;
+      document.getElementById('grainy-c1').value=p.colors.c1;
+      document.getElementById('grainy-c2').value=p.colors.c2;
+      document.getElementById('grainy-c3').value=p.colors.c3;
+      document.getElementById('grainy-noise').value=p.noise;
+      document.getElementById('grainy-scale').value=p.scale;
+      document.getElementById('grainy-angle').value=p.angle;
+      updateGrainyVals();
+      App.applyBackground();
+      if (document.getElementById('check-global-gradient').checked) {
+        S.slides.forEach(s=>{ s.background.type='grainy'; s.background.grainy={colors:{...p.colors},noise:p.noise,scale:p.scale,angle:p.angle}; });
+      }
+      renderThumbs();
+    });
+    container.appendChild(btn);
+  });
+}
+
+function updateGrainyVals() {
+  const ids=[['grainy-noise','grainy-noise-val','%'],['grainy-scale','grainy-scale-val','%'],['grainy-angle','grainy-angle-val','°']];
+  ids.forEach(([inp,span,suf])=>{
+    const el=document.getElementById(inp); const s=document.getElementById(span);
+    if(el&&s) s.textContent=el.value;
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  COLOR STOPS UI
+// ═══════════════════════════════════════════════════════════════
+function renderColorStopsList() {
+  const slide=S.slides[S.activeSlideIndex];
+  if (!slide) return;
+  const list=document.getElementById('color-stops-list');
+  if (!list) return;
+
+  const stops=slide.background.colorStops||[];
+  list.innerHTML='';
+  stops.forEach((cs,i)=>{
+    const item=document.createElement('div');
+    item.className='cs-item'+(S.selectedStopId===cs.id?' selected-cs':'');
+    item.innerHTML=`
+      <div class="cs-swatch" style="background:${cs.color};"></div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:10px;color:#94a3b8;font-weight:500;">${cs.color.toUpperCase()} · ${cs.pos}%</div>
+      </div>`;
+    item.addEventListener('click',()=>{
+      S.selectedStopId=cs.id;
+      renderColorStopsList();
+      showStopControls(cs);
+    });
+    list.appendChild(item);
+  });
+
+  if (S.selectedStopId) {
+    const cs=stops.find(s=>s.id===S.selectedStopId);
+    if (cs) showStopControls(cs);
+  }
+}
+
+function showStopControls(cs) {
+  const panel=document.getElementById('stop-controls');
+  if (!panel) return;
+  panel.style.display='block';
+  document.getElementById('stop-color-input').value=cs.color;
+  document.getElementById('stop-pos-input').value=cs.pos;
+  document.getElementById('stop-pos-val').textContent=cs.pos;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  WAYPOINTS UI
+// ═══════════════════════════════════════════════════════════════
+function renderWaypointsList() {
+  const list=document.getElementById('waypoints-list');
+  if (!list) return;
+  list.innerHTML='';
+
+  S.beam.waypoints.forEach((wp,i)=>{
+    const item=document.createElement('div');
+    item.className='wp-item'+(S.selectedWaypointIdx===i?' selected-wp':'');
+    item.innerHTML=`
+      <div class="wp-dot" style="background:hsl(${(i*60)%360},70%,60%);"></div>
+      <div style="flex:1;font-size:10px;color:#94a3b8;">
+        <b style="color:#e2e8f0;">#${i+1}</b> · X:${wp.x.toFixed(1)}% Y:${wp.y.toFixed(1)}% · ⏱ ${wp.pause}s
+      </div>`;
+    item.addEventListener('click',()=>{
+      S.selectedWaypointIdx=i;
+      renderWaypointsList();
+      showWaypointControls(wp);
+    });
+    list.appendChild(item);
+  });
+}
+
+function showWaypointControls(wp) {
+  const panel=document.getElementById('waypoint-controls');
+  if (!panel) return;
+  panel.style.display='block';
+  document.getElementById('wp-x').value=wp.x;
+  document.getElementById('wp-y').value=wp.y;
+  document.getElementById('wp-pause').value=wp.pause;
+}
+
+// ─── DRAGGABLE WAYPOINT MARKERS (directly on the stage) ───
+// Wegpunkte lassen sich statt nur ueber die Zahlenfelder auch direkt per Drag auf der
+// Folie verschieben - nur sichtbar/aktiv, wenn der Spotlight-Tab offen UND der
+// Wegpunkt-Modus aktiv ist, sonst waeren die Marker auf der fertigen Folie im Weg.
+// Ein einziges, dauerhaftes Paar Window-Listener (statt pro Marker/Render neu
+// angehaengter Listener) verhindert, dass bei jedem Re-Render ungenutzte Listener
+// auf window liegen bleiben.
+const _wpDrag = { active:false, idx:-1, moved:false, startX:0, startY:0 };
+function _wpMarkerMouseMove(e) {
+  if (!_wpDrag.active) return;
+  const wp = S.beam.waypoints[_wpDrag.idx];
+  if (!wp) { _wpDrag.active=false; return; }
+  if (Math.abs(e.clientX-_wpDrag.startX)>2 || Math.abs(e.clientY-_wpDrag.startY)>2) _wpDrag.moved=true;
+  const stage=document.getElementById('presentation-stage');
+  const r=stage.getBoundingClientRect();
+  const x=Math.max(0,Math.min(100, ((e.clientX-r.left)/r.width)*100));
+  const y=Math.max(0,Math.min(100, ((e.clientY-r.top)/r.height)*100));
+  wp.x=Math.round(x*10)/10; wp.y=Math.round(y*10)/10;
+  const marker=document.getElementById('waypoints-overlay').children[_wpDrag.idx];
+  if (marker) { marker.style.left=wp.x+'%'; marker.style.top=wp.y+'%'; }
+  if (S.selectedWaypointIdx===_wpDrag.idx) {
+    document.getElementById('wp-x').value=wp.x;
+    document.getElementById('wp-y').value=wp.y;
+  }
+}
+function _wpMarkerMouseUp() {
+  if (!_wpDrag.active) return;
+  const idx=_wpDrag.idx, moved=_wpDrag.moved;
+  _wpDrag.active=false;
+  const marker=document.getElementById('waypoints-overlay').children[idx];
+  if (marker) marker.classList.remove('dragging');
+  if (!moved) {
+    S.selectedWaypointIdx=idx;
+    renderWaypointsList();
+    showWaypointControls(S.beam.waypoints[idx]);
+    renderWaypointMarkers();
+  } else {
+    renderWaypointsList();
+  }
+}
+window.addEventListener('mousemove', _wpMarkerMouseMove);
+window.addEventListener('mouseup', _wpMarkerMouseUp);
+
+function renderWaypointMarkers() {
+  const overlay=document.getElementById('waypoints-overlay');
+  if (!overlay) return;
+  overlay.innerHTML='';
+  const showMarkers = S.isEditor && S.activeTab==='spotlight' && S.beam.pattern==='waypoints';
+  if (!showMarkers) return;
+
+  S.beam.waypoints.forEach((wp,i)=>{
+    const marker=document.createElement('div');
+    marker.className='wp-marker'+(S.selectedWaypointIdx===i?' selected-marker':'');
+    marker.style.left=wp.x+'%';
+    marker.style.top=wp.y+'%';
+    marker.style.background=`hsl(${(i*60)%360},70%,55%)`;
+    marker.textContent=i+1;
+    marker.title='Ziehen zum Verschieben · Klick zum Auswaehlen';
+    marker.addEventListener('mousedown', e=>{
+      e.preventDefault(); e.stopPropagation();
+      _wpDrag.active=true; _wpDrag.idx=i; _wpDrag.moved=false;
+      _wpDrag.startX=e.clientX; _wpDrag.startY=e.clientY;
+      marker.classList.add('dragging');
+    });
+    overlay.appendChild(marker);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  APP OBJECT
+// ═══════════════════════════════════════════════════════════════
+const App = {
+  S,
+
+  init() {
+    buildGrainyPresetsUI();
+    this.renderFontCatalog();
+    this.renderInstalledFonts();
+    this.renderColorStopsList_ext();
+    renderWaypointsList();
+    startEditorCanvasLoop();
+    setupFontDropzone();
+    setupPresMouseIdle();
+    setupSaveToServer();
+    this.render();
+    this.setTab('slides');
+    lucide.createIcons();
+
+    // Start in presentation mode (clean)
+    this.startPresentation();
+  },
+
+  // ─── TAB SWITCHING ───
+  setTab(name) {
+    S.activeTab=name;
+    document.querySelectorAll('.tab-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.tab===name);
+    });
+    document.querySelectorAll('.tab-panel').forEach(p => {
+      p.classList.toggle('active', p.id==='tab-'+name);
+    });
+    if (name==='spotlight') {
+      const wpMode = S.beam.pattern==='waypoints';
+      document.getElementById('waypoints-panel').style.display=wpMode?'block':'none';
+    }
+    if (name==='background') {
+      this.syncBgControls();
+    }
+    renderWaypointMarkers();
+  },
+
+  // ─── RENDER ───
+  // useTransition=true nur beim eigentlichen Folienwechsel (goToSlide) - fuer alle anderen
+  // Aufrufe (Element bearbeitet, Hintergrund geaendert, ...) waere ein Gleit-/Ueberblend-
+  // Effekt auf derselben Folie nur verwirrend, daher per Default aus.
+  render(useTransition=false) {
+    this.applyBackground();
+
+    const slide=S.slides[S.activeSlideIndex];
+    const container=document.getElementById('slide-content');
+    if (useTransition) {
+      transitionElements(container, slide, S.isEditor, S.transitionMode);
+    } else {
+      container.innerHTML='';
+      renderSlideContent(slide, container, S.isEditor);
+    }
+    renderWaypointMarkers();
+    this.renderLayersList();
+
+    document.getElementById('slide-indicator').textContent=`Folie ${S.activeSlideIndex+1} / ${S.slides.length}`;
+    renderThumbs();
+
+    // Duration control
+    if (slide) document.getElementById('slide-duration-input').value=slide.duration;
+    const glassToggle=document.getElementById('template-glass-toggle');
+    if (slide && glassToggle) glassToggle.checked = slide.template_glass !== false;
+    lucide.createIcons();
+  },
+
+  setTransitionMode(mode) {
+    S.transitionMode = mode;
+  },
+
+  applyBackground() {
+    const slide=S.slides[S.activeSlideIndex];
+    if (!slide) return;
+    const bg=slide.background;
+
+    // Read live control values into bg object
+    const type=document.getElementById('bg-type').value;
+    bg.type=type;
+
+    if (type==='custom-linear'||type==='custom-radial') {
+      bg.angle=parseInt(document.getElementById('bg-angle').value)||135;
+      bg.cx=parseInt(document.getElementById('bg-cx').value)||50;
+      bg.cy=parseInt(document.getElementById('bg-cy').value)||50;
+      bg.radialShape=document.getElementById('bg-radial-shape').value;
+      document.getElementById('bg-angle-val').textContent=bg.angle;
+      document.getElementById('bg-cx-val').textContent=bg.cx;
+      document.getElementById('bg-cy-val').textContent=bg.cy;
+    } else if (type==='grainy') {
+      if (!bg.grainy) bg.grainy={colors:{bg:'#090d16',c1:'#f43f5e',c2:'#fb923c',c3:'#eab308'},noise:35,scale:100,angle:45};
+      bg.grainy.colors.bg=document.getElementById('grainy-bg').value;
+      bg.grainy.colors.c1=document.getElementById('grainy-c1').value;
+      bg.grainy.colors.c2=document.getElementById('grainy-c2').value;
+      bg.grainy.colors.c3=document.getElementById('grainy-c3').value;
+      bg.grainy.noise=parseInt(document.getElementById('grainy-noise').value);
+      bg.grainy.scale=parseInt(document.getElementById('grainy-scale').value);
+      bg.grainy.angle=parseInt(document.getElementById('grainy-angle').value);
+      updateGrainyVals();
+    } else if (type==='solid') {
+      bg.solidColor=document.getElementById('bg-solid-col').value;
+    }
+
+    // Apply to editor stage
+    const stage=document.getElementById('presentation-stage');
+    const gc=document.getElementById('grainy-canvas');
+    if (type==='grainy' && gc) {
+      // Position grainy canvas inside stage
+      gc.style.display='block';
+      gc.style.position='absolute';
+      gc.style.inset='0';
+      gc.style.width='100%';
+      gc.style.height='100%';
+      gc.style.zIndex='1';
+      gc.style.pointerEvents='none';
+      if (!stage.contains(gc)) stage.prepend(gc);
+      renderGrainy(gc, bg.grainy, _grainyAnimOffset);
+    } else {
+      // Move canvas out of stage if needed
+      if (stage.contains(gc)) document.getElementById('app').appendChild(gc);
+      gc.style.display='none';
+      applyBgToStage(stage, slide, null);
+    }
+
+    if (type!=='grainy') applyBgToStage(stage, slide, null);
+
+    // Global gradient
+    if (document.getElementById('check-global-gradient').checked) {
+      S.slides.forEach((s,i)=>{ if (i!==S.activeSlideIndex) s.background=JSON.parse(JSON.stringify(bg)); });
+    }
+
+    updateGradientPreview();
+    renderThumbs();
+  },
+
+  onBgTypeChange() {
+    const type=document.getElementById('bg-type').value;
+    document.getElementById('bg-custom-gradient-panel').style.display=(type==='custom-linear'||type==='custom-radial')?'block':'none';
+    document.getElementById('bg-grainy-panel').style.display=type==='grainy'?'block':'none';
+    document.getElementById('bg-image-upload').style.display=type==='image'?'block':'none';
+    document.getElementById('bg-solid-color').style.display=type==='solid'?'block':'none';
+    document.getElementById('bg-linear-opts').style.display=type==='custom-linear'?'block':'none';
+    document.getElementById('bg-radial-opts').style.display=type==='custom-radial'?'block':'none';
+    this.applyBackground();
+  },
+
+  syncBgControls() {
+    const slide=S.slides[S.activeSlideIndex];
+    if (!slide) return;
+    const bg=slide.background;
+    const sel=document.getElementById('bg-type');
+    sel.value=bg.type||'custom-linear';
+    this.onBgTypeChange();
+    if (bg.angle!==undefined) document.getElementById('bg-angle').value=bg.angle;
+    if (bg.cx!==undefined) document.getElementById('bg-cx').value=bg.cx;
+    if (bg.cy!==undefined) document.getElementById('bg-cy').value=bg.cy;
+    if (bg.radialShape) document.getElementById('bg-radial-shape').value=bg.radialShape;
+    if (bg.solidColor) document.getElementById('bg-solid-col').value=bg.solidColor;
+    if (bg.grainy) {
+      document.getElementById('grainy-bg').value=bg.grainy.colors.bg;
+      document.getElementById('grainy-c1').value=bg.grainy.colors.c1;
+      document.getElementById('grainy-c2').value=bg.grainy.colors.c2;
+      document.getElementById('grainy-c3').value=bg.grainy.colors.c3;
+      document.getElementById('grainy-noise').value=bg.grainy.noise;
+      document.getElementById('grainy-scale').value=bg.grainy.scale;
+      document.getElementById('grainy-angle').value=bg.grainy.angle;
+      updateGrainyVals();
+    }
+    renderColorStopsList();
+    updateGradientPreview();
+  },
+
+  toggleGrainyMotion() {
+    const enabled=document.getElementById('grainy-motion').checked;
+    if (enabled) {
+      const slide=S.slides[S.activeSlideIndex];
+      const stage=document.getElementById('presentation-stage');
+      const gc=document.getElementById('grainy-canvas');
+      const loop=()=>{
+        if (!document.getElementById('grainy-motion').checked) { _grainyAnimOffset=0; cancelAnimationFrame(_grainyAnimReq); return; }
+        _grainyAnimOffset+=0.3;
+        renderGrainy(gc, slide.background.grainy||{colors:{bg:'#090d16',c1:'#f43f5e',c2:'#fb923c',c3:'#facc15'},noise:35,scale:100,angle:45}, _grainyAnimOffset);
+        _grainyAnimReq=requestAnimationFrame(loop);
+      };
+      loop();
+    } else {
+      cancelAnimationFrame(_grainyAnimReq); _grainyAnimOffset=0;
+    }
+  },
+
+  // ─── COLOR STOPS ───
+  renderColorStopsList_ext() { renderColorStopsList(); },
+
+  addColorStop() {
+    const slide=S.slides[S.activeSlideIndex];
+    if (!slide.background.colorStops) slide.background.colorStops=defaultColorStops();
+    const newStop={id:'cs-'+Date.now(), color:'#6366f1', pos:50};
+    slide.background.colorStops.push(newStop);
+    S.selectedStopId=newStop.id;
+    renderColorStopsList();
+    this.applyBackground();
+  },
+
+  updateSelectedStop(key, val) {
+    const slide=S.slides[S.activeSlideIndex];
+    const stop=slide.background.colorStops.find(s=>s.id===S.selectedStopId);
+    if (!stop) return;
+    stop[key]=val;
+    if (key==='pos') document.getElementById('stop-pos-val').textContent=val;
+    renderColorStopsList();
+    this.applyBackground();
+  },
+
+  deleteSelectedStop() {
+    const slide=S.slides[S.activeSlideIndex];
+    slide.background.colorStops=slide.background.colorStops.filter(s=>s.id!==S.selectedStopId);
+    S.selectedStopId=null;
+    document.getElementById('stop-controls').style.display='none';
+    renderColorStopsList();
+    this.applyBackground();
+  },
+
+  // ─── WAYPOINTS ───
+  addWaypoint() {
+    S.addingWaypoint=true;
+    document.getElementById('wp-click-hint').style.display='block';
+  },
+
+  updateSelectedWaypoint(key, val) {
+    if (S.selectedWaypointIdx<0) return;
+    S.beam.waypoints[S.selectedWaypointIdx][key]=val;
+    renderWaypointsList();
+    renderWaypointMarkers();
+  },
+
+  deleteSelectedWaypoint() {
+    if (S.selectedWaypointIdx<0) return;
+    S.beam.waypoints.splice(S.selectedWaypointIdx,1);
+    S.selectedWaypointIdx=-1;
+    document.getElementById('waypoint-controls').style.display='none';
+    renderWaypointsList();
+    renderWaypointMarkers();
+  },
+
+  renderWaypointsList() { renderWaypointsList(); },
+
+  // ─── BEAM SETTINGS ───
+  updateBeamSettings() {
+    S.beam.enabled=document.getElementById('beam-enabled').checked;
+    S.beam.pattern=document.getElementById('beam-pattern').value;
+    S.beam.size=parseInt(document.getElementById('beam-size').value);
+    S.beam.blur=parseInt(document.getElementById('beam-blur').value);
+    S.beam.speed=parseInt(document.getElementById('beam-speed').value);
+    S.beam.color=document.getElementById('beam-color').value;
+    S.beam.ambience=parseInt(document.getElementById('beam-ambience').value);
+    document.getElementById('ambience-val').textContent=S.beam.ambience;
+
+    const wpMode=S.beam.pattern==='waypoints';
+    document.getElementById('waypoints-panel').style.display=wpMode?'block':'none';
+    renderWaypointMarkers();
+  },
+
+  // ─── GLITTER ───
+  updateParticleSettings() {
+    S.glitter.count=parseInt(document.getElementById('particle-count').value);
+    S.glitter.size=parseInt(document.getElementById('particle-size').value);
+    S.glitter.speed=parseInt(document.getElementById('particle-speed').value);
+    S.glitter.color=document.getElementById('particle-color').value;
+    document.getElementById('particle-count-val').textContent=S.glitter.count;
+    // Rebuild particles
+    const gc=document.getElementById('glitter-canvas');
+    _editorParticles=createParticles(gc,S.glitter);
+  },
+
+  // ─── SLIDE MANAGEMENT ───
+  addSlide() {
+    const newSlide=defaultSlide(S.slides.length+1);
+    // Copy current background to new slide
+    newSlide.background=JSON.parse(JSON.stringify(S.slides[S.activeSlideIndex].background));
+    newSlide.elements=[{id:'el-'+Date.now(),type:'text',content:'Neue Folie',fontFamily:'Inter, sans-serif',fontSize:48,color:'#ffffff',textAlign:'center',fontWeight:'700',x:10,y:35,width:80}];
+    S.slides.push(newSlide);
+    this.goToSlide(S.slides.length-1);
+  },
+
+  duplicateSlide() {
+    const dup=JSON.parse(JSON.stringify(S.slides[S.activeSlideIndex]));
+    dup.id='slide-'+Date.now();
+    dup.elements.forEach(e=>e.id='el-'+Date.now()+Math.random());
+    S.slides.splice(S.activeSlideIndex+1,0,dup);
+    this.goToSlide(S.activeSlideIndex+1);
+  },
+
+  deleteSlide(idx) {
+    if (S.slides.length<=1) { alert('Mindestens eine Folie muss vorhanden bleiben!'); return; }
+    S.slides.splice(idx,1);
+    S.activeSlideIndex=Math.min(S.activeSlideIndex,S.slides.length-1);
+    this.render();
+  },
+
+  goToSlide(idx) {
+    S.activeSlideIndex=idx; S.selectedElementId=null;
+    this.render(true);
+    this.renderInspector();
+  },
+
+  prevSlide() { this.goToSlide((S.activeSlideIndex-1+S.slides.length)%S.slides.length); },
+  nextSlide() { this.goToSlide((S.activeSlideIndex+1)%S.slides.length); },
+
+  updateSlideDuration(val) {
+    const slide=S.slides[S.activeSlideIndex];
+    if (slide) slide.duration=parseInt(val)||6;
+    renderThumbs();
+  },
+
+  // ─── AUTOPLAY ───
+  toggleAutoplay() {
+    S.isPlaying=!S.isPlaying;
+    document.getElementById('play-text').textContent=S.isPlaying?'Pause':'Auto';
+    document.getElementById('play-icon').setAttribute('data-lucide',S.isPlaying?'pause':'play');
+    lucide.createIcons();
+    if (S.isPlaying) this._startAutoplayTimer();
+    else clearTimeout(S.autoplayTimer);
+  },
+
+  _startAutoplayTimer() {
+    clearTimeout(S.autoplayTimer);
+    if (!S.isPlaying) return;
+    const dur=(S.slides[S.activeSlideIndex]?.duration||6)*1000;
+    S.autoplayTimer=setTimeout(()=>{ this.nextSlide(); this._startAutoplayTimer(); },dur);
+  },
+
+  // ─── TEMPLATE APPLY ───
+  applyTemplate(tpl) {
+    const slide=S.slides[S.activeSlideIndex];
+    slide.elements=buildTemplateElements(tpl, slide);
+    slide.template=tpl;
+    S.selectedElementId=null;
+    this.render();
+    this.renderInspector();
+  },
+
+  // Weichzeichner-Hintergrund (Glass-Effekt) an/aus - wirkt fuer als naechstes
+  // angewendete Vorlagen (slide.template_glass, siehe buildTemplateElements()) UND
+  // sofort auf bereits platzierte Template-Elemente dieser Folie, damit der Schalter
+  // nicht erst nach erneutem Anwenden einer Vorlage sichtbar wird.
+  toggleTemplateGlass(enabled) {
+    const slide=S.slides[S.activeSlideIndex];
+    if (!slide) return;
+    slide.template_glass=enabled;
+    slide.elements.forEach(el=>{ if (el.type==='template') el.useGlass=enabled; });
+    this.render();
+    this.renderInspector();
+  },
+
+  // ─── ELEMENTS ───
+  addTextElement() {
+    const slide=S.slides[S.activeSlideIndex];
+    const el={id:'el-'+Date.now(),type:'text',content:'Neuer Text',fontFamily:'Inter, sans-serif',fontSize:28,color:'#ffffff',textAlign:'left',fontWeight:'400',x:20,y:35,width:60};
+    slide.elements.push(el);
+    S.selectedElementId=el.id;
+    this.render(); this.renderInspector();
+  },
+
+  handleImageUpload(evt) {
+    const file=evt.target.files[0]; if (!file) return;
+    const r=new FileReader();
+    r.onload=e=>{
+      const slide=S.slides[S.activeSlideIndex];
+      const el={id:'el-'+Date.now(),type:'image',src:e.target.result,width:50,x:25,y:20};
+      slide.elements.push(el); S.selectedElementId=el.id;
+      this.render(); this.renderInspector();
+    };
+    r.readAsDataURL(file);
+  },
+
+  handleBgImageUpload(evt) {
+    const file=evt.target.files[0]; if (!file) return;
+    const r=new FileReader();
+    r.onload=e=>{
+      S.slides[S.activeSlideIndex].background.image=e.target.result;
+      this.applyBackground();
+    };
+    r.readAsDataURL(file);
+  },
+
+  alignEl(pos) {
+    const slide=S.slides[S.activeSlideIndex];
+    const el=slide?.elements.find(e=>e.id===S.selectedElementId);
+    if (!el) return;
+    if (pos==='top') el.y=5;
+    if (pos==='vcenter') el.y=42;
+    if (pos==='bottom') el.y=82;
+    if (pos==='left') el.x=2;
+    if (pos==='hcenter') el.x=25;
+    if (pos==='right') el.x=65;
+    this.render();
+  },
+
+  updateElProp(key, val) {
+    const slide=S.slides[S.activeSlideIndex];
+    const el=slide?.elements.find(e=>e.id===S.selectedElementId);
+    if (!el) return;
+    el[key]=val;
+    this.render();
+  },
+
+  // Kontrast-/Negativfarbe fuer ein Text-Element - aktualisiert zusaetzlich zum Datenmodell
+  // direkt das Farbfeld im Inspector (kein voller renderInspector(), der beim Tippen in
+  // anderen Feldern sonst staendig den Fokus klauen wuerde).
+  pickElColor(mode) {
+    const slide=S.slides[S.activeSlideIndex];
+    const el=slide?.elements.find(e=>e.id===S.selectedElementId);
+    if (!el) return;
+    el.color = mode==='contrast' ? contrastHexColor(el.color) : invertHexColor(el.color);
+    const input=document.getElementById('el-color-input');
+    if (input) input.value=el.color;
+    this.render();
+  },
+
+  deleteSelectedEl() {
+    const slide=S.slides[S.activeSlideIndex];
+    if (!slide) return;
+    slide.elements=slide.elements.filter(e=>e.id!==S.selectedElementId);
+    S.selectedElementId=null;
+    this.render(); this.renderInspector();
+  },
+
+  // ─── EBENEN (Layer-Liste) ───
+  // Elemente auf der Folie selbst anzuklicken ist gerade bei Vorlagen schwierig (mehrere
+  // ueberlappende/grossflaechige Textfelder) - diese Liste bietet einen zuverlaessigen
+  // Klick-Ziel pro Element UND zeigt/aendert die Stapelreihenfolge (= Reihenfolge in
+  // slide.elements; oben in der Liste = zuletzt gerendert = im Vordergrund).
+  renderLayersList() {
+    const slide=S.slides[S.activeSlideIndex];
+    const list=document.getElementById('layers-list');
+    if (!list || !slide) return;
+    if (slide.elements.length===0) {
+      list.innerHTML=`<p style="font-size:10px;color:rgba(148,163,184,0.5);font-style:italic;">Keine Elemente auf dieser Folie.</p>`;
+      return;
+    }
+    const n=slide.elements.length;
+    list.innerHTML='';
+    for (let i=n-1; i>=0; i--) {
+      const el=slide.elements[i];
+      let icon='🔤', label='Text';
+      if (el.type==='text') { label=(el.content||'').replace(/\s+/g,' ').trim().slice(0,40) || '(leerer Text)'; }
+      else if (el.type==='image') { icon='🖼️'; label='Bild'; }
+      else if (el.type==='template') { icon='◧'; label='Vorlage: '+el.template; }
+      const item=document.createElement('div');
+      item.className='layer-item'+(S.selectedElementId===el.id?' selected-layer':'');
+      item.innerHTML=`
+        <span>${icon}</span>
+        <span class="layer-label">${escapeHtmlEc(label)}</span>
+        <button type="button" class="btn-sm layer-order-btn" title="Nach vorne"${i===n-1?' disabled style="opacity:0.3;"':''}>▲</button>
+        <button type="button" class="btn-sm layer-order-btn" title="Nach hinten"${i===0?' disabled style="opacity:0.3;"':''}>▼</button>`;
+      item.addEventListener('click', () => { S.selectedElementId=el.id; this.render(); this.renderInspector(); });
+      const [upBtn, downBtn] = item.querySelectorAll('.layer-order-btn');
+      upBtn.addEventListener('click', e => { e.stopPropagation(); this.moveLayer(el.id, 1); });
+      downBtn.addEventListener('click', e => { e.stopPropagation(); this.moveLayer(el.id, -1); });
+      list.appendChild(item);
+    }
+  },
+
+  moveLayer(elId, dir) {
+    const slide=S.slides[S.activeSlideIndex];
+    if (!slide) return;
+    const i=slide.elements.findIndex(e=>e.id===elId);
+    const j=i+dir;
+    if (i<0 || j<0 || j>=slide.elements.length) return;
+    [slide.elements[i], slide.elements[j]] = [slide.elements[j], slide.elements[i]];
+    this.render();
+  },
+
+  renderInspector() {
+    const panel=document.getElementById('element-inspector');
+    if (!panel) return;
+    const slide=S.slides[S.activeSlideIndex];
+    const el=slide?.elements.find(e=>e.id===S.selectedElementId);
+
+    if (!el) {
+      panel.innerHTML=`<p style="font-size:11px;color:rgba(148,163,184,0.55);font-style:italic;text-align:center;padding:20px 0;">Klicke auf ein Element auf der Folie.</p>`;
+      return;
+    }
+
+    if (el.type==='text') {
+      const fontOpts=CLASSIC_FONTS.map(f=>`<option value="${f.family}" ${f.family===el.fontFamily?'selected':''}>${f.name}</option>`).join('')
+        + (S.installedFonts.length>0 ? '<optgroup label="Google Fonts">'+S.installedFonts.map(f=>`<option value="${f.family},sans-serif" ${f.family===el.fontFamily?'selected':''}>${f.name}</option>`).join('')+'</optgroup>' : '');
+
+      panel.innerHTML=`
+        <div class="ctrl-section">
+          <div class="ctrl-section-title">Text-Element</div>
+          <label class="ctrl-label">Inhalt</label>
+          <textarea oninput="App.updateElProp('content',this.value)" style="height:60px;resize:vertical;font-size:11px;">${el.content}</textarea>
+          <label class="ctrl-label" style="margin-top:8px;">Schriftart</label>
+          <select onchange="App.updateElProp('fontFamily',this.value)">${fontOpts}</select>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">
+            <div>
+              <label class="ctrl-label">Größe (px)${el.autoFit?' · Max':''}</label>
+              <input type="number" value="${el.fontSize}" oninput="App.updateElProp('fontSize',parseInt(this.value))">
+            </div>
+            <div>
+              <label class="ctrl-label">Farbe</label>
+              <input type="color" id="el-color-input" value="${el.color}" onchange="App.updateElProp('color',this.value)" style="height:32px;">
+            </div>
+          </div>
+          <div style="display:flex;gap:5px;margin-top:6px;">
+            <button onclick="App.pickElColor('contrast')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;" title="Automatisch Schwarz oder Weiß waehlen, je nachdem was besser lesbar ist">◐ Kontrast</button>
+            <button onclick="App.pickElColor('negative')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;" title="Farbe invertieren (Negativfarbe)">⇄ Negativ</button>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;">
+            <label class="ctrl-label" style="margin:0;" title="Schriftgröße wird automatisch verkleinert, damit der Text immer in den Kasten passt (Größe oben wirkt dann als Maximum)">🔠 Auto-Skalierung</label>
+            <input type="checkbox" ${el.autoFit?'checked':''} onchange="App.updateElProp('autoFit',this.checked)" style="accent-color:#6366f1;width:15px;height:15px;">
+          </div>
+          <label class="ctrl-label" style="margin-top:8px;">Gewicht</label>
+          <select onchange="App.updateElProp('fontWeight',this.value)">
+            <option value="300" ${el.fontWeight==='300'?'selected':''}>Light 300</option>
+            <option value="400" ${el.fontWeight==='400'?'selected':''}>Regular 400</option>
+            <option value="600" ${el.fontWeight==='600'?'selected':''}>SemiBold 600</option>
+            <option value="700" ${el.fontWeight==='700'?'selected':''}>Bold 700</option>
+            <option value="800" ${el.fontWeight==='800'?'selected':''}>ExtraBold 800</option>
+            <option value="900" ${el.fontWeight==='900'?'selected':''}>Black 900</option>
+          </select>
+          <label class="ctrl-label" style="margin-top:8px;">Ausrichtung</label>
+          <div style="display:flex;gap:5px;">
+            ${['left','center','right','justify'].map(a=>`<button onclick="App.updateElProp('textAlign','${a}')" class="btn-sm" style="flex:1;padding:4px;justify-content:center;font-size:10px;${el.textAlign===a?'background:rgba(99,102,241,0.25);border-color:rgba(99,102,241,0.4);':''}">${a==='left'?'◀':a==='center'?'⬛':a==='right'?'▶':'≡'}</button>`).join('')}
+          </div>
+          <label class="ctrl-label" style="margin-top:8px;">Position & Snap</label>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;">
+            <button onclick="App.alignEl('top')" class="btn-sm" style="font-size:9px;justify-content:center;">↑ Oben</button>
+            <button onclick="App.alignEl('vcenter')" class="btn-sm" style="font-size:9px;justify-content:center;">↕ Mitte-V</button>
+            <button onclick="App.alignEl('bottom')" class="btn-sm" style="font-size:9px;justify-content:center;">↓ Unten</button>
+            <button onclick="App.alignEl('left')" class="btn-sm" style="font-size:9px;justify-content:center;">← Links</button>
+            <button onclick="App.alignEl('hcenter')" class="btn-sm" style="font-size:9px;justify-content:center;">↔ Mitte-H</button>
+            <button onclick="App.alignEl('right')" class="btn-sm" style="font-size:9px;justify-content:center;">→ Rechts</button>
+          </div>
+          <button onclick="App.deleteSelectedEl()" class="btn-sm danger" style="width:100%;justify-content:center;margin-top:10px;">
+            <i data-lucide="trash-2" style="width:11px;height:11px;"></i> Element löschen
+          </button>
+        </div>`;
+    } else if (el.type==='image') {
+      panel.innerHTML=`
+        <div class="ctrl-section">
+          <div class="ctrl-section-title">Bild-Element</div>
+          <label class="ctrl-label">Breite (%)</label>
+          <input type="range" min="10" max="100" value="${el.width}" oninput="App.updateElProp('width',parseInt(this.value))">
+          <button onclick="App.deleteSelectedEl()" class="btn-sm danger" style="width:100%;justify-content:center;margin-top:10px;">
+            <i data-lucide="trash-2" style="width:11px;height:11px;"></i> Bild löschen
+          </button>
+        </div>`;
+    } else if (el.type==='template') {
+      panel.innerHTML=`
+        <div class="ctrl-section">
+          <div class="ctrl-section-title">Template-Element (${el.template})</div>
+          <label class="ctrl-label">Text-Farbe</label>
+          <input type="color" id="tpl-color-input" value="${el.textColor||'#ffffff'}" onchange="App.updateTemplateEl('textColor',this.value,'${el.id}')">
+          <div style="display:flex;gap:5px;margin-top:6px;">
+            <button onclick="App.pickTemplateColor('${el.id}','contrast')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;" title="Automatisch Schwarz oder Weiß waehlen, je nachdem was besser lesbar ist">◐ Kontrast</button>
+            <button onclick="App.pickTemplateColor('${el.id}','negative')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;" title="Farbe invertieren (Negativfarbe)">⇄ Negativ</button>
+          </div>
+          <label class="ctrl-label" style="margin-top:8px;">Akzent-Farbe</label>
+          <input type="color" value="${el.accentColor||'#6366f1'}" onchange="App.updateTemplateEl('accentColor',this.value,'${el.id}')">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;">
+            <label class="ctrl-label" style="margin:0;">Glass-Effekt</label>
+            <input type="checkbox" ${el.useGlass?'checked':''} onchange="App.updateTemplateEl('useGlass',this.checked,'${el.id}')" style="accent-color:#6366f1;width:15px;height:15px;">
+          </div>
+          <button onclick="App.deleteSelectedEl()" class="btn-sm danger" style="width:100%;justify-content:center;margin-top:10px;">
+            <i data-lucide="trash-2" style="width:11px;height:11px;"></i> Template löschen
+          </button>
+        </div>`;
+    }
+    lucide.createIcons();
+  },
+
+  updateTemplateEl(key, val, elId) {
+    const slide=S.slides[S.activeSlideIndex];
+    const el=slide?.elements.find(e=>e.id===elId);
+    if (!el) return;
+    el[key]=val;
+    this.render();
+  },
+
+  pickTemplateColor(elId, mode) {
+    const slide=S.slides[S.activeSlideIndex];
+    const el=slide?.elements.find(e=>e.id===elId);
+    if (!el) return;
+    el.textColor = mode==='contrast' ? contrastHexColor(el.textColor||'#ffffff') : invertHexColor(el.textColor||'#ffffff');
+    const input=document.getElementById('tpl-color-input');
+    if (input) input.value=el.textColor;
+    this.render();
+  },
+
+  // ─── FONTS ───
+  renderFontCatalog() {
+    const cat=document.getElementById('font-category-select').value;
+    const list=document.getElementById('font-catalog-list');
+    const fonts=FONT_CATALOG[cat]||[];
+    list.innerHTML=fonts.map(f=>`
+      <div class="font-catalog-item">
+        <span style="font-size:11px;color:#e2e8f0;">${f.name}</span>
+        <button onclick='App.installFont(${JSON.stringify(f)})' class="btn-sm accent" style="font-size:9px;padding:3px 8px;">+ Laden</button>
+      </div>`).join('');
+  },
+
+  installFont(f) {
+    if (!S.installedFonts.some(x=>x.family===f.family)) {
+      S.installedFonts.push(f);
+      syncGoogleFontImports();
+      this.renderInstalledFonts();
+      this.renderInspector();
+    }
+  },
+
+  removeFont(family) {
+    S.installedFonts=S.installedFonts.filter(f=>f.family!==family);
+    syncGoogleFontImports();
+    this.renderInstalledFonts();
+  },
+
+  // ─── EIGENE SCHRIFTARTEN (per Drag & Drop / Dateiauswahl) ───
+  // Anders als der Google-Fonts-Katalog (per @import-URL) kommt eine eigene Schriftdatei
+  // direkt vom Rechner - als Data-URL eingebettet (bleibt so auch im HTML-Export
+  // funktionsfaehig, ganz ohne externen Server) und per FontFace-API registriert.
+  handleFontFiles(fileList) {
+    Array.prototype.forEach.call(fileList, file=>{
+      if (!/\.(ttf|otf|woff2?)$/i.test(file.name)) return;
+      const r=new FileReader();
+      r.onload=e=>{
+        const dataUrl=e.target.result;
+        const baseName=file.name.replace(/\.[^.]+$/,'');
+        let family='Custom-'+baseName.replace(/[^a-zA-Z0-9]/g,'')+'-'+Math.floor(Math.random()*10000);
+        const fontFace=new FontFace(family, `url(${dataUrl})`);
+        fontFace.load().then(loaded=>{
+          document.fonts.add(loaded);
+          S.installedFonts.push({name:baseName, family, dataUrl, isCustom:true});
+          this.renderInstalledFonts();
+          this.renderInspector();
+        }).catch(err=>{
+          alert('Schriftart "'+file.name+'" konnte nicht geladen werden: '+err.message);
+        });
+      };
+      r.readAsDataURL(file);
+    });
+  },
+
+  renderInstalledFonts() {
+    const list=document.getElementById('installed-fonts-list');
+    if (S.installedFonts.length===0) {
+      list.innerHTML=`<p style="font-size:10px;color:rgba(148,163,184,0.5);font-style:italic;">Noch keine Fonts geladen.</p>`;
+      return;
+    }
+    list.innerHTML=S.installedFonts.map(f=>`
+      <div class="font-catalog-item">
+        <span style="font-size:11px;font-family:'${f.family}',sans-serif;color:#e2e8f0;">${f.name}${f.isCustom?' <span style="color:#6366f1;font-size:9px;">· eigene</span>':''}</span>
+        <button onclick="App.removeFont('${f.family}')" class="btn-sm danger" style="font-size:9px;padding:3px 8px;">× Remove</button>
+      </div>`).join('');
+  },
+
+  // ─── EDITOR TOGGLE ───
+  toggleEditor() {
+    S.isEditor=!S.isEditor;
+    const sidebar=document.getElementById('editor-sidebar');
+    const toolbar=document.getElementById('top-toolbar');
+    if (S.isEditor) {
+      sidebar.classList.remove('hidden-ui');
+      toolbar.classList.remove('hidden-ui');
+      document.getElementById('presentation-status').textContent='Editor';
+      document.getElementById('presentation-status').className='badge badge-indigo';
+      document.getElementById('mode-label').textContent='Präsentation';
+      document.getElementById('mode-icon').setAttribute('data-lucide','monitor-play');
+    } else {
+      sidebar.classList.add('hidden-ui');
+      S.selectedElementId=null;
+      document.getElementById('presentation-status').textContent='Präsentation';
+      document.getElementById('presentation-status').className='badge badge-emerald';
+      document.getElementById('mode-label').textContent='Editor';
+      document.getElementById('mode-icon').setAttribute('data-lucide','edit-3');
+      this.render();
+    }
+    lucide.createIcons();
+  },
+
+  // ─── PRESENTATION FULLSCREEN ───
+  startPresentation() {
+    // Build pres slide index to match active slide
+    S.presSlideIndex=S.activeSlideIndex;
+    this._presShowSlide(S.presSlideIndex, false);
+    document.getElementById('pres-overlay').classList.remove('hidden-ui');
+    startPresCanvasLoop();
+    // Start autoplay
+    this._presStartAutoplay();
+    // Request fullscreen
+    try { document.documentElement.requestFullscreen().catch(()=>{}); } catch(e) {}
+  },
+
+  exitPresentation() {
+    document.getElementById('pres-overlay').classList.add('hidden-ui');
+    stopPresCanvasLoop();
+    clearTimeout(S.presAutoTimer);
+    try { if(document.fullscreenElement) document.exitFullscreen().catch(()=>{}); } catch(e) {}
+    // Show toolbar when coming back to editor via ESC
+    this.toggleEditor();
+  },
+
+  // useTransition=false nur beim allerersten Anzeigen (startPresentation()) - da gibt es
+  // noch keinen vorherigen Inhalt, von dem aus man ueberblenden/gleiten koennte.
+  _presShowSlide(idx, useTransition=true) {
+    S.presSlideIndex=Math.max(0,Math.min(S.slides.length-1,idx));
+    const slide=S.slides[S.presSlideIndex];
+    const container=document.getElementById('pres-content-full');
+    const stageEl=document.getElementById('pres-stage-full');
+
+    // Apply background
+    const gc2=document.createElement('canvas');
+    gc2.style.cssText='position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;';
+
+    // Clear stale elements except canvases
+    Array.from(stageEl.children).forEach(c=>{ if(c.id!=='pres-content-full'&&c.id!=='pres-spotlight-canvas'&&c.id!=='pres-glitter-canvas') c.remove(); });
+
+    if (slide.background.type==='grainy') {
+      stageEl.style.background=slide.background.grainy.colors.bg;
+      stageEl.prepend(gc2);
+      setTimeout(()=>renderGrainy(gc2,slide.background.grainy),10);
+    } else {
+      applyBgToStage(stageEl, slide, null);
+    }
+
+    container.style.cssText='position:absolute;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;padding:5%;';
+    if (useTransition) {
+      transitionElements(container, slide, false, S.transitionMode);
+    } else {
+      container.innerHTML='';
+      renderSlideContent(slide, container, false);
+    }
+
+    document.getElementById('pres-counter').textContent=`${S.presSlideIndex+1} / ${S.slides.length}`;
+  },
+
+  pressPrev() {
+    clearTimeout(S.presAutoTimer);
+    this._presShowSlide(S.presSlideIndex-1);
+    this._presStartAutoplay();
+  },
+
+  pressNext() {
+    clearTimeout(S.presAutoTimer);
+    this._presShowSlide(S.presSlideIndex+1);
+    this._presStartAutoplay();
+  },
+
+  _presStartAutoplay() {
+    clearTimeout(S.presAutoTimer);
+    const dur=(S.slides[S.presSlideIndex]?.duration||6)*1000;
+    S.presAutoTimer=setTimeout(()=>{
+      const next=(S.presSlideIndex+1)%S.slides.length;
+      this._presShowSlide(next);
+      this._presStartAutoplay();
+    },dur);
+  },
+
+  // ─── MISC ───
+  confirmReset() {
+    if (confirm('Wirklich alle Folien und Einstellungen zurücksetzen?')) {
+      clearTimeout(S.autoplayTimer); clearTimeout(S.presAutoTimer);
+      S.slides=[ defaultSlide(1) ];
+      S.activeSlideIndex=0; S.selectedElementId=null; S.isPlaying=false;
+      S.beam.waypoints=[{x:25,y:30,pause:2},{x:75,y:25,pause:2.5},{x:60,y:70,pause:2},{x:30,y:65,pause:3}];
+      this.render();
+    }
+  },
+
+  // ─── HTML EXPORT ───
+  // Baut das exportierte, eigenstaendige Praesentations-HTML als String - genutzt sowohl
+  // vom Download-Knopf (exportHTML()) als auch vom "Im Infomaster speichern"-Knopf
+  // (saveToServer()), damit beide Wege exakt denselben Stand exportieren.
+  buildExportedDoc() {
+    // Inline all images as base64 (already base64 from FileReader)
+    const stateSnapshot=JSON.parse(JSON.stringify(S.slides));
+    const beamSnapshot=JSON.parse(JSON.stringify(S.beam));
+    const transitionSnapshot=S.transitionMode;
+    const glitterSnapshot=JSON.parse(JSON.stringify(S.glitter));
+    const fontsSnapshot=JSON.parse(JSON.stringify(S.installedFonts));
+
+    const exportedDoc=`<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EyeCandy Präsentation</title>
+<meta name="description" content="Exportierte EyeCandy Studio Präsentation">
+<script src="https://cdn.tailwindcss.com"><\/script>
+<style>
+*,*::before,*::after{box-sizing:border-box;}
+html,body{height:100%;margin:0;overflow:hidden;font-family:'Inter',sans-serif;background:#030712;color:#f1f5f9;}
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+${fontsSnapshot.filter(f=>f.url).map(f=>`@import url('${f.url}');`).join('\n')}
+${fontsSnapshot.filter(f=>f.dataUrl).map(f=>`@font-face{font-family:'${f.family}';src:url(${f.dataUrl});}`).join('\n')}
+.glass-card{background:rgba(15,23,42,0.55);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.15);box-shadow:0 20px 50px rgba(0,0,0,0.4);border-radius:16px;padding:32px;}
+canvas{pointer-events:none;position:absolute;inset:0;width:100%;height:100%;}
+#pres-spotlight{z-index:25;}#pres-glitter{z-index:15;}
+#edit-hint{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);z-index:100;background:rgba(0,0,0,0.6);border:1px solid rgba(255,255,255,0.1);border-radius:99px;padding:6px 16px;font-size:11px;color:rgba(255,255,255,0.5);opacity:0;transition:opacity 0.4s;pointer-events:none;}
+body.nav-visible #edit-hint{opacity:1;}
+body{cursor:none;}body.nav-visible{cursor:default;}
+</style>
+</head>
+<body>
+<div id="stage" style="position:fixed;inset:0;overflow:hidden;">
+  <div id="pres-bg" style="position:absolute;inset:0;"></div>
+  <canvas id="pres-grainy" style="z-index:0;"></canvas>
+  <div id="pres-content" style="position:absolute;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;padding:5%;"></div>
+  <canvas id="pres-spotlight"></canvas>
+  <canvas id="pres-glitter"></canvas>
+</div>
+<div id="edit-hint">Drücke ESC zum Bearbeiten · Leertaste / Pfeile zum Navigieren</div>
+<script>
+const SLIDES=${JSON.stringify(stateSnapshot)};
+const BEAM=${JSON.stringify(beamSnapshot)};
+const TRANSITION=${JSON.stringify(transitionSnapshot)};
+const GLITTER=${JSON.stringify(glitterSnapshot)};
+let idx=0, particles=[], beamAngle=0, presLoopId;
+
+const GRAINY_PRESETS=${JSON.stringify(GRAINY_PRESETS)};
+
+function renderGrainy(c,g,off=0){
+  if(!c)return;const ctx=c.getContext('2d');
+  const w=c.width=c.clientWidth||window.innerWidth,h=c.height=c.clientHeight||window.innerHeight;
+  ctx.fillStyle=g.colors.bg;ctx.fillRect(0,0,w,h);
+  const rad=((g.angle+off)*Math.PI)/180,cx=w/2,cy=h/2,sc=g.scale/100;
+  [[cx+Math.cos(rad)*(w*0.3*sc),cy+Math.sin(rad)*(h*0.3*sc),w*0.55*sc,g.colors.c1],
+   [cx+Math.cos(rad+2.1)*(w*0.35*sc),cy+Math.sin(rad+2.1)*(h*0.35*sc),w*0.6*sc,g.colors.c2],
+   [cx+Math.cos(rad+4.2)*(w*0.25*sc),cy+Math.sin(rad+4.2)*(h*0.25*sc),w*0.5*sc,g.colors.c3]
+  ].forEach(([x,y,r,col])=>{
+    const gr=ctx.createRadialGradient(x,y,10,x,y,r);gr.addColorStop(0,col);gr.addColorStop(1,'transparent');
+    ctx.fillStyle=gr;ctx.fillRect(0,0,w,h);
+  });
+  if(g.noise>0){const id=ctx.getImageData(0,0,w,h);const d=id.data;const a=(g.noise/100)*80;
+    for(let i=0;i<d.length;i+=4){const n=(Math.random()-0.5)*a;d[i]=Math.min(255,Math.max(0,d[i]+n));d[i+1]=Math.min(255,Math.max(0,d[i+1]+n));d[i+2]=Math.min(255,Math.max(0,d[i+2]+n));}
+    ctx.putImageData(id,0,0);}
+}
+
+function buildCSS(slide){
+  const bg=slide.background;const stops=[...bg.colorStops].sort((a,b)=>a.pos-b.pos);
+  const s=stops.map(s=>\`\${s.color} \${s.pos}%\`).join(', ');
+  if(bg.type==='custom-linear') return \`linear-gradient(\${bg.angle||135}deg,\${s})\`;
+  if(bg.type==='custom-radial') return \`radial-gradient(\${bg.radialShape||'ellipse'} at \${bg.cx||50}% \${bg.cy||50}%,\${s})\`;
+  return '#090d16';
+}
+
+function renderTmpl(el){
+  const tc=el.textColor||'#fff',ac=el.accentColor||'#6366f1',gc=el.useGlass?'glass-card':'';
+  switch(el.template){
+    case 'centered': return \`<div class="\${gc}" style="text-align:center;max-width:720px;margin:auto;padding:\${el.useGlass?'32px':'0'};"><h1 style="font-size:clamp(28px,5vw,60px);font-weight:800;color:\${tc};margin:0 0 12px;line-height:1.1;">\${el.title}</h1><p style="font-size:clamp(16px,2.5vw,26px);font-weight:500;color:\${ac};margin:0 0 12px;">\${el.subtitle}</p><p style="font-size:clamp(12px,1.6vw,18px);color:\${tc};opacity:0.85;max-width:540px;margin:auto;">\${el.body}</p></div>\`;
+    case 'left-aligned': return \`<div class="\${gc}" style="text-align:left;max-width:640px;padding:\${el.useGlass?'32px':'0'};"><span style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:\${ac};background:rgba(255,255,255,0.08);padding:3px 10px;border-radius:99px;display:inline-block;margin-bottom:14px;">\${el.subtitle}</span><h1 style="font-size:clamp(24px,4vw,52px);font-weight:800;color:\${tc};margin:0 0 12px;line-height:1.15;">\${el.title}</h1><p style="font-size:clamp(13px,1.7vw,18px);color:\${tc};opacity:0.88;line-height:1.7;">\${el.body}</p></div>\`;
+    case 'two-column': return \`<div class="\${gc}" style="width:100%;padding:\${el.useGlass?'32px':'0'};"><h1 style="font-size:clamp(22px,3.5vw,44px);font-weight:800;color:\${tc};margin:0 0 6px;">\${el.title}</h1><p style="font-size:clamp(13px,2vw,20px);color:\${ac};margin:0 0 16px;">\${el.subtitle}</p><div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;"><div style="font-size:clamp(12px,1.5vw,16px);color:\${tc};opacity:0.88;line-height:1.7;">\${el.body}</div><div style="font-size:clamp(12px,1.5vw,16px);color:\${tc};opacity:0.88;line-height:1.7;">\${el.col2||''}</div></div></div>\`;
+    case 'big-stat': return \`<div class="\${gc}" style="text-align:center;padding:\${el.useGlass?'40px':'0'};"><div style="font-size:clamp(60px,12vw,120px);font-weight:900;color:\${ac};line-height:1;margin-bottom:8px;">\${el.title}</div><div style="font-size:clamp(18px,3vw,36px);font-weight:700;color:\${tc};margin-bottom:10px;">\${el.subtitle}</div><p style="font-size:clamp(11px,1.4vw,16px);color:\${tc};opacity:0.75;max-width:480px;margin:auto;">\${el.body}</p></div>\`;
+    case 'bullets': return \`<div class="\${gc}" style="max-width:700px;padding:\${el.useGlass?'32px':'0'};"><h1 style="font-size:clamp(22px,4vw,44px);font-weight:800;color:\${tc};margin:0 0 6px;">\${el.title}</h1><p style="font-size:clamp(12px,1.8vw,20px);color:\${ac};margin:0 0 18px;">\${el.subtitle}</p><ul style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:10px;">\${(el.bullets||[]).map(b=>\`<li style="display:flex;align-items:flex-start;gap:10px;font-size:clamp(12px,1.6vw,17px);color:\${tc};opacity:0.9;"><span style="width:8px;height:8px;border-radius:50%;background:\${ac};flex-shrink:0;margin-top:6px;"></span><span>\${b}</span></li>\`).join('')}</ul></div>\`;
+    default: return '';
+  }
+}
+
+function fitTextToBox(div,wrapper,stageEl,base){
+  const floor=8;let size=Math.max(floor,base||28);div.style.fontSize=size+'px';
+  const sr=stageEl.getBoundingClientRect(),wr=wrapper.getBoundingClientRect();
+  if(wr.width===0||sr.height===0)return;
+  const maxH=Math.max(20,sr.bottom-wr.top-4);let g=0;
+  while(size>floor&&g<80&&(div.scrollWidth>wrapper.clientWidth+1||div.scrollHeight>maxH)){size--;div.style.fontSize=size+'px';g++;}
+}
+function renderSlideEls(cont, slide, stageEl){
+  cont.innerHTML='';
+  const autoFitQueue=[];
+  slide.elements.forEach(el=>{
+    const w=document.createElement('div');
+    w.style.cssText=\`position:absolute;left:\${el.x||0}%;top:\${el.y||0}%;width:\${el.width||80}%;z-index:10;\`;
+    if(el.type==='text'){const d=document.createElement('div');d.style.fontFamily=el.fontFamily;d.style.fontSize=el.fontSize+'px';d.style.color=el.color;d.style.textAlign=el.textAlign;d.style.fontWeight=el.fontWeight||'400';d.style.lineHeight='1.3';d.innerText=el.content;w.appendChild(d);cont.appendChild(w);if(el.autoFit)autoFitQueue.push({div:d,wrapper:w,base:el.fontSize||28});return;}
+    else if(el.type==='image'){const img=document.createElement('img');img.src=el.src;img.style.width='100%';img.style.borderRadius='12px';w.appendChild(img);}
+    else if(el.type==='template'){w.innerHTML=renderTmpl(el);}
+    cont.appendChild(w);
+  });
+  autoFitQueue.forEach(({div,wrapper,base})=>fitTextToBox(div,wrapper,stageEl,base));
+}
+// Gleicher Uebergangs-Mechanismus wie im Editor (siehe transitionElements() dort): neue
+// Folie in ein temporaeres Overlay rendern, dann beide Ebenen gemeinsam verschieben
+// ("slide") oder die neue ueberblenden ("fade"), statt hart umzuschalten.
+function transitionEls(cont, slide, stageEl){
+  if (TRANSITION==='none' || !cont.firstChild) { renderSlideEls(cont, slide, stageEl); return; }
+  const parent=cont.parentElement;
+  const temp=document.createElement('div');
+  temp.style.cssText='position:absolute;inset:0;z-index:10;';
+  parent.appendChild(temp);
+  renderSlideEls(temp, slide, stageEl);
+  function finish(){ cont.innerHTML=''; while(temp.firstChild) cont.appendChild(temp.firstChild); cont.style.transition='';cont.style.opacity='';cont.style.transform=''; temp.remove(); }
+  if (TRANSITION==='fade') {
+    temp.style.opacity='0'; temp.style.transition='opacity 0.6s ease'; cont.style.transition='opacity 0.6s ease';
+    requestAnimationFrame(()=>{ temp.style.opacity='1'; cont.style.opacity='0'; });
+    setTimeout(finish,620);
+  } else {
+    temp.style.transform='translateX(100%)'; temp.style.transition='transform 0.5s cubic-bezier(.4,0,.2,1)'; cont.style.transition='transform 0.5s cubic-bezier(.4,0,.2,1)';
+    requestAnimationFrame(()=>{ temp.style.transform='translateX(0%)'; cont.style.transform='translateX(-100%)'; });
+    setTimeout(finish,520);
+  }
+}
+function showSlide(i, useTransition){
+  idx=Math.max(0,Math.min(SLIDES.length-1,i));
+  const slide=SLIDES[idx];const cont=document.getElementById('pres-content');
+  const stageEl=cont.parentElement;
+  const bg=document.getElementById('pres-bg');const gc=document.getElementById('pres-grainy');
+  if(slide.background.type==='grainy'){bg.style.background=slide.background.grainy.colors.bg;gc.style.display='block';setTimeout(()=>renderGrainy(gc,slide.background.grainy),5);}
+  else{gc.style.display='none';
+    if(slide.background.type==='custom-linear'||slide.background.type==='custom-radial') bg.style.background=buildCSS(slide);
+    else if(slide.background.type==='image'&&slide.background.image) bg.style.background=\`url(\${slide.background.image}) center/cover no-repeat\`;
+    else bg.style.background=slide.background.solidColor||'#090d16';
+  }
+  if (useTransition) transitionEls(cont, slide, stageEl); else renderSlideEls(cont, slide, stageEl);
+  document.title=\`Folie \${idx+1}/\${SLIDES.length} — EyeCandy\`;
+}
+
+// BEAM
+let _bAngle=0;
+const _beam={...BEAM,_currentX:50,_currentY:50,_wpIdx:0,_wpPhase:'move',_wpTimer:0};
+function tickB(dt){
+  if(_beam.pattern==='waypoints'&&_beam.waypoints&&_beam.waypoints.length>0){
+    const wp=_beam.waypoints[_beam._wpIdx%_beam.waypoints.length];
+    if(_beam._wpPhase==='move'){const sp=_beam.speed*0.03;const dx=wp.x-_beam._currentX;const dy=wp.y-_beam._currentY;const dist=Math.sqrt(dx*dx+dy*dy);if(dist<0.3){_beam._currentX=wp.x;_beam._currentY=wp.y;_beam._wpPhase='pause';_beam._wpTimer=wp.pause||2;}else{const step=Math.min(sp*dt*60,dist);_beam._currentX+=dx/dist*step;_beam._currentY+=dy/dist*step;}}
+    else{_beam._wpTimer=Math.max(0,_beam._wpTimer-dt);if(_beam._wpTimer<=0){_beam._wpIdx=(_beam._wpIdx+1)%_beam.waypoints.length;_beam._wpPhase='move';}}
+    return{x:(_beam._currentX/100)*window.innerWidth,y:(_beam._currentY/100)*window.innerHeight};
+  }
+  _bAngle+=0.003*_beam.speed;return{x:(0.5+Math.sin(_bAngle)*0.3)*window.innerWidth,y:(0.5+Math.sin(_bAngle*2)*0.22)*window.innerHeight};
+}
+
+let lastT=0;
+function loop(t){presLoopId=requestAnimationFrame(loop);const dt=(t-lastT)/1000;lastT=t;
+  const sc=document.getElementById('pres-spotlight');const gc2=document.getElementById('pres-glitter');
+  sc.width=window.innerWidth;sc.height=window.innerHeight;gc2.width=window.innerWidth;gc2.height=window.innerHeight;
+  const ctx=sc.getContext('2d');const gctx=gc2.getContext('2d');
+  const pos=tickB(dt);
+  if(_beam.enabled){ctx.clearRect(0,0,sc.width,sc.height);const dark=1-(_beam.ambience/100);ctx.fillStyle=\`rgba(0,0,0,\${dark})\`;ctx.fillRect(0,0,sc.width,sc.height);ctx.save();ctx.globalCompositeOperation='destination-out';const g=ctx.createRadialGradient(pos.x,pos.y,Math.max(0,_beam.size/2-_beam.blur),pos.x,pos.y,_beam.size/2);g.addColorStop(0,'rgba(0,0,0,1)');g.addColorStop(1,'rgba(0,0,0,0)');ctx.fillStyle=g;ctx.beginPath();ctx.arc(pos.x,pos.y,_beam.size/2,0,Math.PI*2);ctx.fill();ctx.restore();ctx.save();ctx.globalCompositeOperation='screen';const gg=ctx.createRadialGradient(pos.x,pos.y,0,pos.x,pos.y,_beam.size/2);gg.addColorStop(0,_beam.color);gg.addColorStop(1,'transparent');ctx.fillStyle=gg;ctx.beginPath();ctx.arc(pos.x,pos.y,_beam.size/2,0,Math.PI*2);ctx.fill();ctx.restore();}
+  if(GLITTER.enabled){gctx.clearRect(0,0,gc2.width,gc2.height);gctx.fillStyle=GLITTER.color;particles.forEach(p=>{if(GLITTER.speed>0){p.y+=p.speedY;p.alpha+=(Math.random()-0.5)*0.04;if(p.alpha<0.1)p.alpha=0.15;if(p.alpha>0.9)p.alpha=0.8;if(p.y<0)p.y=gc2.height;if(p.y>gc2.height)p.y=0;}gctx.globalAlpha=p.alpha;gctx.beginPath();gctx.arc(p.x,p.y,p.size,0,Math.PI*2);gctx.fill();});gctx.globalAlpha=1;}
+}
+function initP(){particles=[];for(let i=0;i<GLITTER.count;i++)particles.push({x:Math.random()*window.innerWidth,y:Math.random()*window.innerHeight,size:Math.random()*GLITTER.size+0.5,alpha:Math.random(),speedY:(Math.random()-0.5)*(GLITTER.speed*0.4)});}
+initP();showSlide(0,false);requestAnimationFrame(loop);
+
+// Cursor/Hinweis nur bei tatsaechlicher Mausbewegung einblenden (siehe #edit-hint oben),
+// nicht per :hover - der bliebe sonst dauerhaft sichtbar, solange der Zeiger nur irgendwo
+// auf der Folie ruht.
+let _idleT=null;
+document.body.addEventListener('mousemove', ()=>{
+  document.body.classList.add('nav-visible');
+  clearTimeout(_idleT);
+  _idleT=setTimeout(()=>document.body.classList.remove('nav-visible'),2500);
+});
+
+// Auto-advance
+let autoT;
+function schedAuto(){clearTimeout(autoT);const dur=(SLIDES[idx]?.duration||6)*1000;autoT=setTimeout(()=>{showSlide((idx+1)%SLIDES.length,true);schedAuto();},dur);}
+schedAuto();
+
+// Keys
+window.addEventListener('keydown',e=>{
+  if(e.key==='ArrowRight'||e.key===' '){e.preventDefault();clearTimeout(autoT);showSlide(idx+1,true);schedAuto();}
+  if(e.key==='ArrowLeft'){e.preventDefault();clearTimeout(autoT);showSlide(idx-1,true);schedAuto();}
+  if(e.key==='Escape'){
+    // In standalone export, just reload to "editor mode" hint
+    const h=document.getElementById('edit-hint');
+    h.textContent='Diese Datei kann im EyeCandy Studio weiterbearbeitet werden.';
+    h.style.opacity='1';
+    setTimeout(()=>h.style.opacity='0',3500);
+  }
+});
+<\/script>
+</body>
+</html>`;
+
+    return exportedDoc;
+  },
+
+  exportHTML() {
+    const exportedDoc=this.buildExportedDoc();
+    const blob=new Blob([exportedDoc],{type:'text/html'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url; a.download='eyecandy-presentation.html'; a.click();
+    URL.revokeObjectURL(url);
+  },
+
+  // ─── IM INFOMASTER SPEICHERN (nur sichtbar mit gueltigem ?token=..., siehe
+  // setupSaveToServer()) - schreibt die exportierte Praesentation in denselben Ordner, in
+  // dem auch Bento-Pronto seine bearbeitbaren Praesentationen ablegt (media/bentos/ auf dem
+  // Infomaster-Server), ueber bento.php's Speicher-Endpunkt (dieselbe Login-Session UND ein
+  // zusaetzlicher Token-Abgleich dort). EyeCandy selbst bleibt dabei eine reine, serverlose
+  // HTML-Datei - dieser Knopf macht lediglich einen ganz normalen fetch() zu bento.php.
+  saveToServer() {
+    if (!S.launchToken) return;
+    const btn=document.getElementById('save-server-btn');
+    const origHtml=btn.innerHTML;
+    btn.disabled=true; btn.innerHTML='… speichert';
+
+    const exportedDoc=this.buildExportedDoc();
+    const blob=new Blob([exportedDoc],{type:'text/html'});
+    const fd=new FormData();
+    fd.append('bento_save_html', blob, 'eyecandy.html');
+    fd.append('bento_kind', 'eyecandy');
+    fd.append('eyecandy_token', S.launchToken);
+    fd.append('bento_filename', 'praesentation');
+
+    fetch('bento.php', { method:'POST', body: fd })
+      .then(r=>r.json().catch(()=>{ throw new Error('Antwort war kein gueltiges JSON - bitte erneut über den Link im Infomaster-Dashboard öffnen (Login evtl. abgelaufen).'); }))
+      .then(data=>{
+        if (!data.ok) throw new Error(data.error||'Unbekannter Fehler beim Speichern.');
+        prompt('✅ Gespeichert! Link (im selben Ordner wie die Bento-Präsentationen):', data.url);
+      })
+      .catch(err=>{
+        alert('❌ Konnte nicht im Infomaster speichern:\n'+err.message);
+      })
+      .finally(()=>{
+        btn.disabled=false; btn.innerHTML=origHtml;
+        lucide.createIcons();
+      });
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════
+//  KEYBOARD SHORTCUTS
+// ═══════════════════════════════════════════════════════════════
+window.addEventListener('keydown', e => {
+  if (e.key==='Escape') {
+    const pres=document.getElementById('pres-overlay');
+    if (!pres.classList.contains('hidden-ui')) {
+      // Exit presentation -> enter editor
+      stopPresCanvasLoop();
+      clearTimeout(S.presAutoTimer);
+      pres.classList.add('hidden-ui');
+      try { if(document.fullscreenElement) document.exitFullscreen().catch(()=>{}); } catch(er){}
+      // Show toolbar & editor
+      if (!S.isEditor) App.toggleEditor();
+    } else {
+      App.toggleEditor();
+    }
+  }
+  if (e.key==='ArrowRight'||e.key===' ') {
+    const pres=document.getElementById('pres-overlay');
+    if (!pres.classList.contains('hidden-ui')) { e.preventDefault(); App.pressNext(); }
+  }
+  if (e.key==='ArrowLeft') {
+    const pres=document.getElementById('pres-overlay');
+    if (!pres.classList.contains('hidden-ui')) { e.preventDefault(); App.pressPrev(); }
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+//  BOOT
+// ═══════════════════════════════════════════════════════════════
+window.addEventListener('load', () => {
+  App.init();
+});
+</script>
+</body>
+</html>

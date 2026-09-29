@@ -63,6 +63,17 @@ if (!isset($config['required_outputs'])) {
     $config['required_outputs'] = 2; // Erwartete Monitorausgaenge pro Pi (universell einstellbar statt fest im Code)
 }
 
+// Einmalig generiertes, dauerhaftes Token fuer den EyeCandy-Studio-Editor (eigenstaendige
+// HTML-Datei, siehe eyecandy.html) - wird als ?token=... an den Editor-Link angehaengt und
+// dort geprueft, bevor dessen "Im Infomaster speichern"-Knopf ueberhaupt angezeigt wird.
+// Die eigentliche Absicherung beim tatsaechlichen Speichern passiert serverseitig in
+// bento.php (gleiche Login-Session UND Token-Abgleich) - das Token hier entscheidet nur,
+// ob der Knopf in der (fuer sich genommen serverlosen) eyecandy.html ueberhaupt auftaucht.
+if (empty($config['eyecandy_token'])) {
+    $config['eyecandy_token'] = bin2hex(random_bytes(16));
+    file_put_contents($configFile, json_encode($config, JSON_PRETTY_PRINT));
+}
+
 // Master-Passwort bewusst NICHT in config.json und NICHT ueber die Weboberflaeche
 // aenderbar: liegt in einer eigenen Datei, die nur von Hand auf dem Server bearbeitet
 // wird. Bewusst unauffaellig "vip.txt" genannt statt "master_password.txt", um nicht
@@ -3527,6 +3538,7 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
         </div>
         <input type="file" id="topPdfDropInput" accept="application/pdf,image/jpeg,image/png,image/gif,image/webp" multiple style="display:none;">
         <a href="bento.php" style="color:#38bdf8; text-decoration:none; font-weight:bold; padding:8px 15px; background:#111; border-radius:4px; border:1px solid #333;">🎬 Präsentationen (Bento-Pronto)</a>
+        <a href="eyecandy.html?token=<?php echo urlencode($config['eyecandy_token']); ?>" style="color:#e879f9; text-decoration:none; font-weight:bold; padding:8px 15px; background:#111; border-radius:4px; border:1px solid #333;" title="Eigenstaendiger Präsentations-Editor mit Spotlight-Effekt, Grainy Gradients und Wegpunkten">✨ EyeCandy Studio</a>
         <a href="?logout=1" style="color:#ff5252; text-decoration:none; font-weight:bold; padding:8px 15px; background:#111; border-radius:4px; border:1px solid #333;">Abmelden</a>
     </div>
 </div>

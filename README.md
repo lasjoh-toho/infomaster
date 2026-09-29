@@ -204,3 +204,44 @@ Anschließend `bento-pronto-template.php`s vier Platzhalter (`__BENTO_SHELL_B64_
 [bento-pronto](https://github.com/lasjoh-toho/bento-pronto)s eigenem `build.mjs` mit dem
 Inhalt aus `dist-single/Bento_Slides.bento.html` bzw. `src/__starter-dump.json` ersetzen
 und als `bento.php` speichern.
+
+## EyeCandy Studio (Spotlight-Präsentationseditor)
+
+`eyecandy.html` ist ein zweiter, eigenständiger Präsentationseditor (Spotlight-Effekt,
+Grainy Gradients, Glass-Card-Templates, Wegpunkt-gesteuerte Lichtführung) - erreichbar über
+den Link "✨ EyeCandy Studio" oben im Dashboard. Er bleibt bewusst eine reine,
+serverlose HTML-Datei (kein eigenes PHP, keine eigene Session) und wird nur per Link
+integriert:
+
+- **Wegpunkte per Drag verschieben** - im Spotlight-Tab erscheinen die Wegpunkte als
+  farbige Marker direkt auf der Folie, per Ziehen frei positionierbar (statt nur über die
+  Zahlenfelder), synchron mit der Liste in der Seitenleiste.
+- **Weichzeichner-Hintergrund (Blur) abschaltbar** - ein Schalter bei "Layout-Vorlagen"
+  wirkt sofort auf die aktuelle Folie und auf neu angewendete Vorlagen; zusätzlich lässt
+  sich der Glass-Effekt weiterhin pro Vorlagen-Element einzeln umschalten.
+- **Kontrast-/Negativfarbe für Text** - je ein Knopf bei Text- und Vorlagen-Textfarbe wählt
+  automatisch Schwarz/Weiß (je nach Helligkeit) bzw. invertiert die aktuelle Farbe.
+- **Automatische Schriftgrößen-Skalierung** - ein Schalter pro Textelement verkleinert die
+  Schrift automatisch, bis sie in die Breite des Kastens und die verbleibende Höhe bis zum
+  Folienrand passt (die eingestellte Größe wirkt dann als Maximum).
+- **Eigene Schriftarten per Drag & Drop** - `.ttf`/`.otf`/`.woff`/`.woff2`-Dateien lassen
+  sich im Fonts-Tab hineinziehen, werden per `FontFace`-API registriert und beim Export als
+  `@font-face` mit eingebetteter Data-URL mitgeliefert (funktioniert offline auf dem Pi).
+- **Übergänge zwischen Folien** - Gleiten (beide Folien ziehen gemeinsam weiter, nahtlos
+  wie ein Filmstreifen), Überblenden oder harter Schnitt, einstellbar unter
+  Folien-Einstellungen; gilt im Editor, im Vollbild UND im HTML-Export.
+- **Ebenen-Liste** - im Elemente-Tab zeigt eine Liste alle Elemente der aktuellen Folie in
+  ihrer Stapelreihenfolge (oben = im Vordergrund) - anklicken wählt zum Bearbeiten aus
+  (gerade bei großflächigen, überlappenden Vorlagen-Textfeldern zuverlässiger als auf der
+  Folie selbst zu klicken), ▲/▼ ändert die Reihenfolge.
+- **Maus-Bewegung statt reinem Hover** - Navigations-Hinweis und Mauszeiger in der
+  Vollbild-Präsentation (und im HTML-Export) blenden sich nur bei tatsächlicher
+  Mausbewegung über der Folie ein und nach kurzer Ruhe automatisch wieder aus.
+- **Kopfzeilen-Dropzone nimmt jetzt auch Bilder** - dieselbe Dropzone oben rechts wie für
+  native PDFs (siehe oben) akzeptiert zusätzlich JPG/PNG/GIF/WEBP und sortiert sie
+  automatisch nach Ausrichtung in "Hoch"/"Quer" ein.
+- **Im Infomaster speichern** - neben "Herunterladen" erscheint ein zweiter Knopf, sobald
+  die Seite über den echten Dashboard-Link (mit gültigem `?token=...`) geöffnet wurde;
+  speichert die exportierte Präsentation direkt in `media/bentos/` - demselben Ordner, in
+  dem auch bearbeitbare Bento-Präsentationen liegen (über `bento.php`s Speicher-Endpunkt,
+  also mit derselben Login-Session UND einem zusätzlichen serverseitigen Token-Abgleich).
