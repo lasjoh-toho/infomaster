@@ -18,17 +18,34 @@ die Clients, `nextcloud_proxy.php` erlaubt Nextcloud-Freigabeordner als Inhaltsq
 
 ## PDF ablegen
 
-Im Dashboard unter "📄 PDF ablegen" kann eine (oder mehrere) PDF-Dateien per Drag&Drop
-oder Dateiauswahl hochgeladen werden. Jede Seite wird serverseitig einzeln als JPG
-gerendert und landet automatisch - abhängig von der erkannten Ausrichtung dieser einen
-Seite - in einem von zwei festen, ganz normalen Ordnern ("Hoch" bzw. "Quer", tauchen wie
-jeder andere Ordner in der Monitor-Inhalts-Auswahl auf). Mehrseitige PDFs bekommen
-fortlaufend nummerierte Dateinamen, damit die Wiedergabereihenfolge (Sortierung wie in
-`view.php`) erhalten bleibt, auch wenn sich die Seiten auf beide Ordner verteilen.
-Nutzt bevorzugt die PHP-Imagick-Extension (kommt ohne `exec()`/`shell_exec()` aus), sonst
-ersatzweise die Kommandozeilen-Tools `pdftoppm` (poppler-utils) oder `gs` (Ghostscript) -
-ist keines davon verfügbar, erscheint eine klare Fehlermeldung statt eines stillen
-Fehlschlags.
+Ganz oben in der Kopfzeile steht "📥 PDF hinzufügen" (Drag&Drop oder Klick zum Auswählen -
+nur `.pdf`, `.doc`/`.docx` werden aktuell abgelehnt). Für jede abgelegte Datei öffnet sich
+ein Dialog mit zwei Optionen:
+
+- **🖼️ Als Bilder umwandeln** - dieselbe Umwandlung wie bisher: jede Seite wird serverseitig
+  einzeln als JPG gerendert und landet automatisch - abhängig von der erkannten Ausrichtung
+  dieser einen Seite - in einem von zwei festen, ganz normalen Ordnern ("Hoch" bzw. "Quer",
+  tauchen wie jeder andere Ordner in der Monitor-Inhalts-Auswahl auf). Mehrseitige PDFs
+  bekommen fortlaufend nummerierte Dateinamen, damit die Wiedergabereihenfolge (Sortierung
+  wie in `view.php`) erhalten bleibt, auch wenn sich die Seiten auf beide Ordner verteilen.
+- **📄 Als PDF behalten (für Monitor)** - die Datei bleibt unverändert (kein Rendern zu
+  Bildern) und landet, je nach Ausrichtung der ersten Seite, in "PDF Hoch" bzw. "PDF Quer"
+  (eigener Abschnitt "📄 Native PDF-Dateien" im Dashboard, unabhängig von der normalen
+  Ordner-Verwaltung). Von dort lässt sie sich bei jedem Monitor direkt im "Inhalt A/B"-Feld
+  als eigene Auswahl ("📄 PDF: …") zuweisen - unabhängig von einem Bilder-Ordner. Zwei
+  Wiedergabe-Modi stehen je Monitor zur Wahl: **Scroll** (die PDF läuft einmal komplett
+  von oben nach unten durch, Gesamtdauer = die Wechselfrequenz des Monitors, springt danach
+  wieder an den Anfang) oder **Seitenweise** (blättert alle X Sekunden - die Wechselfrequenz -
+  eine Seite weiter und beginnt nach der letzten Seite wieder bei Seite 1). Beide Modi nutzen
+  den nativen Browser-PDF-Viewer (kein eigenes Rendering, funktioniert daher auch ohne
+  Internetzugang auf dem Pi).
+
+Beide Wege nutzen dieselbe Engine-Erkennung: bevorzugt die PHP-Imagick-Extension (kommt ohne
+`exec()`/`shell_exec()` aus), sonst ersatzweise die Kommandozeilen-Tools `pdftoppm`
+(poppler-utils) oder `gs` (Ghostscript) - ist keines davon verfügbar, erscheint eine klare
+Fehlermeldung statt eines stillen Fehlschlags. Der "seitenweise"-Modus ermittelt die
+Gesamtseitenzahl zusätzlich über `pdfinfo` (falls vorhanden) oder einen kleinen
+`gs`-Seitenzähler.
 
 ## Medien-Ordner: Ausrichtung & Archiv
 

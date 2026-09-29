@@ -10,7 +10,43 @@ if (file_exists($configFile)) {
 }
 $s = $config['screens'][$id] ?? null;
 
+// Seitenzahl einer nativen PDF (siehe infomaster.php's storeNativePdf()) ermitteln - nur
+// fuer den "seitenweise"-Modus gebraucht (um beim letzten Blatt wieder auf Seite 1 zu
+// springen, statt auf der letzten haengenzubleiben). Dieselbe 3-stufige Engine-Erkennung
+// wie infomaster.php's pdfDropEngine()/convertPdfDrop(), hier bewusst eigenstaendig (kein
+// gemeinsames Include zwischen den beiden Dateien) und ohne Caching, da view.php pro
+// Monitor nur einmal pro Seitenaufruf laeuft (Inhaltswechsel selbst passiert rein
+// clientseitig ueber setInterval, nicht ueber einen Seiten-Reload).
+function countPdfPages($path) {
+    if (!is_file($path)) return 1;
+    if (class_exists('Imagick')) {
+        try {
+            $im = new Imagick();
+            $im->pingImage($path);
+            $n = $im->getNumberImages();
+            $im->clear();
+            if ($n > 0) return $n;
+        } catch (Exception $e) { /* faellt auf Kommandozeile zurueck */ }
+    }
+    $disabled = array_map('trim', explode(',', (string)ini_get('disable_functions')));
+    if (function_exists('shell_exec') && !in_array('shell_exec', $disabled, true)) {
+        if (trim((string)@shell_exec('command -v pdfinfo 2>/dev/null')) !== '') {
+            $out = (string)@shell_exec('pdfinfo ' . escapeshellarg($path) . ' 2>/dev/null');
+            if (preg_match('/^Pages:\s*(\d+)/m', $out, $m)) return max(1, (int)$m[1]);
+        }
+        if (trim((string)@shell_exec('command -v gs 2>/dev/null')) !== '') {
+            $out = (string)@shell_exec('gs -q -dNODISPLAY -c "(' . addcslashes($path, '()\\') . ') (r) file runpdfbegin pdfpagecount = quit" 2>/dev/null');
+            if (preg_match('/(\d+)/', trim($out), $m)) return max(1, (int)$m[1]);
+        }
+    }
+    return 1; // Seitenzahl nicht ermittelbar - Modus faellt dann effektiv auf "eine Seite" zurueck
+}
+
 function getPlaylist($type, $content, $uploadBase, $hiddenFiles = []) {
+    if ($type && strpos($type, 'pdf:') === 0) {
+        $path = $uploadBase . substr($type, 4);
+        return is_file($path) ? [$path] : [];
+    }
     if ($type && strpos($type, 'folder:') === 0) {
         $folder = substr($type, 7);
         $path = $uploadBase . $folder;
@@ -42,6 +78,13 @@ function getHiddenFilesFor($type, $config) {
 $playlistA = $s ? getPlaylist($s['type'], $s['content'] ?? '', $uploadBase, getHiddenFilesFor($s['type'] ?? '', $config)) : [];
 $playlistB = $s ? getPlaylist($s['typeB'], $s['contentB'] ?? '', $uploadBase, getHiddenFilesFor($s['typeB'] ?? '', $config)) : [];
 $duration = (int)($s['duration'] ?? 10);
+// "Seitenweise"-PDF-Modus braucht die Gesamtseitenzahl, um am Ende wieder bei Seite 1
+// anzufangen, statt auf der letzten Seite stehen zu bleiben - nur berechnen, wenn
+// tatsaechlich gebraucht (paged + type ist eine PDF), sonst unnoetiger Arbeitsaufwand.
+$pdfModeA = ($s['pdfModeA'] ?? 'scroll') === 'paged' ? 'paged' : 'scroll';
+$pdfModeB = ($s['pdfModeB'] ?? 'scroll') === 'paged' ? 'paged' : 'scroll';
+$pdfPagesA = ($pdfModeA === 'paged' && !empty($playlistA) && strpos($s['type'] ?? '', 'pdf:') === 0) ? countPdfPages($playlistA[0]) : 1;
+$pdfPagesB = ($pdfModeB === 'paged' && !empty($playlistB) && strpos($s['typeB'] ?? '', 'pdf:') === 0) ? countPdfPages($playlistB[0]) : 1;
 // Pass nextcloud URLs to JS for async fetching
 $ncUrlA = ($s && $s['type'] === 'nextcloud') ? ($s['content'] ?? '') : '';
 $ncUrlB = ($s && ($s['typeB'] ?? '') === 'nextcloud') ? ($s['contentB'] ?? '') : '';
@@ -146,6 +189,14 @@ $ncUrlB = ($s && ($s['typeB'] ?? '') === 'nextcloud') ? ($s['contentB'] ?? '') :
     let playlistB = <?php echo json_encode($playlistB); ?>;
     const ncUrlA  = <?php echo json_encode($ncUrlA); ?>;
     const ncUrlB  = <?php echo json_encode($ncUrlB); ?>;
+    // Nur fuer eine direkt ausgewaehlte PDF ("pdf:..."-Typ, siehe infomaster.php) relevant -
+    // "scroll" laesst die PDF einmal komplett durchlaufen (Wechselfrequenz = Gesamtdauer),
+    // "paged" blaettert alle durationSec Sekunden eine Seite weiter und springt nach der
+    // letzten (pdfPagesA/B, serverseitig vorab ermittelt) wieder auf Seite 1.
+    const pdfModeA  = <?php echo json_encode($pdfModeA); ?>;
+    const pdfModeB  = <?php echo json_encode($pdfModeB); ?>;
+    const pdfPagesA = <?php echo json_encode($pdfPagesA); ?>;
+    const pdfPagesB = <?php echo json_encode($pdfPagesB); ?>;
     let idxA = 0;
     let idxB = 0;
     let currentHash = "";
@@ -167,33 +218,61 @@ $ncUrlB = ($s && ($s['typeB'] ?? '') === 'nextcloud') ? ($s['contentB'] ?? '') :
         } catch (e) {}
     }
 
-    function updatePane(paneId, type, url, playlist, index) {
+    // Laesst eine PDF im gegebenen Pane einmal komplett von oben nach unten durchlaufen -
+    // ueber den nativen Browser-PDF-Viewer im iframe (rendert ohnehin schon alle Seiten
+    // untereinander im "FitW"-Fortlaufmodus) plus einer CSS-Transform-Animation, die das
+    // iframe selbst nach oben schiebt. Kein PDF.js/eigenes Rendering noetig, daher auch ohne
+    // Internetzugang auf dem Pi lauffaehig.
+    function renderPdfScroll(pane, file, seconds) {
+        // Scroll-Distanz: 100vh pro 5 Sekunden Dauer
+        const scrollDist = Math.max(100, (seconds / 5) * 100);
+        pane.innerHTML = `
+            <div class="pdf-wrapper">
+                <style>
+                    @keyframes dynScroll {
+                        0% { transform: translateY(0); }
+                        15% { transform: translateY(0); }
+                        85% { transform: translateY(-${scrollDist}vh); }
+                        100% { transform: translateY(-${scrollDist}vh); }
+                    }
+                </style>
+                <iframe src="${file}#toolbar=0&navpanes=0&scrollbar=0&view=FitW"
+                        class="pdf-content"
+                        style="animation: dynScroll ${seconds}s linear forwards;">
+                </iframe>
+            </div>`;
+    }
+
+    // Zeigt eine einzelne Seite einer PDF an (kein Scrollen) - fuer den "seitenweise"-Modus.
+    // Der native Browser-PDF-Viewer springt per #page=N direkt zur gewuenschten Seite; ein
+    // neues iframe-src (statt nur des Hash) erzwingt zuverlaessig einen echten Sprung, auch
+    // wenn der Viewer den blossen Hash-Wechsel sonst ignorieren wuerde.
+    function renderPdfPage(pane, file, pageNum) {
+        pane.innerHTML = `<iframe src="${file}#toolbar=0&navpanes=0&scrollbar=0&view=FitW&page=${pageNum}"></iframe>`;
+    }
+
+    function updatePane(paneId, type, url, playlist, index, pdfMode, numPages) {
         const pane = document.getElementById(paneId);
         if (type === 'url') {
             if(!pane.querySelector('iframe') || pane.querySelector('iframe').src !== url) {
                 pane.innerHTML = `<iframe src="${url}"></iframe>`;
             }
+        } else if (type.startsWith('pdf:')) {
+            if (playlist.length > 0) {
+                const file = playlist[0];
+                if (pdfMode === 'paged') {
+                    renderPdfPage(pane, file, (index % Math.max(1, numPages)) + 1);
+                } else {
+                    renderPdfScroll(pane, file, durationSec);
+                }
+            } else {
+                pane.innerHTML = '<div style="color:#222;font-size:12px;padding:20px;">Datei nicht gefunden</div>';
+            }
         } else if (type.startsWith('folder:')) {
             if (playlist.length > 0) {
                 const file = playlist[index % playlist.length];
                 if (file.toLowerCase().endsWith('.pdf')) {
-                    // Scroll-Distanz: 100vh pro 5 Sekunden Dauer
-                    const scrollDist = Math.max(100, (durationSec / 5) * 100);
-                    pane.innerHTML = `
-                        <div class="pdf-wrapper">
-                            <style>
-                                @keyframes dynScroll {
-                                    0% { transform: translateY(0); }
-                                    15% { transform: translateY(0); }
-                                    85% { transform: translateY(-${scrollDist}vh); }
-                                    100% { transform: translateY(-${scrollDist}vh); }
-                                }
-                            </style>
-                            <iframe src="${file}#toolbar=0&navpanes=0&scrollbar=0&view=FitW" 
-                                    class="pdf-content" 
-                                    style="animation: dynScroll ${durationSec}s linear forwards;">
-                            </iframe>
-                        </div>`;
+                    renderPdfScroll(pane, file, durationSec);
                 } else {
                     pane.innerHTML = `<img src="${file}?t=${Date.now()}">`;
                 }
@@ -207,8 +286,8 @@ $ncUrlB = ($s && ($s['typeB'] ?? '') === 'nextcloud') ? ($s['contentB'] ?? '') :
         const config = <?php echo json_encode($s); ?>;
         if(!config) return;
         idxA++; idxB++;
-        updatePane('paneA', config.type, config.content, playlistA, idxA);
-        if(config.split !== 'none') updatePane('paneB', config.typeB, config.contentB, playlistB, idxB);
+        updatePane('paneA', config.type, config.content, playlistA, idxA, pdfModeA, pdfPagesA);
+        if(config.split !== 'none') updatePane('paneB', config.typeB, config.contentB, playlistB, idxB, pdfModeB, pdfPagesB);
     }
 
     const config = <?php echo json_encode($s); ?>;
@@ -229,8 +308,8 @@ $ncUrlB = ($s && ($s['typeB'] ?? '') === 'nextcloud') ? ($s['contentB'] ?? '') :
         ]).then(([plA, plB]) => {
             playlistA = plA;
             playlistB = plB;
-            updatePane('paneA', config.type, config.content, playlistA, idxA);
-            if(config.split !== 'none') updatePane('paneB', config.typeB, config.contentB, playlistB, idxB);
+            updatePane('paneA', config.type, config.content, playlistA, idxA, pdfModeA, pdfPagesA);
+            if(config.split !== 'none') updatePane('paneB', config.typeB, config.contentB, playlistB, idxB, pdfModeB, pdfPagesB);
             setInterval(cycle, durationSec * 1000);
             setInterval(checkUpdate, 5000);
             // Refresh Nextcloud playlists every 5 minutes
