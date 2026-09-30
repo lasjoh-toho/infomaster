@@ -40,7 +40,11 @@
       position: relative; overflow: hidden;
       transition: background 0.6s ease;
     }
-    #slide-content { position: absolute; inset: 0; z-index: 10; }
+    /* Bewusst OHNE z-index: sonst bildet die Ebene einen eigenen Stapelkontext und die
+       Ueberlagerungsmodi (mix-blend-mode, siehe applyElFx()) der Elemente wuerden nur mit
+       der leeren Ebene statt mit dem Folienhintergrund verrechnet. Die Elemente selbst
+       liegen per z-index:10 weiterhin ueber dem Hintergrund-Canvas. */
+    #slide-content { position: absolute; inset: 0; }
     #spotlight-canvas, #glitter-canvas {
       pointer-events: none; position: absolute; inset: 0; width: 100%; height: 100%;
     }
@@ -139,6 +143,27 @@
       cursor: grab; display: none;
     }
     .slide-el.selected-el .drag-handle { display: block; }
+    .slide-el .rotate-handle {
+      position: absolute; top: -24px; left: calc(50% + 16px); width: 18px; height: 18px; border-radius: 50%;
+      background: rgba(15,23,42,0.9); border: 1px solid rgba(99,102,241,0.8); color: #a5b4fc;
+      font-size: 11px; line-height: 16px; text-align: center; cursor: grab; display: none; user-select: none;
+    }
+    .slide-el.selected-el .rotate-handle { display: block; }
+    /* Waehrend des Tippens Ueberlagerungsmodus/Filter aussetzen - sonst waere der Text beim
+       Bearbeiten (z.B. "Invertieren") kaum lesbar. */
+    .slide-el:focus-within { mix-blend-mode: normal !important; }
+    .slide-el:focus-within > * { filter: none !important; }
+
+    /* Unter-Tabs im Elemente-Tab (Texte / Bilder / Widgets) */
+    .el-subtabs { display: flex; gap: 4px; margin-bottom: 10px; background: rgba(0,0,0,0.2); padding: 4px; border-radius: 10px; }
+    .el-subtab {
+      flex: 1; padding: 5px 4px; border-radius: 8px; font-size: 10px; font-weight: 500; cursor: pointer;
+      border: 1px solid transparent; background: transparent; color: rgba(148,163,184,0.8);
+    }
+    .el-subtab.active { background: rgba(99,102,241,0.18); color: #a5b4fc; border-color: rgba(99,102,241,0.3); font-weight: 600; }
+    .el-subtab:not(.active):hover { background: rgba(255,255,255,0.05); color: #e2e8f0; }
+    .el-subpanel { display: none; margin-bottom: 12px; }
+    .el-subpanel.active { display: block; }
 
     /* Glass card template styles */
     .glass-card {
@@ -203,7 +228,7 @@
        ist bereits Flex-zentriert (schwarzer Hintergrund), die Buehne selbst bekommt hier nur
        noch eine explizite, seitenverhaeltnis-treue Pixelgroesse statt voller Bildschirmgroesse. */
     #pres-stage-full { position: relative; overflow: hidden; }
-    #pres-content-full { position: absolute; inset: 0; z-index: 10; }
+    #pres-content-full { position: absolute; inset: 0; } /* ohne z-index, siehe #slide-content */
     #pres-spotlight-canvas, #pres-glitter-canvas {
       pointer-events: none; position: absolute; inset: 0; width: 100%; height: 100%;
     }
@@ -394,30 +419,42 @@
 
         <!-- ===== TAB: ELEMENTS ===== -->
         <div class="tab-panel" id="tab-elements">
-          <!-- Text/Bild und die Widgets (QR/Uhr/Datum/Countdown) liegen gemeinsam hier - ein
-               Widget wird erst eingerichtet (Formular direkt darunter) und dann erstellt. -->
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:12px;">
-            <button onclick="App.addTextElement()" class="btn-sm" style="justify-content:center;">
-              <i data-lucide="type" style="width:13px;height:13px;color:#a5b4fc;"></i> Text
+          <!-- Unter-Tabs: Texte / Bilder / Widgets (QR/Uhr/Datum/Countdown). Ebenen-Liste und
+               Inspector darunter gelten fuer alle drei. -->
+          <div class="el-subtabs">
+            <button class="el-subtab active" data-sub="texts" onclick="App.setElementsSubTab('texts')">Texte</button>
+            <button class="el-subtab" data-sub="images" onclick="App.setElementsSubTab('images')">Bilder</button>
+            <button class="el-subtab" data-sub="widgets" onclick="App.setElementsSubTab('widgets')">Widgets</button>
+          </div>
+          <div class="el-subpanel active" id="el-sub-texts">
+            <button onclick="App.addTextElement()" class="btn-sm" style="width:100%;justify-content:center;">
+              <i data-lucide="type" style="width:13px;height:13px;color:#a5b4fc;"></i> Text hinzufügen
             </button>
-            <label class="btn-sm" style="justify-content:center;cursor:pointer;">
-              <i data-lucide="image" style="width:13px;height:13px;color:#34d399;"></i> Bild
+            <p style="font-size:10px;color:rgba(148,163,184,0.55);margin:6px 0 0;">Doppelklick auf einen Text der Folie zum Bearbeiten, Entf löscht das ausgewählte Element. Layout-Vorlagen stehen im Tab „Folien“.</p>
+          </div>
+          <div class="el-subpanel" id="el-sub-images">
+            <label class="btn-sm" style="width:100%;justify-content:center;cursor:pointer;box-sizing:border-box;">
+              <i data-lucide="image" style="width:13px;height:13px;color:#34d399;"></i> Bild hinzufügen
               <input type="file" accept="image/*" style="display:none;" onchange="App.handleImageUpload(event)">
             </label>
-            <button onclick="App.startWidgetDraft('qr')" class="btn-sm" style="justify-content:center;" title="QR-Code (erst einrichten, dann erstellen)">
-              <i data-lucide="qr-code" style="width:13px;height:13px;color:#f59e0b;"></i> QR
-            </button>
-            <button onclick="App.startWidgetDraft('clock')" class="btn-sm" style="justify-content:center;" title="Uhr (erst einrichten, dann erstellen)">
-              <i data-lucide="clock" style="width:13px;height:13px;color:#38bdf8;"></i> Uhr
-            </button>
-            <button onclick="App.startWidgetDraft('date')" class="btn-sm" style="justify-content:center;" title="Datumsanzeige (erst einrichten, dann erstellen)">
-              <i data-lucide="calendar" style="width:13px;height:13px;color:#fb7185;"></i> Datum
-            </button>
-            <button onclick="App.startWidgetDraft('countdown')" class="btn-sm" style="justify-content:center;" title="Countdown (erst einrichten, dann erstellen)">
-              <i data-lucide="hourglass" style="width:13px;height:13px;color:#c084fc;"></i> Countdown
-            </button>
           </div>
-          <div id="widget-draft-form"></div>
+          <div class="el-subpanel" id="el-sub-widgets">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+              <button onclick="App.startWidgetDraft('qr')" class="btn-sm" style="justify-content:center;" title="QR-Code (erst einrichten, dann erstellen)">
+                <i data-lucide="qr-code" style="width:13px;height:13px;color:#f59e0b;"></i> QR-Code
+              </button>
+              <button onclick="App.startWidgetDraft('clock')" class="btn-sm" style="justify-content:center;" title="Uhr (erst einrichten, dann erstellen)">
+                <i data-lucide="clock" style="width:13px;height:13px;color:#38bdf8;"></i> Uhr
+              </button>
+              <button onclick="App.startWidgetDraft('date')" class="btn-sm" style="justify-content:center;" title="Datumsanzeige (erst einrichten, dann erstellen)">
+                <i data-lucide="calendar" style="width:13px;height:13px;color:#fb7185;"></i> Datum
+              </button>
+              <button onclick="App.startWidgetDraft('countdown')" class="btn-sm" style="justify-content:center;" title="Countdown (erst einrichten, dann erstellen)">
+                <i data-lucide="hourglass" style="width:13px;height:13px;color:#c084fc;"></i> Countdown
+              </button>
+            </div>
+            <div id="widget-draft-form"></div>
+          </div>
           <div class="ctrl-section">
             <div class="ctrl-section-title">Ebenen dieser Folie</div>
             <p style="font-size:10px;color:rgba(148,163,184,0.55);margin:-4px 0 8px;">Oben = im Vordergrund. Zum Auswählen/Bearbeiten anklicken (gerade bei Vorlagen einfacher als auf der Folie selbst zu klicken) - ziehen oder ▲/▼ aendert die Reihenfolge (und damit was vorne liegt). Enthaelt auch Widgets.</p>
@@ -1198,9 +1235,9 @@ function widgetDefaultTarget() {
 }
 const WIDGET_DEFAULTS = {
   qr: {content:'https://',shape:'square',fgColor:'#000000',bgColor:'#ffffff',bgEnabled:true,ecLevel:'M'},
-  clock: {fontFamily:'Inter, sans-serif',fontSize:56,color:'#ffffff',fontWeight:'700',textAlign:'center',format:'24h',showSeconds:true},
-  date: {fontFamily:'Inter, sans-serif',fontSize:30,color:'#ffffff',fontWeight:'600',textAlign:'center',format:'long'},
-  get countdown() { return {fontFamily:'Inter, sans-serif',fontSize:52,color:'#ffffff',fontWeight:'700',textAlign:'center',target:widgetDefaultTarget(),label:'',doneText:'🎉'}; },
+  clock: {fontFamily:'Inter, sans-serif',fontSize:56,color:'#ffffff',fontWeight:'700',textAlign:'center',fontStyle:'normal',letterSpacing:0,format:'24h',showSeconds:true},
+  date: {fontFamily:'Inter, sans-serif',fontSize:30,color:'#ffffff',fontWeight:'600',textAlign:'center',fontStyle:'normal',letterSpacing:0,format:'long'},
+  get countdown() { return {fontFamily:'Inter, sans-serif',fontSize:52,color:'#ffffff',fontWeight:'700',textAlign:'center',fontStyle:'normal',letterSpacing:0,target:widgetDefaultTarget(),label:'',doneText:'🎉'}; },
 };
 const WIDGET_DIMS = {
   qr: {x:35,y:30,width:30}, clock: {x:25,y:40,width:50}, date: {x:15,y:43,width:70}, countdown: {x:15,y:38,width:70},
@@ -1210,67 +1247,158 @@ const WIDGET_DIMS = {
 // Bearbeiten eines bereits bestehenden Widget-Elements (App.renderInspector(),
 // fn='updateQrProp'/'updateWidgetProp') genutzt, damit beide Formulare synchron bleiben.
 function widgetFieldsHtml(type, data, fn) {
-  const alignBtns = () => ['left','center','right'].map(a=>`<button onclick="App.${fn}('textAlign','${a}')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${data.textAlign===a?'background:rgba(99,102,241,0.25);border-color:rgba(99,102,241,0.4);':''}">${a==='left'?'⟸':a==='center'?'≡':'⟹'}</button>`).join('');
+  // Getippte Werte (Text/Zahl/Regler) rufen App.<fn>(key, val, false) auf - das "false"
+  // verhindert, dass das Formular dabei neu aufgebaut wird (sonst verliert das Feld nach
+  // jedem Buchstaben den Fokus). Nur Knoepfe/Checkboxen, deren Zustand sichtbar umschaltet,
+  // bauen neu auf.
+  const on = 'background:rgba(99,102,241,0.25);border-color:rgba(99,102,241,0.4);';
+  const alignBtns = () => ['left','center','right'].map(a=>`<button onclick="App.${fn}('textAlign','${a}')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${data.textAlign===a?on:''}">${a==='left'?'⟸':a==='center'?'≡':'⟹'}</button>`).join('');
+  const sizeHtml = `
+      <label class="ctrl-label" style="margin-top:8px;">Breite: <span class="wf-width-val">${data.width}</span> %</label>
+      <input type="range" min="5" max="100" value="${data.width}" oninput="this.previousElementSibling.querySelector('.wf-width-val').textContent=this.value; App.${fn}('width',parseInt(this.value),false)">`;
+  const typoHtml = () => `
+      <div class="ctrl-section-title" style="margin:12px 0 6px;">Typografie</div>
+      <label class="ctrl-label">Schriftart</label>
+      <select onchange="App.${fn}('fontFamily',this.value,false)">${fontOptionsHtml(data.fontFamily)}</select>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">
+        <div><label class="ctrl-label">Größe (px)</label><input type="number" min="8" max="400" value="${data.fontSize}" oninput="App.${fn}('fontSize',parseInt(this.value)||${data.fontSize},false)"></div>
+        <div><label class="ctrl-label">Stärke</label>
+          <select onchange="App.${fn}('fontWeight',this.value,false)">
+            ${[['300','Light'],['400','Regular'],['500','Medium'],['600','SemiBold'],['700','Bold'],['800','ExtraBold'],['900','Black']].map(([v,n])=>`<option value="${v}" ${String(data.fontWeight)===v?'selected':''}>${n} ${v}</option>`).join('')}
+          </select></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;align-items:end;">
+        <div><label class="ctrl-label">Zeichenabstand: <span class="wf-ls-val">${(data.letterSpacing||0).toFixed(2)}</span> em</label>
+          <input type="range" min="-0.1" max="0.5" step="0.01" value="${data.letterSpacing||0}" oninput="this.previousElementSibling.querySelector('.wf-ls-val').textContent=parseFloat(this.value).toFixed(2); App.${fn}('letterSpacing',parseFloat(this.value),false)"></div>
+        <label class="ctrl-label" style="display:flex;align-items:center;gap:6px;margin:0 0 6px;cursor:pointer;"><input type="checkbox" ${data.fontStyle==='italic'?'checked':''} onchange="App.${fn}('fontStyle',this.checked?'italic':'normal',false)" style="accent-color:#6366f1;width:14px;height:14px;"> <i>Kursiv</i></label>
+      </div>
+      <label class="ctrl-label" style="margin-top:8px;">Ausrichtung</label>
+      <div style="display:flex;gap:5px;">${alignBtns()}</div>
+      <label class="ctrl-label" style="margin-top:8px;">Farbe</label>
+      <input type="color" value="${data.color}" oninput="App.${fn}('color',this.value,false)" style="height:32px;">`;
   if (type==='qr') {
     return `
       <label class="ctrl-label">Inhalt (URL oder Text)</label>
-      <textarea oninput="App.${fn}('content',this.value)" style="height:50px;resize:vertical;font-size:11px;">${escapeHtmlEc(data.content)}</textarea>
+      <textarea oninput="App.${fn}('content',this.value,false)" style="height:50px;resize:vertical;font-size:11px;">${escapeHtmlEc(data.content)}</textarea>
       <label class="ctrl-label" style="margin-top:8px;">Form der Module</label>
       <div style="display:flex;gap:5px;">
-        <button onclick="App.${fn}('shape','square')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${data.shape==='square'?'background:rgba(99,102,241,0.25);border-color:rgba(99,102,241,0.4);':''}">◼ Eckig</button>
-        <button onclick="App.${fn}('shape','round')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${data.shape==='round'?'background:rgba(99,102,241,0.25);border-color:rgba(99,102,241,0.4);':''}">● Rund</button>
+        <button onclick="App.${fn}('shape','square')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${data.shape==='square'?on:''}">◼ Eckig</button>
+        <button onclick="App.${fn}('shape','round')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${data.shape==='round'?on:''}">● Rund</button>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">
-        <div><label class="ctrl-label">Farbe</label><input type="color" value="${data.fgColor}" onchange="App.${fn}('fgColor',this.value)" style="height:32px;"></div>
-        <div><label class="ctrl-label">Hintergrundfarbe</label><input type="color" value="${data.bgColor}" onchange="App.${fn}('bgColor',this.value)" style="height:32px;${data.bgEnabled?'':'opacity:0.35;pointer-events:none;'}"></div>
+        <div><label class="ctrl-label">Farbe</label><input type="color" value="${data.fgColor}" oninput="App.${fn}('fgColor',this.value,false)" style="height:32px;"></div>
+        <div><label class="ctrl-label">Hintergrundfarbe</label><input type="color" value="${data.bgColor}" oninput="App.${fn}('bgColor',this.value,false)" style="height:32px;${data.bgEnabled?'':'opacity:0.35;pointer-events:none;'}"></div>
       </div>
       <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;">
         <label class="ctrl-label" style="margin:0;" title="Ohne Hintergrund scheint die Folien-Fläche durch die Ruhezone/zwischen den Modulen durch">Mit Hintergrund</label>
         <input type="checkbox" ${data.bgEnabled?'checked':''} onchange="App.${fn}('bgEnabled',this.checked); App.renderInspector();" style="accent-color:#6366f1;width:15px;height:15px;">
-      </div>`;
+      </div>
+      <div class="ctrl-section-title" style="margin:12px 0 0;">Größe</div>${sizeHtml}`;
   }
   if (type==='clock') {
     return `
       <label class="ctrl-label">Format</label>
       <div style="display:flex;gap:5px;">
-        <button onclick="App.${fn}('format','24h')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${data.format==='24h'?'background:rgba(99,102,241,0.25);border-color:rgba(99,102,241,0.4);':''}">24h</button>
-        <button onclick="App.${fn}('format','12h')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${data.format==='12h'?'background:rgba(99,102,241,0.25);border-color:rgba(99,102,241,0.4);':''}">12h (AM/PM)</button>
+        <button onclick="App.${fn}('format','24h')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${data.format==='24h'?on:''}">24h</button>
+        <button onclick="App.${fn}('format','12h')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${data.format==='12h'?on:''}">12h (AM/PM)</button>
       </div>
       <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;">
         <label class="ctrl-label" style="margin:0;">Sekunden anzeigen</label>
-        <input type="checkbox" ${data.showSeconds?'checked':''} onchange="App.${fn}('showSeconds',this.checked)" style="accent-color:#6366f1;width:15px;height:15px;">
-      </div>
-      <label class="ctrl-label" style="margin-top:8px;">Ausrichtung</label>
-      <div style="display:flex;gap:5px;">${alignBtns()}</div>
-      <label class="ctrl-label" style="margin-top:8px;">Farbe</label>
-      <input type="color" value="${data.color}" onchange="App.${fn}('color',this.value)" style="height:32px;">`;
+        <input type="checkbox" ${data.showSeconds?'checked':''} onchange="App.${fn}('showSeconds',this.checked,false)" style="accent-color:#6366f1;width:15px;height:15px;">
+      </div>${typoHtml()}${sizeHtml}`;
   }
   if (type==='date') {
     return `
       <label class="ctrl-label">Format</label>
       <div style="display:flex;gap:5px;">
-        <button onclick="App.${fn}('format','long')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${data.format==='long'?'background:rgba(99,102,241,0.25);border-color:rgba(99,102,241,0.4);':''}">Lang</button>
-        <button onclick="App.${fn}('format','short')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${data.format==='short'?'background:rgba(99,102,241,0.25);border-color:rgba(99,102,241,0.4);':''}">Kurz</button>
-      </div>
-      <label class="ctrl-label" style="margin-top:8px;">Ausrichtung</label>
-      <div style="display:flex;gap:5px;">${alignBtns()}</div>
-      <label class="ctrl-label" style="margin-top:8px;">Farbe</label>
-      <input type="color" value="${data.color}" onchange="App.${fn}('color',this.value)" style="height:32px;">`;
+        <button onclick="App.${fn}('format','long')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${data.format==='long'?on:''}">Lang</button>
+        <button onclick="App.${fn}('format','short')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${data.format==='short'?on:''}">Kurz</button>
+      </div>${typoHtml()}${sizeHtml}`;
   }
   if (type==='countdown') {
     return `
       <label class="ctrl-label">Ziel-Datum/Uhrzeit</label>
-      <input type="datetime-local" value="${escapeHtmlEc(data.target)}" onchange="App.${fn}('target',this.value)" style="width:100%;padding:7px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;font-size:12px;">
+      <input type="datetime-local" value="${escapeHtmlEc(data.target)}" onchange="App.${fn}('target',this.value,false)" style="width:100%;padding:7px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;font-size:12px;">
       <label class="ctrl-label" style="margin-top:8px;">Beschriftung (optional, über dem Countdown)</label>
-      <input type="text" value="${escapeHtmlEc(data.label)}" oninput="App.${fn}('label',this.value)" placeholder="z.B. Bis zum Event" style="width:100%;padding:7px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;font-size:12px;">
+      <input type="text" value="${escapeHtmlEc(data.label)}" oninput="App.${fn}('label',this.value,false)" placeholder="z.B. Bis zum Event">
       <label class="ctrl-label" style="margin-top:8px;">Text nach Ablauf</label>
-      <input type="text" value="${escapeHtmlEc(data.doneText)}" oninput="App.${fn}('doneText',this.value)" style="width:100%;padding:7px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;font-size:12px;">
-      <label class="ctrl-label" style="margin-top:8px;">Ausrichtung</label>
-      <div style="display:flex;gap:5px;">${alignBtns()}</div>
-      <label class="ctrl-label" style="margin-top:8px;">Farbe</label>
-      <input type="color" value="${data.color}" onchange="App.${fn}('color',this.value)" style="height:32px;">`;
+      <input type="text" value="${escapeHtmlEc(data.doneText)}" oninput="App.${fn}('doneText',this.value,false)">${typoHtml()}${sizeHtml}`;
   }
   return '';
+}
+// ─── DREHUNG & UEBERLAGERUNG (pro Element, Editor + Vollbild + Export) ───
+// "Invertieren" und "Grain Extract" gibt es nicht als CSS-mix-blend-mode - sie werden aus
+// Filter + vorhandenem Modus zusammengesetzt:
+//  - Invertieren: Inhalt per Filter zu reinem Weiss (Alpha bleibt), dann "difference" ->
+//    unter jedem deckenden Pixel (z.B. jedem Buchstaben) erscheint das Negativ des Hintergrunds.
+//  - Grain Extract (GIMP: Hintergrund - Element + 50% Grau): invertierter Inhalt mit
+//    "hard-light" - bei mittleren Hintergrundtoenen exakt, sonst eine Annaeherung.
+const BLEND_MODES = [
+  {v:'normal', label:'Normal'},
+  {v:'multiply', label:'Multiplizieren (Multiply)'},
+  {v:'color-burn', label:'Nachbelichten (Burn)'},
+  {v:'invert', label:'Invertieren (Invert)'},
+  {v:'difference', label:'Differenz (Difference)'},
+  {v:'grain-extract', label:'Körnung extrahieren (Grain Extract)'},
+];
+function applyElFx(wrapper, el) {
+  const rot = parseFloat(el.rotation) || 0;
+  wrapper.style.transform = rot ? `rotate(${rot}deg)` : '';
+  let blend = '', filter = '';
+  if (el.blend === 'multiply' || el.blend === 'color-burn' || el.blend === 'difference') blend = el.blend;
+  else if (el.blend === 'invert') { blend = 'difference'; filter = 'brightness(0) invert(1)'; }
+  else if (el.blend === 'grain-extract') { blend = 'hard-light'; filter = 'invert(1)'; }
+  wrapper.style.mixBlendMode = blend;
+  Array.from(wrapper.children).forEach(c => {
+    if (c.classList.contains('drag-handle') || c.classList.contains('rotate-handle')) return;
+    c.style.filter = filter;
+  });
+}
+// Repraesentative Hintergrundfarbe einer Folie (fuer "◐ Kontrast": Schwarz/Weiss je nachdem,
+// was auf DIESEM Hintergrund besser lesbar ist - vorher wurde nur die eigene Textfarbe
+// betrachtet). Verlaeufe: Mittelwert der Farbstopps; Bild: unbekannt -> null.
+function slideBgColor(slide) {
+  const bg = slide && slide.background;
+  if (!bg) return null;
+  if (bg.type === 'solid') return bg.solidColor || '#090d16';
+  if (bg.type === 'grainy') return bg.grainy?.colors?.bg || null;
+  if ((bg.type === 'custom-linear' || bg.type === 'custom-radial') && bg.colorStops?.length) {
+    const rgbs = bg.colorStops.map(cs => hexToRgb(cs.color));
+    const avg = k => Math.round(rgbs.reduce((a, c) => a + c[k], 0) / rgbs.length);
+    return '#' + [avg('r'), avg('g'), avg('b')].map(v => v.toString(16).padStart(2, '0')).join('');
+  }
+  return null;
+}
+// Gemeinsamer Inspector-Abschnitt fuer ALLE Elementtypen.
+function fxControlsHtml(el) {
+  const rot = Math.round(parseFloat(el.rotation) || 0);
+  const cur = el.blend || 'normal';
+  return `
+    <div class="ctrl-section">
+      <div class="ctrl-section-title">Drehung & Überlagerung</div>
+      <label class="ctrl-label">Drehung: <span id="el-rot-val">${rot}</span>°</label>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <input type="range" id="el-rot-input" min="-180" max="180" step="1" value="${rot}" oninput="App.setElRotation(this.value)" style="flex:1;">
+        <button onclick="App.setElRotation(0)" class="btn-sm" style="padding:4px 8px;font-size:10px;" title="Drehung zurücksetzen">↺ 0°</button>
+      </div>
+      <p style="font-size:10px;color:rgba(148,163,184,0.55);margin:4px 0 0;">Oder am runden ⟳-Griff des ausgewählten Elements ziehen (Shift = 15°-Schritte).</p>
+      <label class="ctrl-label" style="margin-top:8px;">Überlagerung mit dem Hintergrund</label>
+      <select onchange="App.updateElProp('blend',this.value); App.renderInspector();">
+        ${BLEND_MODES.map(m => `<option value="${m.v}" ${m.v === cur ? 'selected' : ''}>${m.label}</option>`).join('')}
+      </select>
+      ${cur === 'grain-extract' ? '<p style="font-size:10px;color:rgba(148,163,184,0.55);margin:4px 0 0;">Browser kennen Grain Extract nicht direkt - bei mittleren Hintergrundtönen exakt, bei sehr hellen/dunklen eine Annäherung.</p>' : ''}
+      ${cur === 'invert' ? '<p style="font-size:10px;color:rgba(148,163,184,0.55);margin:4px 0 0;">Das Element zeigt das Negativ des Hintergrunds (eigene Farbe wird ignoriert).</p>' : ''}
+    </div>`;
+}
+function fontOptionsHtml(current) {
+  return CLASSIC_FONTS.map(f => `<option value="${f.family}" ${f.family === current ? 'selected' : ''}>${f.name}</option>`).join('')
+    + (S.installedFonts.length > 0 ? '<optgroup label="Google Fonts / eigene">' + S.installedFonts.map(f => `<option value="${f.family},sans-serif" ${(f.family + ',sans-serif') === current ? 'selected' : ''}>${f.name}</option>`).join('') + '</optgroup>' : '');
+}
+function elSubTabFor(el) {
+  if (!el) return null;
+  if (WIDGET_ELEMENT_TYPES.includes(el.type)) return 'widgets';
+  if (el.type === 'image') return 'images';
+  return 'texts';
 }
 // Reiner Text-Formatierer, unabhaengig von S/App - dieselbe Funktion wird 1:1 (siehe
 // Export-Kopie in buildExportedDoc()) auch im fertigen, eigenstaendigen Praesentations-
@@ -1664,6 +1792,7 @@ function selectElAndShowTab(el, wrapper) {
   S.selectedElementId = el.id;
   S.widgetDraft = null; // ein gerade konfigurierter, noch nicht erzeugter Entwurf wird verworfen
   App.setTab('elements');
+  App.setElementsSubTab(elSubTabFor(el));
   App.renderInspector();
   App.renderLayersList();
 }
@@ -1747,6 +1876,8 @@ function renderSlideContent(slide, container, isEditor, stageEl) {
       div.style.fontWeight = el.fontWeight||'700';
       div.style.lineHeight = '1.3';
       div.style.whiteSpace = 'pre-line';
+      div.style.fontStyle  = el.fontStyle||'normal';
+      div.style.letterSpacing = (el.letterSpacing||0)+'em';
       div.textContent = formatWidgetText(el);
       wrapper.appendChild(div);
 
@@ -1790,7 +1921,14 @@ function renderSlideContent(slide, container, isEditor, stageEl) {
         if (S.selectedElementId === el.id) return;
         selectElAndShowTab(el, wrapper);
       });
+      const rotH=document.createElement('div');
+      rotH.className='rotate-handle';
+      rotH.title='Ziehen zum Drehen (Shift = 15°-Schritte, Doppelklick = 0°)';
+      rotH.textContent='⟳';
+      wrapper.appendChild(rotH);
+      makeRotatable(rotH, wrapper, el);
     }
+    applyElFx(wrapper, el);
     container.appendChild(wrapper);
   });
 
@@ -1873,6 +2011,41 @@ function makeDraggable(el, data) {
     _elDrag.startLeft=data.x; _elDrag.startTop=data.y;
   });
 }
+
+// ─── DREHEN PER GRIFF ───
+// Winkel zwischen Element-Mittelpunkt und Mauszeiger; der Griff sitzt oben rechts, daher
+// der Versatz, damit das Element beim Anfassen nicht springt.
+const _elRot = { active:false, wrapper:null, data:null, cx:0, cy:0, offset:0, endedAt:0 };
+function makeRotatable(handle, wrapper, data) {
+  handle.addEventListener('mousedown', e => {
+    e.stopPropagation(); e.preventDefault();
+    const r=wrapper.getBoundingClientRect();
+    _elRot.active=true; _elRot.wrapper=wrapper; _elRot.data=data;
+    _elRot.cx=r.left+r.width/2; _elRot.cy=r.top+r.height/2;
+    const mouseDeg=Math.atan2(e.clientY-_elRot.cy, e.clientX-_elRot.cx)*180/Math.PI;
+    _elRot.offset=(parseFloat(data.rotation)||0)-mouseDeg;
+    document.body.style.cursor='grabbing';
+  });
+  handle.addEventListener('click', e => e.stopPropagation());
+  handle.addEventListener('dblclick', e => { e.stopPropagation(); App.setElRotation(0); });
+}
+window.addEventListener('mousemove', e => {
+  if (!_elRot.active) return;
+  let deg=Math.atan2(e.clientY-_elRot.cy, e.clientX-_elRot.cx)*180/Math.PI+_elRot.offset;
+  deg=((deg+180)%360+360)%360-180;
+  if (e.shiftKey) deg=Math.round(deg/15)*15;
+  _elRot.data.rotation=Math.round(deg);
+  applyElFx(_elRot.wrapper, _elRot.data);
+  const inp=document.getElementById('el-rot-input'), lbl=document.getElementById('el-rot-val');
+  if (inp && S.selectedElementId===_elRot.data.id) inp.value=_elRot.data.rotation;
+  if (lbl && S.selectedElementId===_elRot.data.id) lbl.textContent=_elRot.data.rotation;
+});
+window.addEventListener('mouseup', () => {
+  if (!_elRot.active) return;
+  _elRot.active=false;
+  _elRot.endedAt=Date.now(); // der gleich folgende "click" auf die Buehne soll nicht abwaehlen
+  document.body.style.cursor='';
+});
 
 // ═══════════════════════════════════════════════════════════════
 //  SPOTLIGHT / BEAM ENGINE
@@ -2142,7 +2315,7 @@ function startEditorCanvasLoop() {
       renderWaypointMarkers();
       S.addingWaypoint=false;
       document.getElementById('wp-click-hint').style.display='none';
-    } else if (!evt.target.closest('.slide-el') && S.isEditor) {
+    } else if (!evt.target.closest('.slide-el') && S.isEditor && Date.now()-_elRot.endedAt > 300) {
       S.selectedElementId=null;
       App.renderInspector();
       const els=document.querySelectorAll('.slide-el');
@@ -2318,6 +2491,49 @@ function setupSaveToServer() {
     const btn=document.getElementById('save-server-btn');
     if (btn) btn.style.display='flex';
   }
+}
+
+// Speichern-Dialog: Namensfeld + "Speichern" (neu) bzw. "Überschreiben" / "Als neue
+// Präsentation speichern" (bereits gespeicherte Datei). onSave(name, asNew).
+function showSaveNameModal(hasFile, currentName, onSave) {
+  const overlay=document.createElement('div');
+  overlay.className='ec-modal-open';
+  overlay.style.cssText='position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;';
+  const box=document.createElement('div');
+  box.style.cssText='background:#0f172a;border:1px solid rgba(255,255,255,0.12);border-radius:16px;padding:22px;max-width:440px;width:90%;color:#f1f5f9;';
+  box.innerHTML=`
+    <h3 style="margin:0 0 4px;font-size:16px;">💾 Im Infomaster speichern</h3>
+    <p style="font-size:12px;color:#94a3b8;margin:0 0 12px;">${hasFile
+      ? 'Diese Präsentation liegt schon auf dem Server. Überschreiben oder als neue Präsentation (mit neuem Namen) ablegen?'
+      : 'Wie soll diese Präsentation heißen?'}</p>
+    <label class="ctrl-label">Name</label>
+    <input type="text" class="ec-save-name" value="${escapeHtmlEc(currentName||'')}" style="font-size:13px;padding:8px 10px;">
+    <div class="ec-save-err" style="display:none;margin-top:6px;font-size:11px;color:#fca5a5;">Bitte einen Namen eingeben.</div>
+    <div style="display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:16px;">
+      <button type="button" class="ec-save-cancel btn-sm" style="width:auto;">Abbrechen</button>
+      ${hasFile ? `<button type="button" class="ec-save-new btn-sm" style="width:auto;" title="Legt eine zusätzliche Datei an - die bisherige bleibt unverändert">＋ Als neue Präsentation</button>` : ''}
+      <button type="button" class="ec-save-main btn-sm accent" style="width:auto;">${hasFile ? '💾 Überschreiben' : '💾 Speichern'}</button>
+    </div>`;
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  const input=box.querySelector('.ec-save-name');
+  input.focus(); input.select();
+  function close(){ overlay.remove(); }
+  function submit(asNew){
+    const name=input.value.trim();
+    if (!name) { box.querySelector('.ec-save-err').style.display='block'; input.focus(); return; }
+    close();
+    onSave(name, asNew);
+  }
+  overlay.addEventListener('click', e=>{ if (e.target===overlay) close(); });
+  box.querySelector('.ec-save-cancel').addEventListener('click', close);
+  box.querySelector('.ec-save-main').addEventListener('click', ()=>submit(!hasFile));
+  const newBtn=box.querySelector('.ec-save-new');
+  if (newBtn) newBtn.addEventListener('click', ()=>submit(true));
+  input.addEventListener('keydown', e=>{
+    if (e.key==='Enter') { e.preventDefault(); submit(!hasFile); }
+    if (e.key==='Escape') { e.preventDefault(); e.stopPropagation(); close(); }
+  });
 }
 
 // Nach erfolgreichem "Im Infomaster speichern": zu passenden (gleiche Ausrichtung) Monitoren
@@ -3064,7 +3280,7 @@ const App = {
     this.render(); this.renderInspector();
   },
 
-  updateQrProp(key, val) {
+  updateQrProp(key, val, rerenderPanel=true) {
     const slide=S.slides[S.activeSlideIndex];
     const el=slide?.elements.find(e=>e.id===S.selectedElementId);
     if (!el) return;
@@ -3078,14 +3294,38 @@ const App = {
       const ratio = contrastRatio(el.fgColor, bg);
       warn.style.display = ratio < 3 ? 'block' : 'none';
     }
+    if (rerenderPanel) this.renderInspector();
   },
 
-  updateWidgetProp(key, val) {
+  // rerenderPanel=false bei getippten Werten (siehe widgetFieldsHtml()): nur die Folie neu
+  // zeichnen, den Inspector aber stehen lassen, damit das Eingabefeld den Fokus behaelt.
+  updateWidgetProp(key, val, rerenderPanel=true) {
     const slide=S.slides[S.activeSlideIndex];
     const el=slide?.elements.find(e=>e.id===S.selectedElementId);
     if (!el) return;
     el[key]=val;
     this.render();
+    if (rerenderPanel) this.renderInspector();
+  },
+
+  setElementsSubTab(name) {
+    if (!name) return;
+    S.elementsSubTab=name;
+    document.querySelectorAll('.el-subtab').forEach(b => b.classList.toggle('active', b.dataset.sub===name));
+    document.querySelectorAll('.el-subpanel').forEach(p => p.classList.toggle('active', p.id==='el-sub-'+name));
+  },
+
+  // Drehung ohne komplettes Neu-Rendern (fluessiger Regler), nur Transform am Element.
+  setElRotation(val) {
+    const slide=S.slides[S.activeSlideIndex];
+    const el=slide?.elements.find(e=>e.id===S.selectedElementId);
+    if (!el) return;
+    el.rotation=Math.max(-180, Math.min(180, Math.round(parseFloat(val)||0)));
+    const w=document.querySelector('#slide-content .slide-el[data-id="'+el.id+'"]');
+    if (w) applyElFx(w, el);
+    const inp=document.getElementById('el-rot-input'), lbl=document.getElementById('el-rot-val');
+    if (inp) inp.value=el.rotation;
+    if (lbl) lbl.textContent=el.rotation;
   },
 
   // ─── WIDGETS (QR/Uhr/Datum/Countdown) - im Elemente-Tab, Konfiguration VOR der Erzeugung ───
@@ -3094,16 +3334,17 @@ const App = {
   // Aktualisieren sich nach der Erzeugung selbst per Sekunden-Timer (siehe tickWidgets()).
   startWidgetDraft(type) {
     S.selectedElementId=null;
-    S.widgetDraft={ type, ...JSON.parse(JSON.stringify(WIDGET_DEFAULTS[type])) };
+    S.widgetDraft={ type, ...JSON.parse(JSON.stringify(WIDGET_DEFAULTS[type])), width:(WIDGET_DIMS[type]||{width:50}).width };
+    this.setElementsSubTab('widgets');
     document.querySelectorAll('.slide-el.selected-el').forEach(w => w.classList.remove('selected-el'));
     this.renderLayersList();
     this.renderInspector();
   },
 
-  updateWidgetDraft(key, val) {
+  updateWidgetDraft(key, val, rerender=true) {
     if (!S.widgetDraft) return;
     S.widgetDraft[key]=val;
-    this.renderWidgetDraftForm();
+    if (rerender) this.renderWidgetDraftForm();
   },
 
   cancelWidgetDraft() {
@@ -3115,7 +3356,7 @@ const App = {
     if (!S.widgetDraft) return;
     const slide=S.slides[S.activeSlideIndex];
     const dims=WIDGET_DIMS[S.widgetDraft.type]||{x:20,y:40,width:50};
-    const el={id:'el-'+Date.now(), ...S.widgetDraft, ...dims};
+    const el={id:'el-'+Date.now(), ...dims, ...S.widgetDraft};
     slide.elements.push(el);
     S.selectedElementId=el.id;
     S.widgetDraft=null;
@@ -3193,10 +3434,16 @@ const App = {
     const slide=S.slides[S.activeSlideIndex];
     const el=slide?.elements.find(e=>e.id===S.selectedElementId);
     if (!el) return;
-    el.color = mode==='contrast' ? contrastHexColor(el.color) : invertHexColor(el.color);
+    // Negativ = Text zeigt das Negativ des Hintergrunds (vorher wurde nur die eigene
+    // Textfarbe invertiert - weisse Schrift auf dunklem Grund wurde so schwarz und
+    // unsichtbar). Kontrast = Schwarz/Weiss passend zum Folienhintergrund.
+    if (mode==='negative') { el.blend = el.blend==='invert' ? 'normal' : 'invert'; this.render(); this.renderInspector(); return; }
+    const bgHex=slideBgColor(slide);
+    el.color = bgHex ? contrastHexColor(bgHex) : contrastHexColor(el.color);
+    if (el.blend==='invert') el.blend='normal';
     const input=document.getElementById('el-color-input');
     if (input) input.value=el.color;
-    this.render();
+    this.render(); this.renderInspector();
   },
 
   deleteSelectedEl() {
@@ -3245,6 +3492,7 @@ const App = {
         S.selectedElementId=el.id;
         S.widgetDraft=null;
         App.setTab('elements');
+        App.setElementsSubTab(elSubTabFor(el));
         this.render();
         this.renderInspector();
       });
@@ -3339,13 +3587,11 @@ const App = {
           <div class="ctrl-section">
             <div class="ctrl-section-title">${titles[el.type]}-Widget</div>
             ${widgetFieldsHtml(el.type, el, fn)}
-            <label class="ctrl-label" style="margin-top:8px;">Breite (%)</label>
-            <input type="range" min="10" max="100" value="${el.width}" oninput="App.updateElProp('width',parseInt(this.value))">
             ${warningHtml}
             <button onclick="App.deleteSelectedEl()" class="btn-sm danger" style="width:100%;justify-content:center;margin-top:10px;">
               <i data-lucide="trash-2" style="width:11px;height:11px;"></i> ${titles[el.type]} löschen
             </button>
-          </div>`;
+          </div>` + fxControlsHtml(el);
       } else {
         widgetPanel.innerHTML='';
       }
@@ -3387,8 +3633,8 @@ const App = {
             </div>
           </div>
           <div style="display:flex;gap:5px;margin-top:6px;">
-            <button onclick="App.pickElColor('contrast')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;" title="Automatisch Schwarz oder Weiß waehlen, je nachdem was besser lesbar ist">◐ Kontrast</button>
-            <button onclick="App.pickElColor('negative')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;" title="Farbe invertieren (Negativfarbe)">⇄ Negativ</button>
+            <button onclick="App.pickElColor('contrast')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;" title="Schwarz oder Weiß - je nachdem, was auf dem Folienhintergrund besser lesbar ist">◐ Kontrast</button>
+            <button onclick="App.pickElColor('negative')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${el.blend==='invert'?'background:rgba(99,102,241,0.25);border-color:rgba(99,102,241,0.4);':''}" title="Negativ-Schrift: der Text zeigt das Negativ des Hintergrunds (Überlagerung „Invertieren“) - nochmal klicken schaltet zurück">⇄ Negativ</button>
           </div>
           <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;">
             <label class="ctrl-label" style="margin:0;" title="Schriftgröße wird automatisch verkleinert, damit der Text immer in den Kasten passt (Größe oben wirkt dann als Maximum)">🔠 Auto-Skalierung</label>
@@ -3438,7 +3684,7 @@ const App = {
           <input type="color" id="tpl-color-input" value="${el.textColor||'#ffffff'}" onchange="App.updateTemplateEl('textColor',this.value,'${el.id}')">
           <div style="display:flex;gap:5px;margin-top:6px;">
             <button onclick="App.pickTemplateColor('${el.id}','contrast')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;" title="Automatisch Schwarz oder Weiß waehlen, je nachdem was besser lesbar ist">◐ Kontrast</button>
-            <button onclick="App.pickTemplateColor('${el.id}','negative')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;" title="Farbe invertieren (Negativfarbe)">⇄ Negativ</button>
+            <button onclick="App.pickTemplateColor('${el.id}','negative')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${el.blend==='invert'?'background:rgba(99,102,241,0.25);border-color:rgba(99,102,241,0.4);':''}" title="Negativ-Schrift: zeigt das Negativ des Hintergrunds (Überlagerung „Invertieren“) - nochmal klicken schaltet zurück">⇄ Negativ</button>
           </div>
           <label class="ctrl-label" style="margin-top:8px;">Akzent-Farbe</label>
           <input type="color" value="${el.accentColor||'#6366f1'}" onchange="App.updateTemplateEl('accentColor',this.value,'${el.id}')">
@@ -3451,6 +3697,7 @@ const App = {
           </button>
         </div>`;
     }
+    if (el.type==='text' || el.type==='image' || el.type==='template') panel.insertAdjacentHTML('beforeend', fxControlsHtml(el));
     lucide.createIcons();
   },
 
@@ -3466,10 +3713,13 @@ const App = {
     const slide=S.slides[S.activeSlideIndex];
     const el=slide?.elements.find(e=>e.id===elId);
     if (!el) return;
-    el.textColor = mode==='contrast' ? contrastHexColor(el.textColor||'#ffffff') : invertHexColor(el.textColor||'#ffffff');
+    if (mode==='negative') { el.blend = el.blend==='invert' ? 'normal' : 'invert'; this.render(); this.renderInspector(); return; }
+    const bgHex=slideBgColor(slide);
+    el.textColor = bgHex ? contrastHexColor(bgHex) : contrastHexColor(el.textColor||'#ffffff');
+    if (el.blend==='invert') el.blend='normal';
     const input=document.getElementById('tpl-color-input');
     if (input) input.value=el.textColor;
-    this.render();
+    this.render(); this.renderInspector();
   },
 
   // ─── FONTS ───
@@ -3551,8 +3801,13 @@ const App = {
     } else {
       sidebar.classList.add('hidden-ui');
       S.selectedElementId=null;
-      this.render();
     }
+    // In BEIDEN Richtungen neu aufbauen: die Folienelemente bekommen ihre Editor-Handler
+    // (Klick/Doppelklick/Ziehen/Drehen) nur beim Rendern mit S.isEditor=true - vorher blieben
+    // nach dem Wechsel aus der Praesentation die "toten" Praesentations-Elemente stehen, und
+    // ein Doppelklick in einen Text ging erst nach einem Klick in die Ebenen-Liste (die
+    // zufaellig neu renderte).
+    this.render();
     lucide.createIcons();
   },
 
@@ -3602,7 +3857,7 @@ const App = {
       applyBgToStage(stageEl, slide, null);
     }
 
-    container.style.cssText='position:absolute;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;padding:5%;';
+    container.style.cssText='position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:5%;'; // ohne z-index, siehe #slide-content
     if (useTransition) {
       transitionElements(container, slide, false, slide.transitionMode || 'slide-v', slide.transitionSpeed);
     } else {
@@ -3691,7 +3946,7 @@ body{cursor:none;}body.nav-visible{cursor:default;}
 <div id="stage" style="position:fixed;inset:0;overflow:hidden;">
   <div id="pres-bg" style="position:absolute;inset:0;"></div>
   <canvas id="pres-grainy" style="z-index:0;"></canvas>
-  <div id="pres-content" style="position:absolute;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;padding:5%;"></div>
+  <div id="pres-content" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:5%;"></div>
   <canvas id="pres-spotlight"></canvas>
   <canvas id="pres-glitter"></canvas>
 </div>
@@ -3748,17 +4003,19 @@ function fitTextToBox(div,wrapper,stageEl,base){
   const maxH=Math.max(20,sr.bottom-wr.top-4);let g=0;
   while(size>floor&&g<80&&(div.scrollWidth>wrapper.clientWidth+1||div.scrollHeight>maxH)){size--;div.style.fontSize=size+'px';g++;}
 }
+${applyElFx.toString()}
 function renderSlideEls(cont, slide, stageEl){
   cont.innerHTML='';
   const autoFitQueue=[];
   slide.elements.forEach(el=>{
     const w=document.createElement('div');
     w.style.cssText=\`position:absolute;left:\${el.x||0}%;top:\${el.y||0}%;width:\${el.width||80}%;z-index:10;\`;
-    if(el.type==='text'){const d=document.createElement('div');d.style.fontFamily=el.fontFamily;d.style.fontSize=el.fontSize+'px';d.style.color=el.color;d.style.textAlign=el.textAlign;d.style.fontWeight=el.fontWeight||'400';d.style.lineHeight='1.3';d.innerText=el.content;w.appendChild(d);cont.appendChild(w);if(el.autoFit)autoFitQueue.push({div:d,wrapper:w,base:el.fontSize||28});return;}
+    if(el.type==='text'){const d=document.createElement('div');d.style.fontFamily=el.fontFamily;d.style.fontSize=el.fontSize+'px';d.style.color=el.color;d.style.textAlign=el.textAlign;d.style.fontWeight=el.fontWeight||'400';d.style.lineHeight='1.3';d.innerText=el.content;w.appendChild(d);applyElFx(w,el);cont.appendChild(w);if(el.autoFit)autoFitQueue.push({div:d,wrapper:w,base:el.fontSize||28});return;}
     else if(el.type==='image'){const img=document.createElement('img');img.src=el.src;img.style.width='100%';img.style.borderRadius='12px';w.appendChild(img);}
     else if(el.type==='qr'){const qrBox=document.createElement('div');qrBox.style.width='100%';qrBox.style.aspectRatio='1/1';const qrCanvas=document.createElement('canvas');qrCanvas.style.width='100%';qrCanvas.style.height='100%';qrCanvas.style.display='block';qrCanvas.style.borderRadius='4px';qrBox.appendChild(qrCanvas);w.appendChild(qrBox);renderQrToCanvas(qrCanvas,el.content,el);}
-    else if(el.type==='clock'||el.type==='date'||el.type==='countdown'){const d=document.createElement('div');d.className='widget-el';d.setAttribute('data-widget-id',el.id);d.style.fontFamily=el.fontFamily||'Inter, sans-serif';d.style.fontSize=(el.fontSize||40)+'px';d.style.color=el.color||'#ffffff';d.style.textAlign=el.textAlign||'center';d.style.fontWeight=el.fontWeight||'700';d.style.lineHeight='1.3';d.style.whiteSpace='pre-line';d.textContent=formatWidgetText(el);w.appendChild(d);}
+    else if(el.type==='clock'||el.type==='date'||el.type==='countdown'){const d=document.createElement('div');d.className='widget-el';d.setAttribute('data-widget-id',el.id);d.style.fontFamily=el.fontFamily||'Inter, sans-serif';d.style.fontSize=(el.fontSize||40)+'px';d.style.color=el.color||'#ffffff';d.style.textAlign=el.textAlign||'center';d.style.fontWeight=el.fontWeight||'700';d.style.lineHeight='1.3';d.style.whiteSpace='pre-line';d.style.fontStyle=el.fontStyle||'normal';d.style.letterSpacing=(el.letterSpacing||0)+'em';d.textContent=formatWidgetText(el);w.appendChild(d);}
     else if(el.type==='template'){w.innerHTML=renderTmpl(el);}
+    applyElFx(w,el);
     cont.appendChild(w);
   });
   autoFitQueue.forEach(({div,wrapper,base})=>fitTextToBox(div,wrapper,stageEl,base));
@@ -4176,7 +4433,7 @@ window.addEventListener('keydown',e=>{
     overlay.querySelector('#ec-gallery-new').addEventListener('click', () => this.galleryStartNew());
     lucide.createIcons();
 
-    fetch('bento.php?api=list_eyecandy&token='+encodeURIComponent(S.launchToken))
+    fetch('bento.php?api=list_eyecandy&token='+encodeURIComponent(S.launchToken), { cache: 'no-store' })
       .then(r=>r.json().catch(()=>{ throw new Error('Antwort war kein gueltiges JSON.'); }))
       .then(data=>{
         if (!data.ok) throw new Error(data.error||'Unbekannter Fehler.');
@@ -4292,7 +4549,9 @@ window.addEventListener('keydown',e=>{
   galleryOpen(item) {
     const overlay=document.getElementById('ec-gallery-overlay');
     if (overlay) overlay.innerHTML=`<p style="text-align:center;padding:60px 0;color:rgba(148,163,184,0.6);">Lade „${escapeHtmlEc(item.title)}"…</p>`;
-    fetch(item.url)
+    // Ohne Browser-Cache: sonst lieferte ein zweites Oeffnen nach dem Ueberschreiben u.U.
+    // noch die zuvor geladene, alte Fassung derselben (statischen) Datei.
+    fetch(item.url, { cache: 'no-store' })
       .then(r=>{ if (!r.ok) throw new Error('HTTP '+r.status); return r.text(); })
       .then(html=>{
         function extractConst(name) {
@@ -4338,18 +4597,16 @@ window.addEventListener('keydown',e=>{
   // HTML-Datei - dieser Knopf macht lediglich einen ganz normalen fetch() zu bento.php.
   saveToServer() {
     if (!S.launchToken) return;
-    // Beim ALLERERSTEN Speichern (noch keine Datei auf dem Server) muss die Präsentation
-    // gleich einen Namen bekommen, statt stillschweigend als "Neue Präsentation" abgelegt zu
-    // werden und erst spaeter in der Übersicht umbenannt werden zu muessen. Bei jedem
-    // weiteren Speichern (S.currentFilename bereits gesetzt) wird NICHT erneut gefragt - das
-    // ueberschreibt einfach dieselbe, schon benannte Datei.
-    if (!S.currentFilename) {
-      const name=prompt('Wie soll diese Präsentation heißen?', S.title);
-      if (name===null) return; // abgebrochen
-      const trimmed=name.trim();
-      if (trimmed==='') { alert('Bitte einen Namen eingeben.'); return; }
-      S.title=trimmed;
-    }
+    // Erst ein kleines Modal: Name vergeben/aendern und - wenn diese Praesentation schon auf
+    // dem Server liegt - entscheiden, ob die bestehende Datei ueberschrieben oder eine NEUE
+    // Praesentation (z.B. die ueberarbeitete Fassung unter neuem Namen) angelegt wird.
+    showSaveNameModal(!!S.currentFilename, S.title, (name, asNew) => {
+      S.title=name;
+      this._doSaveToServer(asNew);
+    });
+  },
+
+  _doSaveToServer(asNew) {
     const btn=document.getElementById('save-server-btn');
     const origHtml=btn.innerHTML;
     btn.disabled=true; btn.innerHTML='… speichert';
@@ -4365,7 +4622,7 @@ window.addEventListener('keydown',e=>{
     // Wurde diese Praesentation ueber die Übersicht (App.showGallery()) geoeffnet oder schon
     // einmal in dieser Sitzung gespeichert, ueberschreibt der Server dieselbe Datei in place
     // statt bei jedem Speichern eine neue anzulegen (siehe bento.php: "eyecandy_file"-Feld).
-    if (S.currentFilename) fd.append('eyecandy_file', S.currentFilename);
+    if (S.currentFilename && !asNew) fd.append('eyecandy_file', S.currentFilename);
 
     fetch('bento.php', { method:'POST', body: fd })
       .then(r=>r.json().catch(()=>{ throw new Error('Antwort war kein gueltiges JSON - bitte erneut über den Link im Infomaster-Dashboard öffnen (Login evtl. abgelaufen).'); }))
@@ -4388,6 +4645,14 @@ window.addEventListener('keydown',e=>{
 //  KEYBOARD SHORTCUTS
 // ═══════════════════════════════════════════════════════════════
 window.addEventListener('keydown', e => {
+  // Entf (bzw. Backspace) loescht das ausgewaehlte Element - aber nie waehrend in ein Feld
+  // oder einen Text auf der Folie getippt wird.
+  if ((e.key==='Delete' || e.key==='Backspace') && S.isEditor && S.selectedElementId) {
+    const t=e.target;
+    const typing = t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable);
+    const presOpen = !document.getElementById('pres-overlay').classList.contains('hidden-ui');
+    if (!typing && !presOpen && !document.querySelector('.ec-modal-open')) { e.preventDefault(); App.deleteSelectedEl(); return; }
+  }
   if (e.key==='Escape') {
     const pres=document.getElementById('pres-overlay');
     if (!pres.classList.contains('hidden-ui')) {

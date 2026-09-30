@@ -65,6 +65,31 @@ function bentoIsHttps(): bool {
     if (!empty($_SERVER['HTTP_X_FORWARDED_SSL']) && strtolower($_SERVER['HTTP_X_FORWARDED_SSL']) === 'on') return true;
     return false;
 }
+// Nach dem Ueberschreiben einer EyeCandy-Praesentation: alle Monitor-Inhalte (Inhalt A/B,
+// Typ "url") in config.json, die auf genau diese Datei zeigen, auf $newUrl (mit neuer
+// Versionsmarke) umschreiben. Fremde Abfrageparameter der alten URL bleiben erhalten.
+function eyecandyBumpScreenUrls(string $filename, string $newUrl): void {
+    if (!file_exists('config.json')) return;
+    $cfg = json_decode(file_get_contents('config.json'), true);
+    if (!is_array($cfg) || empty($cfg['screens']) || !is_array($cfg['screens'])) return;
+    $newParts = parse_url($newUrl);
+    parse_str($newParts['query'] ?? '', $newQuery);
+    $changed = false;
+    foreach ($cfg['screens'] as $sid => $sVal) {
+        foreach ([['type', 'content'], ['typeB', 'contentB']] as [$typeKey, $contentKey]) {
+            if (($sVal[$typeKey] ?? '') !== 'url') continue;
+            $cur = (string)($sVal[$contentKey] ?? '');
+            $curPath = (string)(parse_url($cur, PHP_URL_PATH) ?? '');
+            if ($curPath === '' || basename($curPath) !== $filename || strpos($curPath, '/bentos/') === false) continue;
+            parse_str((string)(parse_url($cur, PHP_URL_QUERY) ?? ''), $curQuery);
+            $query = http_build_query(array_merge($curQuery, $newQuery));
+            $cfg['screens'][$sid][$contentKey] = strtok($newUrl, '?') . ($query !== '' ? '?' . $query : '');
+            $changed = true;
+        }
+    }
+    if ($changed) file_put_contents('config.json', json_encode($cfg, JSON_PRETTY_PRINT));
+}
+
 function bentoServerUrlFor(string $relPath): string {
     $baseUrl = (bentoIsHttps() ? 'https://' : 'http://') . $_SERVER['HTTP_HOST'] . rtrim(dirname($_SERVER['SCRIPT_NAME']), '/');
     return $baseUrl . '/' . $relPath;
@@ -209,6 +234,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && (isset($_POST['bento_sav
                 exit;
             }
             $filename = $overwriteFile;
+            // Monitore, die genau diese Praesentation zeigen, auf die neue Version umstellen:
+            // view.php laedt das iframe nur neu, wenn sich die URL aendert - ohne neue
+            // Versionsmarke (?v=...) liefen Monitor und Dashboard-Vorschau stillschweigend mit
+            // der alten, bereits geladenen Fassung weiter.
+            eyecandyBumpScreenUrls($filename, bentoServerUrlFor($dir . '/' . $filename) . '?v=' . (@filemtime($path) ?: time()));
         } else {
             if (!is_dir($dir)) { @mkdir($dir, 0775, true); }
             $rawName = bentoSafeBaseName((string)($_POST['bento_filename'] ?? 'eyecandy'));
@@ -253,7 +283,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && (isset($_POST['bento_sav
         $matchingScreens = array_values(array_filter($allScreens, function ($s) { return $s['orientationMatch']; }));
         $screensForModal = !empty($matchingScreens) ? $matchingScreens : $allScreens;
 
-        echo json_encode(['ok' => true, 'url' => bentoServerUrlFor($dir . '/' . $filename), 'filename' => $filename, 'screens' => $screensForModal]);
+        clearstatcache();
+        echo json_encode(['ok' => true, 'url' => bentoServerUrlFor($dir . '/' . $filename) . '?v=' . (@filemtime($dir . '/' . $filename) ?: time()), 'filename' => $filename, 'screens' => $screensForModal]);
         exit;
     }
 
@@ -495,7 +526,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET' && ($_GET['api'] ?? '') === 
                 'title' => $meta['title'] !== null && $meta['title'] !== '' ? $meta['title'] : str_replace('_', ' ', $fallbackTitle),
                 'slideCount' => $meta['slideCount'],
                 'mtime' => @filemtime($path) ?: 0,
-                'url' => bentoServerUrlFor($dir . '/' . $f),
+                'url' => bentoServerUrlFor($dir . '/' . $f) . '?v=' . (@filemtime($path) ?: 0),
             ];
         }
     }

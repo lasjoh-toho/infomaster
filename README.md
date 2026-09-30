@@ -242,8 +242,20 @@ PHP, keine eigene Session) und wird nur per Link integriert:
 - **Weichzeichner-Hintergrund (Blur) abschaltbar** - ein Schalter bei "Layout-Vorlagen"
   wirkt sofort auf die aktuelle Folie und auf neu angewendete Vorlagen; zusätzlich lässt
   sich der Glass-Effekt weiterhin pro Vorlagen-Element einzeln umschalten.
-- **Kontrast-/Negativfarbe für Text** - je ein Knopf bei Text- und Vorlagen-Textfarbe wählt
-  automatisch Schwarz/Weiß (je nach Helligkeit) bzw. invertiert die aktuelle Farbe.
+- **Kontrast-/Negativ-Schrift** - je ein Knopf bei Text- und Vorlagen-Textfarbe: "◐ Kontrast"
+  wählt Schwarz oder Weiß, je nachdem was auf dem Folienhintergrund besser lesbar ist;
+  "⇄ Negativ" schaltet die Überlagerung "Invertieren" ein/aus - der Text zeigt dann das Negativ
+  des Hintergrunds (vorher wurde nur die eigene Textfarbe invertiert, weiße Schrift auf dunklem
+  Grund wurde so unsichtbar schwarz).
+- **Drehen & Überlagerungsmodi (alle Elemente)** - im Inspector jedes Elements (Text, Bild,
+  Vorlage, Widget) gibt es "Drehung & Überlagerung": Drehung per Regler oder am runden
+  ⟳-Griff über dem ausgewählten Element (Shift = 15°-Schritte, Doppelklick = 0°) und die
+  Überlagerung mit dem Hintergrund: Normal, Multiplizieren (Multiply), Nachbelichten (Burn),
+  Invertieren (Invert), Differenz (Difference) und Körnung extrahieren (Grain Extract). Invert
+  und Grain Extract kennt CSS nicht direkt - Invert ist exakt nachgebaut (weißer Inhalt +
+  Difference), Grain Extract über invertierten Inhalt + Hard Light (bei mittleren
+  Hintergrundtönen exakt, sonst eine Annäherung). Wirkt im Editor, im Vollbild und im Export.
+- **Entf löscht** das ausgewählte Element (nicht während in ein Feld oder einen Text getippt wird).
 - **Automatische Schriftgrößen-Skalierung** - ein Schalter pro Textelement verkleinert die
   Schrift automatisch, bis sie in die Breite des Kastens und die verbleibende Höhe bis zum
   Folienrand passt (die eingestellte Größe wirkt dann als Maximum).
@@ -284,8 +296,14 @@ PHP, keine eigene Session) und wird nur per Link integriert:
   Token-Abgleich). Nach dem Speichern schlägt ein Modal gleich passende Monitore vor (gleiche
   Ausrichtung wie unten beschrieben) - ein Klick auf "Hierher legen" setzt die Präsentation
   direkt als Inhalt A dieses Monitors (genau derselbe Weg wie Bento-Prontos eigenes "🔗 Auf
-  Monitor legen"). Wurde die Präsentation über die Übersicht (siehe unten) geöffnet, überschreibt
-  jedes weitere Speichern dieselbe Datei, statt bei jedem Klick eine neue anzulegen.
+  Monitor legen"). Liegt die Präsentation schon auf dem Server (über die Übersicht geöffnet oder
+  in dieser Sitzung schon gespeichert), fragt der Speichern-Dialog: "💾 Überschreiben" (Name
+  darf dabei geändert werden) oder "＋ Als neue Präsentation" (z.B. die überarbeitete Fassung
+  unter neuem Namen - die bisherige Datei bleibt unverändert). Gespeicherte Adressen tragen eine
+  Versionsmarke (`?v=<Zeitstempel>`); beim Überschreiben werden alle Monitore, die genau diese
+  Präsentation zeigen, automatisch auf die neue Version umgestellt - vorher zeigten Monitor und
+  Dashboard-Vorschau (und beim erneuten Öffnen ggf. auch der Browser-Cache) weiter die alte
+  Fassung, weil sich die Adresse nicht änderte.
 - **Übersicht zum Weiterbearbeiten** - der Dashboard-Link "✨ Editor" führt zunächst auf eine
   Übersichtsseite mit den zuletzt gespeicherten Präsentationen als Karten (Titel, Folienzahl,
   Datum); oben links startet "+ Neu" eine frische, leere Präsentation. Ein Klick auf eine Karte
@@ -298,8 +316,7 @@ PHP, keine eigene Session) und wird nur per Link integriert:
   beim Speichern, beschränkt auf `eyecandy_`-Dateien (rührt an Bento-Pronto-eigenen Decks
   nichts an). Beim allerersten Speichern einer neuen Präsentation fragt der Editor gleich nach
   einem Namen (statt sie zunächst als "Neue Präsentation" abzulegen und erst später in der
-  Übersicht umbenennen zu müssen) - jedes weitere Speichern überschreibt einfach dieselbe,
-  schon benannte Datei, ohne erneut zu fragen.
+  Übersicht umbenennen zu müssen).
 - **Quer-/Hochkant-Vorschau und -Anlage** - ein Knopf in der Kopfzeile schaltet die Bühne
   (Editor UND Vollbild-Präsentation) zwischen 16:9 (Quer) und 9:16 (Hochkant) um - der
   Rest bleibt als schwarzer Rand ("Letterbox") sichtbar, wie auf einem echten Monitor mit
@@ -317,7 +334,14 @@ PHP, keine eigene Session) und wird nur per Link integriert:
   funktioniert dadurch zuverlässig. Das Verschieben von Elementen hat zusätzlich einen kleinen
   Bewegungs-Schwellwert bekommen, damit ein normaler Klick nicht schon als (minimaler) Drag
   gewertet wird.
-- **Widgets** (im Elemente-Tab, neben Text und Bild) - vier einfügbare Mini-Elemente. Ein Widget wird dabei erst KONFIGURIERT (Typ wählen → Formular ausfüllen)
+- **Elemente-Tab mit Unter-Tabs "Texte" / "Bilder" / "Widgets"** - die Ebenen-Liste und der
+  Inspector darunter gelten für alle drei; beim Auswählen eines Elements springt der passende
+  Unter-Tab automatisch mit.
+- **Widgets** (Unter-Tab "Widgets" im Elemente-Tab) - vier einfügbare Mini-Elemente. Uhr, Datum
+  und Countdown haben eine eigene Typografie (Schriftart inkl. installierter Fonts, Größe in px,
+  Stärke, Zeichenabstand, Kursiv, Ausrichtung, Farbe), alle Widgets eine einstellbare Breite -
+  schon im Einrichten-Formular. Getippte Werte (z.B. die Countdown-Beschriftung) behalten dabei
+  den Fokus. Ein Widget wird dabei erst KONFIGURIERT (Typ wählen → Formular ausfüllen)
   und erst per "✓ Erstellen" tatsächlich auf der Folie angelegt - nicht sofort mit
   Standardwerten erzeugt und danach nachtraeglich angepasst. Nach dem Erstellen lassen sich
   dieselben Eigenschaften jederzeit weiter im Elemente-Tab bearbeiten (auswählen auf der Folie
@@ -339,9 +363,13 @@ PHP, keine eigene Session) und wird nur per Link integriert:
 
   Alle drei Zeit-Widgets aktualisieren sich per Sekunden-Timer selbst nach - sowohl im Editor
   als auch in der fertigen, exportierten Präsentation (kein erneutes Speichern/Neuladen nötig).
+- **Doppelklick direkt nach dem Wechsel in den Editor** - beim Umschalten Präsentation → Editor
+  wird die Folie jetzt neu im Editor-Modus aufgebaut; vorher blieben die Präsentations-Elemente
+  (ohne Klick-Handler) stehen, und ein Doppelklick in einen Text ging erst, nachdem man in der
+  Ebenen-Liste auf das Element geklickt hatte.
 - **Doppelklick wählt Element aus UND öffnet den passenden Tab - zuverlässig in JEDEM
   Editor-Zustand** - ein Doppelklick auf ein Element der Folie wechselt automatisch in den
-  Elemente-Tab (dort liegen Text, Bild und alle Widgets) und wählt das
+  Elemente-Tab (passender Unter-Tab Texte/Bilder/Widgets) und wählt das
   Element dort aus, unabhängig davon, welcher Tab gerade offen ist oder ob die Play-Vorschau
   gerade läuft. Bei Textelementen springt zusätzlich sofort der Editier-Modus zum Reintippen
   an. Die Erkennung verlässt sich dabei NICHT auf das native Browser-`dblclick`-Ereignis
