@@ -149,6 +149,17 @@
       font-size: 11px; line-height: 16px; text-align: center; cursor: grab; display: none; user-select: none;
     }
     .slide-el.selected-el .rotate-handle { display: block; }
+    .slide-el .resize-handle {
+      position: absolute; width: 10px; height: 10px; background: #0f172a; border: 1.5px solid #818cf8;
+      border-radius: 2px; display: none; z-index: 2; box-sizing: border-box;
+    }
+    .slide-el.selected-el .resize-handle { display: block; }
+    .slide-el .resize-handle[data-dir="e"]  { top: 50%; right: -11px; margin-top: -5px; cursor: ew-resize; }
+    .slide-el .resize-handle[data-dir="w"]  { top: 50%; left: -11px;  margin-top: -5px; cursor: ew-resize; }
+    .slide-el .resize-handle[data-dir="ne"] { top: -11px; right: -11px; cursor: nesw-resize; border-radius: 50%; }
+    .slide-el .resize-handle[data-dir="nw"] { top: -11px; left: -11px;  cursor: nwse-resize; border-radius: 50%; }
+    .slide-el .resize-handle[data-dir="se"] { bottom: -11px; right: -11px; cursor: nwse-resize; border-radius: 50%; }
+    .slide-el .resize-handle[data-dir="sw"] { bottom: -11px; left: -11px;  cursor: nesw-resize; border-radius: 50%; }
     /* Waehrend des Tippens Ueberlagerungsmodus/Filter aussetzen - sonst waere der Text beim
        Bearbeiten (z.B. "Invertieren") kaum lesbar. */
     .slide-el:focus-within { mix-blend-mode: normal !important; }
@@ -802,6 +813,25 @@ const FONT_FAMILY_PARAM_OVERRIDES = { 'UnifrakturCook': 'UnifrakturCook:wght@700
 function googleFontFamilyParam(name) {
   return FONT_FAMILY_PARAM_OVERRIDES[name] || name.trim().replace(/\s+/g, '+');
 }
+// Wird die Schrift (Familienname) von irgendeinem Element irgendeiner Folie verwendet?
+function selectedFontElement() {
+  const slide = S.slides[S.activeSlideIndex];
+  const el = slide?.elements.find(e => e.id === S.selectedElementId);
+  return el && (el.type === 'text' || el.type === 'clock' || el.type === 'date' || el.type === 'countdown') ? el : null;
+}
+function fontIsUsed(family) {
+  const fam = String(family).replace(/["']/g,'').trim().toLowerCase();
+  return S.slides.some(sl => sl.elements.some(el => el.fontFamily &&
+    String(el.fontFamily).split(',')[0].replace(/["']/g,'').trim().toLowerCase() === fam));
+}
+// Nach dem Oeffnen einer gespeicherten Praesentation: verwendete Katalog-Schriften wieder
+// einbinden (die Datei enthaelt sie nur als fertiges CSS, nicht als Editor-Zustand).
+function reinstallUsedCatalogFonts() {
+  Object.values(FONT_CATALOG).flat().forEach(f => {
+    if (fontIsUsed(f.family) && !S.installedFonts.some(x => x.family === f.family)) S.installedFonts.push(f);
+  });
+  syncGoogleFontImports();
+}
 function googleFontUrl(name) {
   return 'https://fonts.googleapis.com/css2?family=' + googleFontFamilyParam(name) + '&display=swap';
 }
@@ -1355,7 +1385,7 @@ function applyElFx(wrapper, el) {
   else if (el.blend === 'grain-extract') { blend = 'hard-light'; filter = 'invert(1)'; }
   wrapper.style.mixBlendMode = blend;
   Array.from(wrapper.children).forEach(c => {
-    if (c.classList.contains('drag-handle') || c.classList.contains('rotate-handle')) return;
+    if (c.classList.contains('drag-handle') || c.classList.contains('rotate-handle') || c.classList.contains('resize-handle')) return;
     c.style.filter = filter;
   });
 }
@@ -1932,6 +1962,14 @@ function renderSlideContent(slide, container, isEditor, stageEl) {
       rotH.textContent='⟳';
       wrapper.appendChild(rotH);
       makeRotatable(rotH, wrapper, el);
+      ['e','w','ne','nw','se','sw'].forEach(dir => {
+        const h=document.createElement('div');
+        h.className='resize-handle';
+        h.dataset.dir=dir;
+        h.title = dir.length===1 ? 'Breite ändern' : 'Größe ändern (Schrift wächst mit)';
+        wrapper.appendChild(h);
+        makeResizable(h, wrapper, el, dir);
+      });
     }
     applyElFx(wrapper, el);
     container.appendChild(wrapper);
@@ -2016,6 +2054,64 @@ function makeDraggable(el, data) {
     _elDrag.startLeft=data.x; _elDrag.startTop=data.y;
   });
 }
+
+// ─── GROESSE AENDERN PER GRIFF ───
+// Seitengriffe (e/w) aendern nur die Breite (Text bricht neu um). Eckgriffe skalieren das
+// ganze Element: die Breite UND - bei Text/Uhr/Datum/Countdown - die Schriftgroesse im
+// gleichen Verhaeltnis (Bild/QR behalten ihr Seitenverhaeltnis ohnehin). Linke Griffe halten
+// die rechte Kante fest. Mausbewegung wird in die (ggf. gedrehte) Elementachse umgerechnet.
+const _elResize = { active:false, endedAt:0 };
+function makeResizable(handle, wrapper, data, dir) {
+  handle.addEventListener('mousedown', e => {
+    e.stopPropagation(); e.preventDefault();
+    const stageRect=document.getElementById('presentation-stage').getBoundingClientRect();
+    Object.assign(_elResize, {
+      active:true, wrapper, data, dir, stageW:stageRect.width,
+      startX:e.clientX, startY:e.clientY,
+      startW:data.width||80, startLeft:data.x||0, startFont:data.fontSize||28,
+      rot:(parseFloat(data.rotation)||0)*Math.PI/180,
+    });
+    document.body.style.userSelect='none';
+  });
+  handle.addEventListener('click', e => e.stopPropagation());
+}
+window.addEventListener('mousemove', e => {
+  const r=_elResize;
+  if (!r.active) return;
+  const dx=e.clientX-r.startX, dy=e.clientY-r.startY;
+  // Anteil der Bewegung entlang der (gedrehten) x-Achse des Elements
+  let local=dx*Math.cos(r.rot)+dy*Math.sin(r.rot);
+  const west=r.dir.includes('w');
+  if (west) local=-local;
+  // Eckgriffe: auch die vertikale Bewegung zaehlt (diagonal ziehen fuehlt sich natuerlich an)
+  if (r.dir.length===2) {
+    let v=-dx*Math.sin(r.rot)+dy*Math.cos(r.rot);
+    if (r.dir.includes('n')) v=-v;
+    local=Math.abs(v)>Math.abs(local) ? v : local;
+  }
+  let w=r.startW+local/r.stageW*100;
+  w=Math.max(3, Math.min(100, w));
+  if (west) w=Math.min(w, r.startLeft+r.startW); // linke Kante nicht ueber den Folienrand hinaus
+  const d=r.data;
+  d.width=Math.round(w*10)/10;
+  if (west) d.x=Math.round((r.startLeft+(r.startW-d.width))*10)/10;
+  r.wrapper.style.width=d.width+'%';
+  r.wrapper.style.left=(d.x||0)+'%';
+  const scalesFont = r.dir.length===2 && (d.type==='text'||d.type==='clock'||d.type==='date'||d.type==='countdown');
+  if (scalesFont) {
+    d.fontSize=Math.max(6, Math.round(r.startFont*d.width/r.startW));
+    const txt=r.wrapper.querySelector('.inline-txt, .widget-el');
+    if (txt) txt.style.fontSize=d.fontSize+'px';
+  }
+});
+window.addEventListener('mouseup', () => {
+  if (!_elResize.active) return;
+  _elResize.active=false;
+  _elResize.endedAt=Date.now();
+  document.body.style.userSelect='';
+  App.render();
+  App.renderInspector();
+});
 
 // ─── DREHEN PER GRIFF ───
 // Winkel zwischen Element-Mittelpunkt und Mauszeiger; der Griff sitzt oben rechts, daher
@@ -2320,7 +2416,7 @@ function startEditorCanvasLoop() {
       renderWaypointMarkers();
       S.addingWaypoint=false;
       document.getElementById('wp-click-hint').style.display='none';
-    } else if (!evt.target.closest('.slide-el') && S.isEditor && Date.now()-_elRot.endedAt > 300) {
+    } else if (!evt.target.closest('.slide-el') && S.isEditor && Date.now()-_elRot.endedAt > 300 && Date.now()-_elResize.endedAt > 300) {
       S.selectedElementId=null;
       App.renderInspector();
       const els=document.querySelectorAll('.slide-el');
@@ -2896,6 +2992,7 @@ const App = {
       const wpMode = S.beam.pattern==='waypoints';
       document.getElementById('waypoints-panel').style.display=wpMode?'block':'none';
     }
+    if (name==='fonts') this.renderFontCatalog();
     if (name==='background') {
       this.syncBgControls();
     }
@@ -2907,7 +3004,8 @@ const App = {
   // Aufrufe (Element bearbeitet, Hintergrund geaendert, ...) waere ein Gleit-/Ueberblend-
   // Effekt auf derselben Folie nur verwirrend, daher per Default aus.
   render(useTransition=false) {
-    this.applyBackground();
+    this.applyBackground(false);
+    this.syncBgControls(); // Regler zeigen immer den Hintergrund der aktuellen Folie
 
     const slide=S.slides[S.activeSlideIndex];
     const container=document.getElementById('slide-content');
@@ -2961,16 +3059,22 @@ const App = {
     if (slide) slide.beamEnabled = enabled;
   },
 
-  applyBackground() {
+  // fromControls=true (Standard): die Werte der Hintergrund-Regler in DIESE Folie
+  // uebernehmen - nur fuer echte Bedienung der Regler. render() ruft stattdessen
+  // applyBackground(false) auf: vorher las jedes render() die Regler aus, die nach einem
+  // Folienwechsel noch die Werte der VORHERIGEN Folie zeigten - dadurch bekam jede Folie,
+  // die man anklickte, stillschweigend denselben Hintergrund.
+  applyBackground(fromControls=true) {
     const slide=S.slides[S.activeSlideIndex];
     if (!slide) return;
     const bg=slide.background;
 
-    // Read live control values into bg object
-    const type=document.getElementById('bg-type').value;
-    bg.type=type;
+    const type=fromControls ? document.getElementById('bg-type').value : (bg.type||'custom-linear');
+    if (fromControls) bg.type=type;
 
-    if (type==='custom-linear'||type==='custom-radial') {
+    if (!fromControls) {
+      // nur zeichnen, nichts aus den Reglern uebernehmen
+    } else if (type==='custom-linear'||type==='custom-radial') {
       bg.angle=parseInt(document.getElementById('bg-angle').value)||135;
       bg.cx=parseInt(document.getElementById('bg-cx').value)||50;
       bg.cy=parseInt(document.getElementById('bg-cy').value)||50;
@@ -3015,8 +3119,8 @@ const App = {
 
     if (type!=='grainy') applyBgToStage(stage, slide, null);
 
-    // Global gradient
-    if (document.getElementById('check-global-gradient').checked) {
+    // Global gradient - nur bei echter Bedienung, nie beim blossen Neuzeichnen
+    if (fromControls && document.getElementById('check-global-gradient').checked) {
       S.slides.forEach((s,i)=>{ if (i!==S.activeSlideIndex) s.background=JSON.parse(JSON.stringify(bg)); });
     }
 
@@ -3024,7 +3128,7 @@ const App = {
     renderThumbs();
   },
 
-  onBgTypeChange() {
+  onBgTypeChange(applyToSlide=true) {
     const type=document.getElementById('bg-type').value;
     document.getElementById('bg-custom-gradient-panel').style.display=(type==='custom-linear'||type==='custom-radial')?'block':'none';
     document.getElementById('bg-grainy-panel').style.display=type==='grainy'?'block':'none';
@@ -3032,7 +3136,7 @@ const App = {
     document.getElementById('bg-solid-color').style.display=type==='solid'?'block':'none';
     document.getElementById('bg-linear-opts').style.display=type==='custom-linear'?'block':'none';
     document.getElementById('bg-radial-opts').style.display=type==='custom-radial'?'block':'none';
-    this.applyBackground();
+    if (applyToSlide) this.applyBackground();
   },
 
   syncBgControls() {
@@ -3041,7 +3145,7 @@ const App = {
     const bg=slide.background;
     const sel=document.getElementById('bg-type');
     sel.value=bg.type||'custom-linear';
-    this.onBgTypeChange();
+    this.onBgTypeChange(false);
     if (bg.angle!==undefined) document.getElementById('bg-angle').value=bg.angle;
     if (bg.cx!==undefined) document.getElementById('bg-cx').value=bg.cx;
     if (bg.cy!==undefined) document.getElementById('bg-cy').value=bg.cy;
@@ -3747,12 +3851,13 @@ const App = {
       link.href='https://fonts.googleapis.com/css2?'+google.map(f=>'family='+googleFontFamilyParam(f.name)).join('&')+'&text='+encodeURIComponent(chars)+'&display=swap';
       document.head.appendChild(link);
     }
-    list.innerHTML=fonts.map((f,i)=>{
+    const target=selectedFontElement();
+    list.innerHTML=(target?`<p style="font-size:10px;color:#a5b4fc;margin:0 0 6px;">Wird sofort auf das ausgewählte Element angewendet.</p>`:'')+fonts.map((f,i)=>{
       const installed=S.installedFonts.some(x=>x.family===f.family);
       return `
       <div class="font-catalog-item">
         <span style="font-size:15px;color:#e2e8f0;font-family:'${f.family.replace(/'/g,"\\'")}',sans-serif;" title="${escapeHtmlEc(f.url||'Websafe - auf dem Gerät vorhanden, kein Download')}">${escapeHtmlEc(f.name)}</span>
-        <button data-font-idx="${i}" class="btn-sm accent" style="font-size:9px;padding:3px 8px;"${installed?' disabled':''}>${installed?'✓ Geladen':(f.websafe?'+ Nutzen':'+ Laden')}</button>
+        <button data-font-idx="${i}" class="btn-sm accent" style="font-size:9px;padding:3px 8px;"${installed&&!target?' disabled':''}>${installed?(target?'Anwenden':'✓ Geladen'):(f.websafe?'+ Nutzen':'+ Laden')}</button>
       </div>`;
     }).join('');
     list.querySelectorAll('button[data-font-idx]').forEach(b=>{
@@ -3760,13 +3865,20 @@ const App = {
     });
   },
 
+  // Laedt die Schrift (falls noch nicht geschehen) und wendet sie SOFORT auf das
+  // ausgewaehlte Element an, sofern es eine Schrift hat (Text, Uhr, Datum, Countdown).
   installFont(f) {
     if (!S.installedFonts.some(x=>x.family===f.family)) {
       S.installedFonts.push(f);
       syncGoogleFontImports();
       this.renderInstalledFonts();
-      this.renderInspector();
     }
+    const el=selectedFontElement();
+    if (el) {
+      el.fontFamily = f.family + ',sans-serif';
+      this.render();
+    }
+    this.renderInspector();
   },
 
   removeFont(family) {
@@ -3943,7 +4055,9 @@ const App = {
     const stateSnapshot=JSON.parse(JSON.stringify(S.slides));
     const beamSnapshot=JSON.parse(JSON.stringify(S.beam));
     const glitterSnapshot=JSON.parse(JSON.stringify(S.glitter));
-    const fontsSnapshot=JSON.parse(JSON.stringify(S.installedFonts));
+    // Nur Schriften mitspeichern, die auf irgendeiner Folie tatsaechlich verwendet werden
+    // (spart unnoetige @import/@font-face-Eintraege bzw. eingebettete Schriftdateien).
+    const fontsSnapshot=JSON.parse(JSON.stringify(S.installedFonts.filter(f=>fontIsUsed(f.family))));
 
     const exportedDoc=`<!DOCTYPE html>
 <html lang="de">
@@ -4594,6 +4708,7 @@ window.addEventListener('keydown',e=>{
         if (metaMatch) { try { meta=JSON.parse(metaMatch[1]); } catch(e) {} }
 
         S.slides=slides;
+        reinstallUsedCatalogFonts();
         if (beam) S.beam=beam;
         if (glitter) S.glitter=glitter;
         S.activeSlideIndex=0;

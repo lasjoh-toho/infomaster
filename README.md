@@ -255,6 +255,18 @@ PHP, keine eigene Session) und wird nur per Link integriert:
   und Grain Extract kennt CSS nicht direkt - Invert ist exakt nachgebaut (weißer Inhalt +
   Difference), Grain Extract über invertierten Inhalt + Hard Light (bei mittleren
   Hintergrundtönen exakt, sonst eine Annäherung). Wirkt im Editor, im Vollbild und im Export.
+- **Größe per Griff** - ausgewählte Elemente haben Griffe am Rahmen: die seitlichen (◼)
+  ändern nur die Breite (Text bricht neu um), die Ecken (●) skalieren das ganze Element -
+  bei Text/Uhr/Datum/Countdown wächst die Schriftgröße im selben Verhältnis mit. Linke Griffe
+  halten die rechte Kante fest; funktioniert auch bei gedrehten Elementen.
+- **Hintergrund pro Folie** - jede Folie behält ihren eigenen Hintergrund; nur der Schalter
+  "Auf alle Folien anwenden" überträgt ihn. (Vorher las jedes Neuzeichnen die Hintergrund-Regler
+  aus, die nach einem Folienwechsel noch die Werte der vorherigen Folie zeigten - dadurch bekamen
+  angeklickte Folien stillschweigend denselben Hintergrund.)
+- **Schriften** - "+ Laden" im Fonts-Tab wendet die Schrift sofort auf das ausgewählte Element
+  an (Text, Uhr, Datum, Countdown; bei bereits geladenen Schriften "Anwenden"). Gespeichert
+  bzw. exportiert werden nur Schriften, die auf einer Folie tatsächlich verwendet werden; beim
+  Wiederöffnen einer Präsentation werden verwendete Katalog-Schriften automatisch neu eingebunden.
 - **Entf löscht** das ausgewählte Element (nicht während in ein Feld oder einen Text getippt wird).
 - **Automatische Schriftgrößen-Skalierung** - ein Schalter pro Textelement verkleinert die
   Schrift automatisch, bis sie in die Breite des Kastens und die verbleibende Höhe bis zum
