@@ -322,7 +322,6 @@
       <div class="tab-header">
         <button class="tab-btn active" data-tab="slides" onclick="App.setTab('slides')">Folien</button>
         <button class="tab-btn" data-tab="elements" onclick="App.setTab('elements')">Elemente</button>
-        <button class="tab-btn" data-tab="widgets" onclick="App.setTab('widgets')">Widgets</button>
         <button class="tab-btn" data-tab="background" onclick="App.setTab('background')">Hintergrund</button>
         <button class="tab-btn" data-tab="spotlight" onclick="App.setTab('spotlight')">Spotlight</button>
         <button class="tab-btn" data-tab="fonts" onclick="App.setTab('fonts')">Fonts</button>
@@ -395,7 +394,9 @@
 
         <!-- ===== TAB: ELEMENTS ===== -->
         <div class="tab-panel" id="tab-elements">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px;">
+          <!-- Text/Bild und die Widgets (QR/Uhr/Datum/Countdown) liegen gemeinsam hier - ein
+               Widget wird erst eingerichtet (Formular direkt darunter) und dann erstellt. -->
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:12px;">
             <button onclick="App.addTextElement()" class="btn-sm" style="justify-content:center;">
               <i data-lucide="type" style="width:13px;height:13px;color:#a5b4fc;"></i> Text
             </button>
@@ -403,43 +404,30 @@
               <i data-lucide="image" style="width:13px;height:13px;color:#34d399;"></i> Bild
               <input type="file" accept="image/*" style="display:none;" onchange="App.handleImageUpload(event)">
             </label>
+            <button onclick="App.startWidgetDraft('qr')" class="btn-sm" style="justify-content:center;" title="QR-Code (erst einrichten, dann erstellen)">
+              <i data-lucide="qr-code" style="width:13px;height:13px;color:#f59e0b;"></i> QR
+            </button>
+            <button onclick="App.startWidgetDraft('clock')" class="btn-sm" style="justify-content:center;" title="Uhr (erst einrichten, dann erstellen)">
+              <i data-lucide="clock" style="width:13px;height:13px;color:#38bdf8;"></i> Uhr
+            </button>
+            <button onclick="App.startWidgetDraft('date')" class="btn-sm" style="justify-content:center;" title="Datumsanzeige (erst einrichten, dann erstellen)">
+              <i data-lucide="calendar" style="width:13px;height:13px;color:#fb7185;"></i> Datum
+            </button>
+            <button onclick="App.startWidgetDraft('countdown')" class="btn-sm" style="justify-content:center;" title="Countdown (erst einrichten, dann erstellen)">
+              <i data-lucide="hourglass" style="width:13px;height:13px;color:#c084fc;"></i> Countdown
+            </button>
           </div>
+          <div id="widget-draft-form"></div>
           <div class="ctrl-section">
             <div class="ctrl-section-title">Ebenen dieser Folie</div>
-            <p style="font-size:10px;color:rgba(148,163,184,0.55);margin:-4px 0 8px;">Oben = im Vordergrund. Zum Auswählen/Bearbeiten anklicken (gerade bei Vorlagen einfacher als auf der Folie selbst zu klicken) - ziehen oder ▲/▼ aendert die Reihenfolge (und damit was vorne liegt). Enthaelt auch Widgets - deren Eigenschaften werden im Widgets-Tab bearbeitet.</p>
+            <p style="font-size:10px;color:rgba(148,163,184,0.55);margin:-4px 0 8px;">Oben = im Vordergrund. Zum Auswählen/Bearbeiten anklicken (gerade bei Vorlagen einfacher als auf der Folie selbst zu klicken) - ziehen oder ▲/▼ aendert die Reihenfolge (und damit was vorne liegt). Enthaelt auch Widgets.</p>
             <div id="layers-list"></div>
           </div>
           <div class="sep"></div>
           <div id="element-inspector">
             <p style="font-size:11px;color:rgba(148,163,184,0.6);font-style:italic;text-align:center;padding:20px 0;">Klicke auf ein Element der Folie oder in der Ebenen-Liste oben, um es zu bearbeiten.</p>
           </div>
-        </div>
-
-        <!-- ===== TAB: WIDGETS ===== -->
-        <div class="tab-panel" id="tab-widgets">
-          <div class="ctrl-section">
-            <div class="ctrl-section-title">Widget hinzufügen</div>
-            <p style="font-size:10px;color:rgba(148,163,184,0.55);margin:-4px 0 8px;">Typ wählen, einstellen, dann erstellen.</p>
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;">
-              <button onclick="App.startWidgetDraft('qr')" class="btn-sm" style="justify-content:center;font-size:10px;padding:8px 4px;" title="QR-Code">
-                <i data-lucide="qr-code" style="width:13px;height:13px;color:#f59e0b;"></i>
-              </button>
-              <button onclick="App.startWidgetDraft('clock')" class="btn-sm" style="justify-content:center;font-size:10px;padding:8px 4px;" title="Uhr">
-                <i data-lucide="clock" style="width:13px;height:13px;color:#38bdf8;"></i>
-              </button>
-              <button onclick="App.startWidgetDraft('date')" class="btn-sm" style="justify-content:center;font-size:10px;padding:8px 4px;" title="Datumsanzeige">
-                <i data-lucide="calendar" style="width:13px;height:13px;color:#fb7185;"></i>
-              </button>
-              <button onclick="App.startWidgetDraft('countdown')" class="btn-sm" style="justify-content:center;font-size:10px;padding:8px 4px;" title="Countdown">
-                <i data-lucide="hourglass" style="width:13px;height:13px;color:#c084fc;"></i>
-              </button>
-            </div>
-            <div id="widget-draft-form"></div>
-          </div>
-          <div class="sep"></div>
-          <div id="widget-inspector">
-            <p style="font-size:11px;color:rgba(148,163,184,0.6);font-style:italic;text-align:center;padding:20px 0;">Klicke auf ein Widget der Folie oder in der Ebenen-Liste (Elemente-Tab), um es zu bearbeiten.</p>
-          </div>
+          <div id="widget-inspector"></div>
         </div>
 
         <!-- ===== TAB: BACKGROUND ===== -->
@@ -1394,7 +1382,7 @@ const S = {
   editorAnimPlaying: false,
   editorAnimLoop: false,
   editorAnimStopTimer: null,
-  // Noch nicht auf der Folie erzeugtes Widget, gerade im Widgets-Tab konfiguriert (siehe
+  // Noch nicht auf der Folie erzeugtes Widget, gerade im Elemente-Tab konfiguriert (siehe
   // App.startWidgetDraft()) - erst App.commitWidgetDraft() legt es tatsaechlich als Element an.
   widgetDraft: null,
   activeTab: 'slides',
@@ -1664,7 +1652,8 @@ function renderTemplateElement(el, isEditor) {
 // ═══════════════════════════════════════════════════════════════
 //  SLIDE RENDERING
 // ═══════════════════════════════════════════════════════════════
-// Waehlt das Element aus und wechselt zusaetzlich auf den "Elemente"-Tab, damit der
+// Waehlt das Element aus und wechselt zusaetzlich auf den "Elemente"-Tab (dort liegen auch
+// die Widgets), damit der
 // Inspector (der nur dort im DOM sichtbar ist) sofort zu sehen ist - sonst landet die
 // Auswahl unbemerkt "im Hintergrund", wenn man z.B. gerade auf "Hintergrund" oder
 // "Folien" war und auf der Folie selbst doppelklickt.
@@ -1674,7 +1663,7 @@ function selectElAndShowTab(el, wrapper) {
   wrapper.classList.add('selected-el');
   S.selectedElementId = el.id;
   S.widgetDraft = null; // ein gerade konfigurierter, noch nicht erzeugter Entwurf wird verworfen
-  App.setTab(WIDGET_ELEMENT_TYPES.includes(el.type) ? 'widgets' : 'elements');
+  App.setTab('elements');
   App.renderInspector();
   App.renderLayersList();
 }
@@ -3071,6 +3060,7 @@ const App = {
     const el={id:'el-'+Date.now(),type:'text',content:'Neuer Text',fontFamily:'Inter, sans-serif',fontSize:28,color:'#ffffff',textAlign:'left',fontWeight:'400',x:20,y:35,width:60};
     slide.elements.push(el);
     S.selectedElementId=el.id;
+    S.widgetDraft=null;
     this.render(); this.renderInspector();
   },
 
@@ -3098,13 +3088,15 @@ const App = {
     this.render();
   },
 
-  // ─── WIDGETS (QR/Uhr/Datum/Countdown) - eigener Tab, Konfiguration VOR der Erzeugung ───
+  // ─── WIDGETS (QR/Uhr/Datum/Countdown) - im Elemente-Tab, Konfiguration VOR der Erzeugung ───
   // Ein Widget wird erst nach App.commitWidgetDraft() tatsaechlich als Folienelement
   // angelegt - bis dahin lebt sein Zustand nur in S.widgetDraft (siehe startWidgetDraft()).
   // Aktualisieren sich nach der Erzeugung selbst per Sekunden-Timer (siehe tickWidgets()).
   startWidgetDraft(type) {
     S.selectedElementId=null;
     S.widgetDraft={ type, ...JSON.parse(JSON.stringify(WIDGET_DEFAULTS[type])) };
+    document.querySelectorAll('.slide-el.selected-el').forEach(w => w.classList.remove('selected-el'));
+    this.renderLayersList();
     this.renderInspector();
   },
 
@@ -3157,7 +3149,7 @@ const App = {
     r.onload=e=>{
       const slide=S.slides[S.activeSlideIndex];
       const el={id:'el-'+Date.now(),type:'image',src:e.target.result,width:50,x:25,y:20};
-      slide.elements.push(el); S.selectedElementId=el.id;
+      slide.elements.push(el); S.selectedElementId=el.id; S.widgetDraft=null;
       this.render(); this.renderInspector();
     };
     r.readAsDataURL(file);
@@ -3252,7 +3244,7 @@ const App = {
       item.addEventListener('click', () => {
         S.selectedElementId=el.id;
         S.widgetDraft=null;
-        App.setTab(WIDGET_ELEMENT_TYPES.includes(el.type) ? 'widgets' : 'elements');
+        App.setTab('elements');
         this.render();
         this.renderInspector();
       });
@@ -3330,8 +3322,8 @@ const App = {
     const WIDGET_TYPES=['qr','clock','date','countdown'];
     const isWidget = el && WIDGET_TYPES.includes(el.type);
 
-    // Widgets-Tab: entweder ein bestehendes, ausgewaehltes Widget bearbeiten, oder - falls
-    // gerade eines im Widgets-Tab konfiguriert wird (S.widgetDraft) - das Entwurfsformular
+    // Widget-Bereich (im Elemente-Tab): entweder ein bestehendes, ausgewaehltes Widget
+    // bearbeiten, oder - falls gerade eines konfiguriert wird (S.widgetDraft) - das Entwurfsformular
     // zeigen (siehe renderWidgetDraftForm(), das dieselben Felder wie hier unten nutzt).
     if (widgetPanel) {
       if (isWidget) {
@@ -3354,8 +3346,6 @@ const App = {
               <i data-lucide="trash-2" style="width:11px;height:11px;"></i> ${titles[el.type]} löschen
             </button>
           </div>`;
-      } else if (!S.widgetDraft) {
-        widgetPanel.innerHTML=`<p style="font-size:11px;color:rgba(148,163,184,0.6);font-style:italic;text-align:center;padding:20px 0;">Klicke auf ein Widget der Folie oder in der Ebenen-Liste (Elemente-Tab), um es zu bearbeiten.</p>`;
       } else {
         widgetPanel.innerHTML='';
       }
@@ -3364,7 +3354,12 @@ const App = {
     }
 
     if (!panel) { lucide.createIcons(); return; }
-    if (!el || isWidget) {
+    if (isWidget || (!el && S.widgetDraft)) {
+      panel.innerHTML='';
+      lucide.createIcons();
+      return;
+    }
+    if (!el) {
       panel.innerHTML=`<p style="font-size:11px;color:rgba(148,163,184,0.55);font-style:italic;text-align:center;padding:20px 0;">Klicke auf ein Element auf der Folie.</p>`;
       lucide.createIcons();
       return;

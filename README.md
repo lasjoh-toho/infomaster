@@ -18,20 +18,27 @@ die Clients, `nextcloud_proxy.php` erlaubt Nextcloud-Freigabeordner als Inhaltsq
 
 ## PDF/Bild ablegen
 
-Ganz oben in der Kopfzeile steht "📥 Datei hinzufügen" (Drag&Drop oder Klick zum Auswählen -
-PDF, JPG, PNG, GIF und WEBP werden akzeptiert, `.doc`/`.docx` aktuell nicht). Jede abgelegte
-Datei wird sofort automatisch einsortiert, ganz ohne Rückfrage:
+Dateien lassen sich per Drag&Drop auf die **ganze Kopfzeile** ziehen (sie leuchtet beim
+Darüberziehen blau auf) oder über "📥 Datei hinzufügen" auswählen - PDF, JPG, PNG, GIF und
+WEBP werden akzeptiert, `.doc`/`.docx` aktuell nicht. In beiden Fällen öffnet sich zuerst ein
+**Import-Dialog** mit einer Vorschau jeder Datei (Bilder mit Pixel-Maßen und erkannter
+Ausrichtung, PDFs im Browser-PDF-Viewer; ⤢ vergrößert eine Vorschau). Pro Datei wird dort
+entschieden, ob und wohin sie gespeichert wird:
 
-- Eine **PDF** landet unverändert (kein Rendern zu Bildern), je nach Ausrichtung der ersten
-  Seite, in "PDF Hoch" bzw. "PDF Quer".
-- Ein **Bild** (JPG/PNG/GIF/WEBP) landet, je nach tatsächlichen Pixel-Maßen, in "Hoch" bzw.
-  "Quer".
+- **🪄 Automatisch** (Standard) - wie bisher: eine **PDF** landet unverändert (kein Rendern zu
+  Bildern), je nach Ausrichtung der ersten Seite, in "PDF Hoch" bzw. "PDF Quer"; ein **Bild**
+  landet, je nach tatsächlichen Pixel-Maßen, in "Hoch" bzw. "Quer" (der Dialog zeigt das
+  voraussichtliche Ziel an).
+- **Ein bestimmter Ordner** - Bilder in jeden Medien-Ordner (aktive Ordner stehen oben) oder
+  ins Archiv, PDFs in "PDF Hoch"/"PDF Quer" oder ins Archiv. Passt die Ausrichtung eines
+  Bildes nicht zu der des gewählten Ordners, erscheint ein Hinweis.
+- **✕ Nicht speichern** - die Datei wird verworfen.
 
-Mehrere Dateien gemischten Typs lassen sich auf einmal hineinziehen - jede wird einzeln
-nacheinander hochgeladen und landet automatisch am richtigen Ort.
+"💾 … speichern" lädt die ausgewählten Dateien danach einzeln nacheinander hoch. Ein zweiter
+Drop, während der Dialog noch offen ist, ergänzt ihn um die neuen Dateien.
 
-"PDF Hoch"/"PDF Quer" erscheinen wie jeder andere Medien-Ordner unter "Globale
-Ordner-Verwaltung" (inkl. eigenem Formular zum manuellen Hochladen einzelner Dateien);
+"PDF Hoch"/"PDF Quer" erscheinen wie jeder andere Medien-Ordner unter
+"Ordner-Verwaltung" (inkl. eigenem Formular zum manuellen Hochladen einzelner Dateien);
 anders als Bilder-Ordner haben sie aber keine Ausrichtungs-Zuordnung und keinen
 "🗑 Ordner löschen"-Knopf, da ihre Ausrichtung schon über den Ordnernamen feststeht.
 
@@ -67,7 +74,7 @@ Gesamtseitenzahl zusätzlich über `pdfinfo` (falls vorhanden) oder einen kleine
 
 ## Medien-Ordner: Ausrichtung & Archiv
 
-Jeder Medien-Ordner unter "Globale Ordner-Verwaltung" lässt sich beim Aufklappen einer
+Die "Ordner-Verwaltung" steht direkt unter den Monitoren. Jeder Medien-Ordner dort lässt sich beim Aufklappen einer
 Ausrichtung zuordnen (Dropdown "Ausrichtung: – nicht zugeordnet – / ⇕ Hochkant /
 ⇔ Querformat") - die beiden vom PDF-Import automatisch angelegten Ordner "Hoch"/"Quer"
 bekommen ihre Ausrichtung direkt beim Anlegen zugewiesen. Aktive Ordner (gerade einem
@@ -91,6 +98,22 @@ endgültigem Löschen pro Datei) - z.B. zum Aufräumen unabhängig vom Paar-Blic
 konkreten Ordners. Die von Bento-Pronto verwalteten Ordner (`bentos`, `bento-pronto`)
 tauchen hier absichtlich gar nicht auf - Zugang dazu läuft ausschließlich über die eigene
 Bento-Pronto-Seite.
+
+### Datei-Ansicht (Modal)
+
+Jede Datei in der Ordner-Verwaltung (und in den Dateilisten der Monitor-Karten) hat einen
+👁-Knopf, jeder Ordner zusätzlich "🔍 Ansehen" - beides öffnet ein Modal zur Kontrolle mit
+großer Vorschau (Bild, PDF oder Video), Blättern per ‹ › bzw. Pfeiltasten und den Aktionen:
+
+- **📦 Ins Archiv** - bei bekannter Ausrichtung direkt ins passende Archiv, sonst beide Knöpfe.
+- **➜ Verschieben** in einen anderen Ordner - aktive (gerade einem Monitor zugewiesene) Ordner
+  stehen oben und sind vorausgewählt, z.B. um eine Datei aus dem Archiv zurück auf einen
+  Monitor zu holen. PDFs lassen sich nur zwischen den PDF-Ordnern und ins Archiv verschieben,
+  Bilder nie in die PDF-Ordner.
+- **🗑 Löschen** (mit Sicherheitsabfrage).
+
+Nach jeder Aktion öffnet sich das Modal automatisch mit der nächsten Datei desselben Ordners,
+so lässt sich ein Ordner zügig durchsehen; aufgeklappte Ordner bleiben dabei aufgeklappt.
 
 ## Mehrere Monitore an einem Pi
 
@@ -250,9 +273,9 @@ PHP, keine eigene Session) und wird nur per Link integriert:
 - **Maus-Bewegung statt reinem Hover** - Navigations-Hinweis und Mauszeiger in der
   Vollbild-Präsentation (und im HTML-Export) blenden sich nur bei tatsächlicher
   Mausbewegung über der Folie ein und nach kurzer Ruhe automatisch wieder aus.
-- **Kopfzeilen-Dropzone nimmt jetzt auch Bilder** - dieselbe Dropzone oben rechts wie für
-  native PDFs (siehe oben) akzeptiert zusätzlich JPG/PNG/GIF/WEBP und sortiert sie
-  automatisch nach Ausrichtung in "Hoch"/"Quer" ein.
+- **Kopfzeilen-Import nimmt auch Bilder** - der Import über die Kopfzeile (siehe oben)
+  akzeptiert neben PDFs auch JPG/PNG/GIF/WEBP; im Import-Dialog wird entschieden, ob und wohin
+  gespeichert wird.
 - **Im Infomaster speichern - mit Monitor-Vorschlag** - neben "Herunterladen" erscheint ein
   zweiter Knopf, sobald die Seite über den echten Dashboard-Link (mit gültigem `?token=...`)
   geöffnet wurde; speichert die exportierte Präsentation direkt in `media/bentos/` -
@@ -294,12 +317,11 @@ PHP, keine eigene Session) und wird nur per Link integriert:
   funktioniert dadurch zuverlässig. Das Verschieben von Elementen hat zusätzlich einen kleinen
   Bewegungs-Schwellwert bekommen, damit ein normaler Klick nicht schon als (minimaler) Drag
   gewertet wird.
-- **Widgets** (eigener Tab in der Seitenleiste, neben Elemente) - vier einfügbare
-  Mini-Elemente. Ein Widget wird dabei erst KONFIGURIERT (Typ wählen → Formular ausfüllen)
+- **Widgets** (im Elemente-Tab, neben Text und Bild) - vier einfügbare Mini-Elemente. Ein Widget wird dabei erst KONFIGURIERT (Typ wählen → Formular ausfüllen)
   und erst per "✓ Erstellen" tatsächlich auf der Folie angelegt - nicht sofort mit
   Standardwerten erzeugt und danach nachtraeglich angepasst. Nach dem Erstellen lassen sich
-  dieselben Eigenschaften jederzeit weiter über den Widgets-Tab bearbeiten (auswählen auf der
-  Folie oder in der Ebenen-Liste des Elemente-Tabs springt automatisch dorthin):
+  dieselben Eigenschaften jederzeit weiter im Elemente-Tab bearbeiten (auswählen auf der Folie
+  oder in der Ebenen-Liste):
   - **QR-Code** - Inhalt frei als Text/URL, Modulform eckig oder rund umschaltbar (im runden
     Modus werden auch die drei Erkennungsmuster/Ecken abgerundet, moderat statt als volle
     Kreise, damit der Ring durchgehend genug fuer Scanner bleibt), Vorder-/Hintergrundfarbe
@@ -319,7 +341,7 @@ PHP, keine eigene Session) und wird nur per Link integriert:
   als auch in der fertigen, exportierten Präsentation (kein erneutes Speichern/Neuladen nötig).
 - **Doppelklick wählt Element aus UND öffnet den passenden Tab - zuverlässig in JEDEM
   Editor-Zustand** - ein Doppelklick auf ein Element der Folie wechselt automatisch in den
-  passenden Tab (Elemente für Text/Bild, Widgets für QR/Uhr/Datum/Countdown) und wählt das
+  Elemente-Tab (dort liegen Text, Bild und alle Widgets) und wählt das
   Element dort aus, unabhängig davon, welcher Tab gerade offen ist oder ob die Play-Vorschau
   gerade läuft. Bei Textelementen springt zusätzlich sofort der Editier-Modus zum Reintippen
   an. Die Erkennung verlässt sich dabei NICHT auf das native Browser-`dblclick`-Ereignis
