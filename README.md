@@ -270,8 +270,13 @@ PHP, keine eigene Session) und wird nur per Link integriert:
   Quer-/Hochkant-Ausrichtung werden dafür aus der gespeicherten Datei zurückgelesen - eigene,
   hochgeladene Schriftarten dagegen nicht, die stecken beim Export nur als fertiges CSS in der
   Datei und müssten im Zweifel neu hinzugefügt werden). Der Titel lässt sich direkt auf der Karte
-  über "✎ Umbenennen" ändern (eigener `bento.php`-Endpunkt mit demselben Token-Abgleich wie beim
-  Speichern, beschränkt auf `eyecandy_`-Dateien - rührt an Bento-Pronto-eigenen Decks nichts an).
+  über "✎ Umbenennen" ändern, "🗑 Löschen" entfernt die Präsentation unwiderruflich (mit
+  Sicherheitsabfrage) - beides eigene `bento.php`-Endpunkte mit demselben Token-Abgleich wie
+  beim Speichern, beschränkt auf `eyecandy_`-Dateien (rührt an Bento-Pronto-eigenen Decks
+  nichts an). Beim allerersten Speichern einer neuen Präsentation fragt der Editor gleich nach
+  einem Namen (statt sie zunächst als "Neue Präsentation" abzulegen und erst später in der
+  Übersicht umbenennen zu müssen) - jedes weitere Speichern überschreibt einfach dieselbe,
+  schon benannte Datei, ohne erneut zu fragen.
 - **Quer-/Hochkant-Vorschau und -Anlage** - ein Knopf in der Kopfzeile schaltet die Bühne
   (Editor UND Vollbild-Präsentation) zwischen 16:9 (Quer) und 9:16 (Hochkant) um - der
   Rest bleibt als schwarzer Rand ("Letterbox") sichtbar, wie auf einem echten Monitor mit
@@ -289,15 +294,19 @@ PHP, keine eigene Session) und wird nur per Link integriert:
   funktioniert dadurch zuverlässig. Das Verschieben von Elementen hat zusätzlich einen kleinen
   Bewegungs-Schwellwert bekommen, damit ein normaler Klick nicht schon als (minimaler) Drag
   gewertet wird.
-- **Widgets** (eigener Bereich im Elemente-Tab, unterhalb von Text/Bild) - vier einfügbare
-  Mini-Elemente:
-  - **QR-Code** - Inhalt frei als Text/URL, Modulform eckig oder rund umschaltbar (die drei
-    Erkennungsmuster/Ecken bleiben dabei immer solide Quadrate, damit Scanner sie zuverlässig
-    finden), Vorder-/Hintergrundfarbe frei wählbar, Hintergrund komplett abschaltbar, mit
-    automatischer Kontrast-Warnung bei schwer lesbaren Farbkombinationen. Der QR-Encoder
-    (Byte-Modus/UTF-8, Version 1-10, alle vier Fehlerkorrektur-Level, inkl. Reed-Solomon und
-    Masken-Auswahl) ist komplett selbst geschrieben, damit auch diese Funktion offline auf
-    dem Pi ohne CDN funktioniert.
+- **Widgets** (eigener Tab in der Seitenleiste, neben Elemente) - vier einfügbare
+  Mini-Elemente. Ein Widget wird dabei erst KONFIGURIERT (Typ wählen → Formular ausfüllen)
+  und erst per "✓ Erstellen" tatsächlich auf der Folie angelegt - nicht sofort mit
+  Standardwerten erzeugt und danach nachtraeglich angepasst. Nach dem Erstellen lassen sich
+  dieselben Eigenschaften jederzeit weiter über den Widgets-Tab bearbeiten (auswählen auf der
+  Folie oder in der Ebenen-Liste des Elemente-Tabs springt automatisch dorthin):
+  - **QR-Code** - Inhalt frei als Text/URL, Modulform eckig oder rund umschaltbar (im runden
+    Modus werden auch die drei Erkennungsmuster/Ecken abgerundet, moderat statt als volle
+    Kreise, damit der Ring durchgehend genug fuer Scanner bleibt), Vorder-/Hintergrundfarbe
+    frei wählbar, Hintergrund komplett abschaltbar, mit automatischer Kontrast-Warnung bei
+    schwer lesbaren Farbkombinationen. Der QR-Encoder (Byte-Modus/UTF-8, Version 1-10, alle
+    vier Fehlerkorrektur-Level, inkl. Reed-Solomon und Masken-Auswahl) ist komplett selbst
+    geschrieben, damit auch diese Funktion offline auf dem Pi ohne CDN funktioniert.
   - **Uhr** - digitale Uhrzeit, 24h oder 12h (AM/PM), Sekunden optional, aktualisiert sich
     selbst jede Sekunde.
   - **Datumsanzeige** - heutiges Datum, lang ("Montag, 30. September 2026") oder kurz
@@ -305,24 +314,34 @@ PHP, keine eigene Session) und wird nur per Link integriert:
   - **Countdown** - zählt bis zu einem frei wählbaren Ziel-Datum/Uhrzeit herunter (Tage,
     sobald mehr als 24h verbleiben, sonst hh:mm:ss), mit optionaler Beschriftung darüber und
     frei wählbarem Text nach Ablauf.
-  
+
   Alle drei Zeit-Widgets aktualisieren sich per Sekunden-Timer selbst nach - sowohl im Editor
   als auch in der fertigen, exportierten Präsentation (kein erneutes Speichern/Neuladen nötig).
-- **Doppelklick wählt Element aus UND öffnet den passenden Tab** - ein Doppelklick auf ein
-  Bild- oder Textelement auf der Folie wechselt automatisch in den Elemente-Tab und wählt das
-  Element dort aus (vorher blieb die Auswahl "im Hintergrund" unsichtbar, wenn man sich gerade
-  z.B. im Hintergrund- oder Spotlight-Tab befand). Bei Textelementen springt zusätzlich weiterhin
-  sofort der Editier-Modus zum Reintippen an. Die Doppelklick-Erkennung verlässt sich dabei
-  nicht allein auf das native Browser-Ereignis (das bei minimalem Handzittern zwischen den
-  beiden Klicks nicht immer feuert), sondern zusätzlich auf eine eigene, grosszügigere
-  Zeitmessung - dadurch zuverlässiger bei echter Maus-/Trackpad-Bedienung.
+- **Doppelklick wählt Element aus UND öffnet den passenden Tab - zuverlässig in JEDEM
+  Editor-Zustand** - ein Doppelklick auf ein Element der Folie wechselt automatisch in den
+  passenden Tab (Elemente für Text/Bild, Widgets für QR/Uhr/Datum/Countdown) und wählt das
+  Element dort aus, unabhängig davon, welcher Tab gerade offen ist oder ob die Play-Vorschau
+  gerade läuft. Bei Textelementen springt zusätzlich sofort der Editier-Modus zum Reintippen
+  an. Die Erkennung verlässt sich dabei NICHT auf das native Browser-`dblclick`-Ereignis
+  (das bei minimalem Handzittern zwischen den beiden Klicks - normal bei echter Maus-/
+  Touch-Bedienung, anders als bei exakt reproduzierbaren Testklicks - nicht immer feuert),
+  sondern ausschließlich auf eine eigene, grosszügigere Zeitmessung zwischen zwei Klicks auf
+  demselben Element; funktioniert dadurch auch auf Touchscreens per Doppel-Tap zuverlässig.
+- **Ebenen-Liste per Drag & Drop sortierbar** - Elemente in der Ebenen-Liste (Elemente-Tab)
+  lassen sich jetzt auch durch Ziehen (am ⠿-Griff oder der ganzen Zeile) neu anordnen, als
+  Alternative zu den ▲/▼-Knöpfen - gerade bei größeren Sprüngen schneller. Betrifft nur diese
+  Elemente-Ebenen; die Wegpunkt-Liste im Spotlight-Tab (eigene Objekte auf der Bühne) bleibt
+  bei ihrer bisherigen Bedienung.
 - **Editor-Vorschau steht standardmäßig still** - Spotlight-Bewegung, Glitter-Partikel und
   automatischer Folienwechsel laufen beim Bearbeiten nicht mehr durchgehend im Hintergrund
   (das lenkte beim Positionieren/Editieren von Elementen ab), sondern bleiben eingefroren, bis
   der "Play"-Knopf in der Kopfzeile geklickt wird - der spielt dann einmal eine kurze
   Vorschau-Runde ab und hält danach automatisch wieder an. Ein Doppelklick auf denselben Knopf
-  startet stattdessen eine Dauerschleife (die alte, immer-an-Variante). Die Vollbild-
-  Präsentation selbst ist davon nicht betroffen und animiert wie gewohnt durchgehend.
+  startet stattdessen eine Dauerschleife (die alte, immer-an-Variante). Der Spotlight-Effekt
+  (Abdunkelung + Lichtkreis) selbst wird im Editor zusätzlich nur noch gezeichnet, während der
+  Spotlight-Tab offen ist - auf allen anderen Tabs bleibt die Folie unverdeckt sichtbar. Die
+  Vollbild-Präsentation selbst ist von alldem nicht betroffen und animiert wie gewohnt
+  durchgehend.
 - **Folienwechsel: Standard jetzt "Gleiten vertikal"** - neue Folien starten mit
   `transitionMode: 'slide-v'` statt seitlich; ausserdem wird bei nur einer einzigen Folie kein
   automatischer, sich staendig auf sich selbst wiederholender Uebergang mehr abgespielt (weder

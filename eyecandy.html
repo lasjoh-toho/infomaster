@@ -260,6 +260,10 @@
     .layer-item.selected-layer { border-color: rgba(99,102,241,0.6); background: rgba(99,102,241,0.1); }
     .layer-item .layer-label { flex: 1; min-width: 0; font-size: 11px; color: #e2e8f0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .layer-item .layer-order-btn { width: 20px; height: 20px; padding: 0; font-size: 10px; flex-shrink: 0; }
+    .layer-item .layer-drag-handle { flex-shrink: 0; cursor: grab; color: rgba(148,163,184,0.5); font-size: 12px; line-height: 1; }
+    .layer-item.dragging { opacity: 0.4; }
+    .layer-item.drag-over-top { box-shadow: inset 0 2px 0 0 #6366f1; }
+    .layer-item.drag-over-bottom { box-shadow: inset 0 -2px 0 0 #6366f1; }
   </style>
 </head>
 <body>
@@ -318,6 +322,7 @@
       <div class="tab-header">
         <button class="tab-btn active" data-tab="slides" onclick="App.setTab('slides')">Folien</button>
         <button class="tab-btn" data-tab="elements" onclick="App.setTab('elements')">Elemente</button>
+        <button class="tab-btn" data-tab="widgets" onclick="App.setTab('widgets')">Widgets</button>
         <button class="tab-btn" data-tab="background" onclick="App.setTab('background')">Hintergrund</button>
         <button class="tab-btn" data-tab="spotlight" onclick="App.setTab('spotlight')">Spotlight</button>
         <button class="tab-btn" data-tab="fonts" onclick="App.setTab('fonts')">Fonts</button>
@@ -390,7 +395,7 @@
 
         <!-- ===== TAB: ELEMENTS ===== -->
         <div class="tab-panel" id="tab-elements">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px;">
             <button onclick="App.addTextElement()" class="btn-sm" style="justify-content:center;">
               <i data-lucide="type" style="width:13px;height:13px;color:#a5b4fc;"></i> Text
             </button>
@@ -399,31 +404,41 @@
               <input type="file" accept="image/*" style="display:none;" onchange="App.handleImageUpload(event)">
             </label>
           </div>
-          <div style="margin-bottom:12px;">
-            <div class="ctrl-label" style="margin-bottom:5px;">Widgets</div>
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;">
-              <button onclick="App.addQrElement()" class="btn-sm" style="justify-content:center;font-size:10px;padding:8px 4px;" title="QR-Code">
-                <i data-lucide="qr-code" style="width:13px;height:13px;color:#f59e0b;"></i>
-              </button>
-              <button onclick="App.addClockElement()" class="btn-sm" style="justify-content:center;font-size:10px;padding:8px 4px;" title="Uhr">
-                <i data-lucide="clock" style="width:13px;height:13px;color:#38bdf8;"></i>
-              </button>
-              <button onclick="App.addDateElement()" class="btn-sm" style="justify-content:center;font-size:10px;padding:8px 4px;" title="Datumsanzeige">
-                <i data-lucide="calendar" style="width:13px;height:13px;color:#fb7185;"></i>
-              </button>
-              <button onclick="App.addCountdownElement()" class="btn-sm" style="justify-content:center;font-size:10px;padding:8px 4px;" title="Countdown">
-                <i data-lucide="hourglass" style="width:13px;height:13px;color:#c084fc;"></i>
-              </button>
-            </div>
-          </div>
           <div class="ctrl-section">
             <div class="ctrl-section-title">Ebenen dieser Folie</div>
-            <p style="font-size:10px;color:rgba(148,163,184,0.55);margin:-4px 0 8px;">Oben = im Vordergrund. Zum Auswählen/Bearbeiten anklicken (gerade bei Vorlagen einfacher als auf der Folie selbst zu klicken) - mit ▲/▼ die Reihenfolge (und damit was vorne liegt) ändern.</p>
+            <p style="font-size:10px;color:rgba(148,163,184,0.55);margin:-4px 0 8px;">Oben = im Vordergrund. Zum Auswählen/Bearbeiten anklicken (gerade bei Vorlagen einfacher als auf der Folie selbst zu klicken) - ziehen oder ▲/▼ aendert die Reihenfolge (und damit was vorne liegt). Enthaelt auch Widgets - deren Eigenschaften werden im Widgets-Tab bearbeitet.</p>
             <div id="layers-list"></div>
           </div>
           <div class="sep"></div>
           <div id="element-inspector">
             <p style="font-size:11px;color:rgba(148,163,184,0.6);font-style:italic;text-align:center;padding:20px 0;">Klicke auf ein Element der Folie oder in der Ebenen-Liste oben, um es zu bearbeiten.</p>
+          </div>
+        </div>
+
+        <!-- ===== TAB: WIDGETS ===== -->
+        <div class="tab-panel" id="tab-widgets">
+          <div class="ctrl-section">
+            <div class="ctrl-section-title">Widget hinzufügen</div>
+            <p style="font-size:10px;color:rgba(148,163,184,0.55);margin:-4px 0 8px;">Typ wählen, einstellen, dann erstellen.</p>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;">
+              <button onclick="App.startWidgetDraft('qr')" class="btn-sm" style="justify-content:center;font-size:10px;padding:8px 4px;" title="QR-Code">
+                <i data-lucide="qr-code" style="width:13px;height:13px;color:#f59e0b;"></i>
+              </button>
+              <button onclick="App.startWidgetDraft('clock')" class="btn-sm" style="justify-content:center;font-size:10px;padding:8px 4px;" title="Uhr">
+                <i data-lucide="clock" style="width:13px;height:13px;color:#38bdf8;"></i>
+              </button>
+              <button onclick="App.startWidgetDraft('date')" class="btn-sm" style="justify-content:center;font-size:10px;padding:8px 4px;" title="Datumsanzeige">
+                <i data-lucide="calendar" style="width:13px;height:13px;color:#fb7185;"></i>
+              </button>
+              <button onclick="App.startWidgetDraft('countdown')" class="btn-sm" style="justify-content:center;font-size:10px;padding:8px 4px;" title="Countdown">
+                <i data-lucide="hourglass" style="width:13px;height:13px;color:#c084fc;"></i>
+              </button>
+            </div>
+            <div id="widget-draft-form"></div>
+          </div>
+          <div class="sep"></div>
+          <div id="widget-inspector">
+            <p style="font-size:11px;color:rgba(148,163,184,0.6);font-style:italic;text-align:center;padding:20px 0;">Klicke auf ein Widget der Folie oder in der Ebenen-Liste (Elemente-Tab), um es zu bearbeiten.</p>
           </div>
         </div>
 
@@ -1131,10 +1146,22 @@ function encodeQR(text, ecLevelKey) {
 function isQrFinderCell(size, r, c) {
   return (r < 7 && c < 7) || (r < 7 && c >= size - 7) || (r >= size - 7 && c < 7);
 }
-// Zeichnet den QR-Code auf ein Canvas - "rund" laesst nur die Datenmodule zu Punkten werden,
-// die drei grossen Finder-Muster (Ecken) bleiben immer volle Quadrate, da Scanner sich zur
-// Erkennung/Ausrichtung auf deren exakte Form verlassen (Industriestandard fuer "gestylte"
-// QR-Codes). Ruhezone (mind. 4 Module) bleibt IMMER Platz, auch ohne Hintergrundfuellung.
+// Abgerundetes Rechteck als Pfad (kein natives ctx.roundRect() - noch nicht auf jedem
+// eingebetteten/aelteren Browser verfuegbar, z.B. auf manchen Pi-Kiosk-Installationen).
+function qrRoundedRectPath(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+// Zeichnet den QR-Code auf ein Canvas - "rund" laesst Datenmodule zu Punkten werden. Die drei
+// Finder-Muster (Ecken) bekommen dabei nur eine MODERATE Rundung (statt volle Kreise wie bei
+// den Datenmodulen) - so verschmelzen benachbarte Module weiterhin zu einem fast durchgehenden
+// Ring (wichtig fuer die Scanner-Erkennung), sehen aber sichtbar "rund" statt eckig aus.
+// Ruhezone (mind. 4 Module) bleibt IMMER Platz, auch ohne Hintergrundfuellung.
 function renderQrToCanvas(canvas, text, opts) {
   const { shape = 'square', fgColor = '#000000', bgColor = '#ffffff', bgEnabled = true, ecLevel = 'M' } = opts || {};
   const ctx = canvas.getContext('2d');
@@ -1154,7 +1181,10 @@ function renderQrToCanvas(canvas, text, opts) {
     for (let c = 0; c < size; c++) {
       if (!modules[r][c]) continue;
       const x = (c + quiet) * modulePx, y = (r + quiet) * modulePx;
-      if (shape === 'round' && !isQrFinderCell(size, r, c)) {
+      if (shape === 'round' && isQrFinderCell(size, r, c)) {
+        qrRoundedRectPath(ctx, x, y, modulePx, modulePx, modulePx * 0.35);
+        ctx.fill();
+      } else if (shape === 'round') {
         ctx.beginPath();
         ctx.arc(x + modulePx / 2, y + modulePx / 2, modulePx * 0.46, 0, Math.PI * 2);
         ctx.fill();
@@ -1172,7 +1202,88 @@ function escapeHtmlEc(s) {
   return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-// ─── WIDGETS (Uhr/Datum/Countdown) ───
+// ─── WIDGETS (QR/Uhr/Datum/Countdown) ───
+function widgetDefaultTarget() {
+  const t=new Date(Date.now()+24*3600*1000);
+  t.setMinutes(t.getMinutes()-t.getTimezoneOffset()); // lokale Zeit statt UTC im datetime-local-Feld
+  return t.toISOString().slice(0,16);
+}
+const WIDGET_DEFAULTS = {
+  qr: {content:'https://',shape:'square',fgColor:'#000000',bgColor:'#ffffff',bgEnabled:true,ecLevel:'M'},
+  clock: {fontFamily:'Inter, sans-serif',fontSize:56,color:'#ffffff',fontWeight:'700',textAlign:'center',format:'24h',showSeconds:true},
+  date: {fontFamily:'Inter, sans-serif',fontSize:30,color:'#ffffff',fontWeight:'600',textAlign:'center',format:'long'},
+  get countdown() { return {fontFamily:'Inter, sans-serif',fontSize:52,color:'#ffffff',fontWeight:'700',textAlign:'center',target:widgetDefaultTarget(),label:'',doneText:'🎉'}; },
+};
+const WIDGET_DIMS = {
+  qr: {x:35,y:30,width:30}, clock: {x:25,y:40,width:50}, date: {x:15,y:43,width:70}, countdown: {x:15,y:38,width:70},
+};
+// Baut die Eingabefelder fuer ein Widget - dieselben Felder werden sowohl fuers Konfigurieren
+// VOR der Erzeugung (App.renderWidgetDraftForm(), fn='updateWidgetDraft') als auch fuers
+// Bearbeiten eines bereits bestehenden Widget-Elements (App.renderInspector(),
+// fn='updateQrProp'/'updateWidgetProp') genutzt, damit beide Formulare synchron bleiben.
+function widgetFieldsHtml(type, data, fn) {
+  const alignBtns = () => ['left','center','right'].map(a=>`<button onclick="App.${fn}('textAlign','${a}')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${data.textAlign===a?'background:rgba(99,102,241,0.25);border-color:rgba(99,102,241,0.4);':''}">${a==='left'?'⟸':a==='center'?'≡':'⟹'}</button>`).join('');
+  if (type==='qr') {
+    return `
+      <label class="ctrl-label">Inhalt (URL oder Text)</label>
+      <textarea oninput="App.${fn}('content',this.value)" style="height:50px;resize:vertical;font-size:11px;">${escapeHtmlEc(data.content)}</textarea>
+      <label class="ctrl-label" style="margin-top:8px;">Form der Module</label>
+      <div style="display:flex;gap:5px;">
+        <button onclick="App.${fn}('shape','square')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${data.shape==='square'?'background:rgba(99,102,241,0.25);border-color:rgba(99,102,241,0.4);':''}">◼ Eckig</button>
+        <button onclick="App.${fn}('shape','round')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${data.shape==='round'?'background:rgba(99,102,241,0.25);border-color:rgba(99,102,241,0.4);':''}">● Rund</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">
+        <div><label class="ctrl-label">Farbe</label><input type="color" value="${data.fgColor}" onchange="App.${fn}('fgColor',this.value)" style="height:32px;"></div>
+        <div><label class="ctrl-label">Hintergrundfarbe</label><input type="color" value="${data.bgColor}" onchange="App.${fn}('bgColor',this.value)" style="height:32px;${data.bgEnabled?'':'opacity:0.35;pointer-events:none;'}"></div>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;">
+        <label class="ctrl-label" style="margin:0;" title="Ohne Hintergrund scheint die Folien-Fläche durch die Ruhezone/zwischen den Modulen durch">Mit Hintergrund</label>
+        <input type="checkbox" ${data.bgEnabled?'checked':''} onchange="App.${fn}('bgEnabled',this.checked); App.renderInspector();" style="accent-color:#6366f1;width:15px;height:15px;">
+      </div>`;
+  }
+  if (type==='clock') {
+    return `
+      <label class="ctrl-label">Format</label>
+      <div style="display:flex;gap:5px;">
+        <button onclick="App.${fn}('format','24h')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${data.format==='24h'?'background:rgba(99,102,241,0.25);border-color:rgba(99,102,241,0.4);':''}">24h</button>
+        <button onclick="App.${fn}('format','12h')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${data.format==='12h'?'background:rgba(99,102,241,0.25);border-color:rgba(99,102,241,0.4);':''}">12h (AM/PM)</button>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;">
+        <label class="ctrl-label" style="margin:0;">Sekunden anzeigen</label>
+        <input type="checkbox" ${data.showSeconds?'checked':''} onchange="App.${fn}('showSeconds',this.checked)" style="accent-color:#6366f1;width:15px;height:15px;">
+      </div>
+      <label class="ctrl-label" style="margin-top:8px;">Ausrichtung</label>
+      <div style="display:flex;gap:5px;">${alignBtns()}</div>
+      <label class="ctrl-label" style="margin-top:8px;">Farbe</label>
+      <input type="color" value="${data.color}" onchange="App.${fn}('color',this.value)" style="height:32px;">`;
+  }
+  if (type==='date') {
+    return `
+      <label class="ctrl-label">Format</label>
+      <div style="display:flex;gap:5px;">
+        <button onclick="App.${fn}('format','long')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${data.format==='long'?'background:rgba(99,102,241,0.25);border-color:rgba(99,102,241,0.4);':''}">Lang</button>
+        <button onclick="App.${fn}('format','short')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${data.format==='short'?'background:rgba(99,102,241,0.25);border-color:rgba(99,102,241,0.4);':''}">Kurz</button>
+      </div>
+      <label class="ctrl-label" style="margin-top:8px;">Ausrichtung</label>
+      <div style="display:flex;gap:5px;">${alignBtns()}</div>
+      <label class="ctrl-label" style="margin-top:8px;">Farbe</label>
+      <input type="color" value="${data.color}" onchange="App.${fn}('color',this.value)" style="height:32px;">`;
+  }
+  if (type==='countdown') {
+    return `
+      <label class="ctrl-label">Ziel-Datum/Uhrzeit</label>
+      <input type="datetime-local" value="${escapeHtmlEc(data.target)}" onchange="App.${fn}('target',this.value)" style="width:100%;padding:7px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;font-size:12px;">
+      <label class="ctrl-label" style="margin-top:8px;">Beschriftung (optional, über dem Countdown)</label>
+      <input type="text" value="${escapeHtmlEc(data.label)}" oninput="App.${fn}('label',this.value)" placeholder="z.B. Bis zum Event" style="width:100%;padding:7px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;font-size:12px;">
+      <label class="ctrl-label" style="margin-top:8px;">Text nach Ablauf</label>
+      <input type="text" value="${escapeHtmlEc(data.doneText)}" oninput="App.${fn}('doneText',this.value)" style="width:100%;padding:7px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;font-size:12px;">
+      <label class="ctrl-label" style="margin-top:8px;">Ausrichtung</label>
+      <div style="display:flex;gap:5px;">${alignBtns()}</div>
+      <label class="ctrl-label" style="margin-top:8px;">Farbe</label>
+      <input type="color" value="${data.color}" onchange="App.${fn}('color',this.value)" style="height:32px;">`;
+  }
+  return '';
+}
 // Reiner Text-Formatierer, unabhaengig von S/App - dieselbe Funktion wird 1:1 (siehe
 // Export-Kopie in buildExportedDoc()) auch im fertigen, eigenstaendigen Praesentations-
 // Export genutzt.
@@ -1283,6 +1394,9 @@ const S = {
   editorAnimPlaying: false,
   editorAnimLoop: false,
   editorAnimStopTimer: null,
+  // Noch nicht auf der Folie erzeugtes Widget, gerade im Widgets-Tab konfiguriert (siehe
+  // App.startWidgetDraft()) - erst App.commitWidgetDraft() legt es tatsaechlich als Element an.
+  widgetDraft: null,
   activeTab: 'slides',
   addingWaypoint: false,
   installedFonts: [],
@@ -1554,11 +1668,13 @@ function renderTemplateElement(el, isEditor) {
 // Inspector (der nur dort im DOM sichtbar ist) sofort zu sehen ist - sonst landet die
 // Auswahl unbemerkt "im Hintergrund", wenn man z.B. gerade auf "Hintergrund" oder
 // "Folien" war und auf der Folie selbst doppelklickt.
+const WIDGET_ELEMENT_TYPES = ['qr','clock','date','countdown'];
 function selectElAndShowTab(el, wrapper) {
   document.querySelectorAll('.slide-el.selected-el').forEach(w => w.classList.remove('selected-el'));
   wrapper.classList.add('selected-el');
   S.selectedElementId = el.id;
-  App.setTab('elements');
+  S.widgetDraft = null; // ein gerade konfigurierter, noch nicht erzeugter Entwurf wird verworfen
+  App.setTab(WIDGET_ELEMENT_TYPES.includes(el.type) ? 'widgets' : 'elements');
   App.renderInspector();
   App.renderLayersList();
 }
@@ -1566,6 +1682,8 @@ function selectElAndShowTab(el, wrapper) {
 // wrapper-Klick-Handler in renderSlideContent()) - robuster als sich auf das native
 // 'dblclick'-Event zu verlassen.
 const _clickTrack = { id:null, time:0 };
+// Drag&Drop-Umsortieren in der Ebenen-Liste (siehe App.renderLayersList()/reorderLayer()).
+const _layerDrag = { id:null };
 const DBLCLICK_WINDOW_MS = 450;
 function renderSlideContent(slide, container, isEditor, stageEl) {
   container.innerHTML = '';
@@ -1599,11 +1717,11 @@ function renderSlideContent(slide, container, isEditor, stageEl) {
       div.innerText = el.content||'';
 
       if (isEditor) {
-        div.ondblclick = evt => {
-          evt.stopPropagation();
-          selectElAndShowTab(el, wrapper);
-          div.contentEditable='true'; div.focus();
-        };
+        // Kein eigenes ondblclick mehr hier - das Doppelklick-zum-Editieren laeuft
+        // ausschliesslich ueber den wrapper-Klick-Handler weiter unten (eigene, zeitbasierte
+        // Erkennung statt des nativen 'dblclick'-Events), damit es EIN einziger, unbedingter
+        // Mechanismus ist statt zwei parallel laufender, die sich potenziell ueberschneiden
+        // koennten.
         div.onblur = () => {
           div.contentEditable='false';
           el.content = div.innerText;
@@ -1616,12 +1734,6 @@ function renderSlideContent(slide, container, isEditor, stageEl) {
     } else if (el.type==='image') {
       const img=document.createElement('img');
       img.src=el.src; img.style.width='100%'; img.style.borderRadius='12px'; img.style.boxShadow='0 20px 60px rgba(0,0,0,0.5)';
-      if (isEditor) {
-        img.ondblclick = evt => {
-          evt.stopPropagation();
-          selectElAndShowTab(el, wrapper);
-        };
-      }
       wrapper.appendChild(img);
 
     } else if (el.type==='qr') {
@@ -1674,7 +1786,7 @@ function renderSlideContent(slide, container, isEditor, stageEl) {
       // Zeit-basierte Erkennung hier greift dann als verlaesslicher Ersatz.
       wrapper.addEventListener('click', evt => {
         evt.stopPropagation();
-        if (S.addingWaypoint) return;
+        if (S.addingWaypoint) return; // Klick platziert hier stattdessen einen Wegpunkt (siehe stage-Klick-Handler)
         if (_elDrag.movedFar) { _clickTrack.id=null; return; } // echter Drag, kein Klick
         const now=Date.now();
         const isSoftDblClick = _clickTrack.id===el.id && (now-_clickTrack.time)<DBLCLICK_WINDOW_MS;
@@ -1687,11 +1799,7 @@ function renderSlideContent(slide, container, isEditor, stageEl) {
           return;
         }
         if (S.selectedElementId === el.id) return;
-        document.querySelectorAll('.slide-el.selected-el').forEach(w => w.classList.remove('selected-el'));
-        wrapper.classList.add('selected-el');
-        S.selectedElementId = el.id;
-        App.renderInspector();
-        App.renderLayersList();
+        selectElAndShowTab(el, wrapper);
       });
     }
     container.appendChild(wrapper);
@@ -2064,7 +2172,10 @@ function startEditorCanvasLoop() {
     const dt=(t-lastT)/1000; lastT=t;
     if (S.editorAnimPlaying) _lastPos=tickBeam(S.beam, dt, spotCanvas.width, spotCanvas.height);
     const activeSlide=S.slides[S.activeSlideIndex];
-    drawSpotlight(spotCtx, _lastPos, {...S.beam, enabled: !activeSlide || activeSlide.beamEnabled!==false});
+    // Die Abdunkelung/der Lichtkreis verdeckt sonst die Folie beim Bearbeiten auf anderen
+    // Tabs (Text positionieren etc.) - nur sichtbar, waehrend der Spotlight-Tab selbst offen
+    // ist, wo man ohnehin genau daran arbeitet.
+    drawSpotlight(spotCtx, _lastPos, {...S.beam, enabled: S.activeTab==='spotlight' && (!activeSlide || activeSlide.beamEnabled!==false)});
     drawGlitter(glitCtx, _editorParticles, S.editorAnimPlaying ? S.glitter : {...S.glitter, speed:0});
     requestAnimationFrame(loop);
   }
@@ -2963,14 +3074,6 @@ const App = {
     this.render(); this.renderInspector();
   },
 
-  addQrElement() {
-    const slide=S.slides[S.activeSlideIndex];
-    const el={id:'el-'+Date.now(),type:'qr',content:'https://',shape:'square',fgColor:'#000000',bgColor:'#ffffff',bgEnabled:true,ecLevel:'M',x:35,y:30,width:30};
-    slide.elements.push(el);
-    S.selectedElementId=el.id;
-    this.render(); this.renderInspector();
-  },
-
   updateQrProp(key, val) {
     const slide=S.slides[S.activeSlideIndex];
     const el=slide?.elements.find(e=>e.id===S.selectedElementId);
@@ -2987,42 +3090,65 @@ const App = {
     }
   },
 
-  // ─── WIDGETS (Uhr/Datum/Countdown) ───
-  // Aktualisieren sich selbst per Sekunden-Timer (siehe tickWidgets()), muessen fuer die
-  // Anzeige selbst also nicht angefasst werden - nur bei einer echten Eigenschafts-
-  // aenderung (Farbe, Format, Ziel-Datum, ...) ruft der Inspector hier updateWidgetProp auf.
-  addClockElement() {
-    const slide=S.slides[S.activeSlideIndex];
-    const el={id:'el-'+Date.now(),type:'clock',fontFamily:'Inter, sans-serif',fontSize:56,color:'#ffffff',fontWeight:'700',textAlign:'center',format:'24h',showSeconds:true,x:25,y:40,width:50};
-    slide.elements.push(el);
-    S.selectedElementId=el.id;
-    this.render(); this.renderInspector();
-  },
-
-  addDateElement() {
-    const slide=S.slides[S.activeSlideIndex];
-    const el={id:'el-'+Date.now(),type:'date',fontFamily:'Inter, sans-serif',fontSize:30,color:'#ffffff',fontWeight:'600',textAlign:'center',format:'long',x:15,y:43,width:70};
-    slide.elements.push(el);
-    S.selectedElementId=el.id;
-    this.render(); this.renderInspector();
-  },
-
-  addCountdownElement() {
-    const slide=S.slides[S.activeSlideIndex];
-    const target=new Date(Date.now()+24*3600*1000);
-    target.setMinutes(target.getMinutes()-target.getTimezoneOffset()); // lokale Zeit statt UTC im datetime-local-Feld
-    const el={id:'el-'+Date.now(),type:'countdown',fontFamily:'Inter, sans-serif',fontSize:52,color:'#ffffff',fontWeight:'700',textAlign:'center',target:target.toISOString().slice(0,16),label:'',doneText:'🎉',x:15,y:38,width:70};
-    slide.elements.push(el);
-    S.selectedElementId=el.id;
-    this.render(); this.renderInspector();
-  },
-
   updateWidgetProp(key, val) {
     const slide=S.slides[S.activeSlideIndex];
     const el=slide?.elements.find(e=>e.id===S.selectedElementId);
     if (!el) return;
     el[key]=val;
     this.render();
+  },
+
+  // ─── WIDGETS (QR/Uhr/Datum/Countdown) - eigener Tab, Konfiguration VOR der Erzeugung ───
+  // Ein Widget wird erst nach App.commitWidgetDraft() tatsaechlich als Folienelement
+  // angelegt - bis dahin lebt sein Zustand nur in S.widgetDraft (siehe startWidgetDraft()).
+  // Aktualisieren sich nach der Erzeugung selbst per Sekunden-Timer (siehe tickWidgets()).
+  startWidgetDraft(type) {
+    S.selectedElementId=null;
+    S.widgetDraft={ type, ...JSON.parse(JSON.stringify(WIDGET_DEFAULTS[type])) };
+    this.renderInspector();
+  },
+
+  updateWidgetDraft(key, val) {
+    if (!S.widgetDraft) return;
+    S.widgetDraft[key]=val;
+    this.renderWidgetDraftForm();
+  },
+
+  cancelWidgetDraft() {
+    S.widgetDraft=null;
+    this.renderInspector();
+  },
+
+  commitWidgetDraft() {
+    if (!S.widgetDraft) return;
+    const slide=S.slides[S.activeSlideIndex];
+    const dims=WIDGET_DIMS[S.widgetDraft.type]||{x:20,y:40,width:50};
+    const el={id:'el-'+Date.now(), ...S.widgetDraft, ...dims};
+    slide.elements.push(el);
+    S.selectedElementId=el.id;
+    S.widgetDraft=null;
+    this.render();
+    this.renderInspector();
+  },
+
+  renderWidgetDraftForm() {
+    const form=document.getElementById('widget-draft-form');
+    if (!form) return;
+    if (!S.widgetDraft) { form.innerHTML=''; return; }
+    const d=S.widgetDraft;
+    const titles={qr:'QR-Code',clock:'Uhr',date:'Datumsanzeige',countdown:'Countdown'};
+    form.innerHTML=`
+      <div class="ctrl-section" style="margin-top:10px;">
+        <div class="ctrl-section-title">${titles[d.type]} einrichten</div>
+        ${widgetFieldsHtml(d.type, d, 'updateWidgetDraft')}
+        <div style="display:flex;gap:6px;margin-top:10px;">
+          <button onclick="App.cancelWidgetDraft()" class="btn-sm" style="flex:1;justify-content:center;">Abbrechen</button>
+          <button onclick="App.commitWidgetDraft()" class="btn-sm accent" style="flex:1;justify-content:center;">
+            <i data-lucide="check" style="width:12px;height:12px;"></i> Erstellen
+          </button>
+        </div>
+      </div>`;
+    lucide.createIcons();
   },
 
   handleImageUpload(evt) {
@@ -3116,15 +3242,55 @@ const App = {
       else if (el.type==='template') { icon='◧'; label='Vorlage: '+el.template; }
       const item=document.createElement('div');
       item.className='layer-item'+(S.selectedElementId===el.id?' selected-layer':'');
+      item.draggable=true;
       item.innerHTML=`
+        <span class="layer-drag-handle" title="Ziehen zum Sortieren">⠿</span>
         <span>${icon}</span>
         <span class="layer-label">${escapeHtmlEc(label)}</span>
         <button type="button" class="btn-sm layer-order-btn" title="Nach vorne"${i===n-1?' disabled style="opacity:0.3;"':''}>▲</button>
         <button type="button" class="btn-sm layer-order-btn" title="Nach hinten"${i===0?' disabled style="opacity:0.3;"':''}>▼</button>`;
-      item.addEventListener('click', () => { S.selectedElementId=el.id; this.render(); this.renderInspector(); });
+      item.addEventListener('click', () => {
+        S.selectedElementId=el.id;
+        S.widgetDraft=null;
+        App.setTab(WIDGET_ELEMENT_TYPES.includes(el.type) ? 'widgets' : 'elements');
+        this.render();
+        this.renderInspector();
+      });
       const [upBtn, downBtn] = item.querySelectorAll('.layer-order-btn');
       upBtn.addEventListener('click', e => { e.stopPropagation(); this.moveLayer(el.id, 1); });
       downBtn.addEventListener('click', e => { e.stopPropagation(); this.moveLayer(el.id, -1); });
+
+      // Drag & Drop zum Umsortieren - Alternative zu den ▲/▼-Knoepfen oben, gerade bei
+      // groesseren Sprüngen (viele Elemente) schneller als mehrfach klicken.
+      item.addEventListener('dragstart', e => {
+        _layerDrag.id=el.id;
+        item.classList.add('dragging');
+        e.dataTransfer.effectAllowed='move';
+      });
+      item.addEventListener('dragend', () => {
+        item.classList.remove('dragging');
+        list.querySelectorAll('.layer-item').forEach(x=>x.classList.remove('drag-over-top','drag-over-bottom'));
+      });
+      item.addEventListener('dragover', e => {
+        e.preventDefault();
+        if (_layerDrag.id===el.id) return;
+        const rect=item.getBoundingClientRect();
+        const before=(e.clientY-rect.top)<rect.height/2;
+        item.classList.toggle('drag-over-top', before);
+        item.classList.toggle('drag-over-bottom', !before);
+      });
+      item.addEventListener('dragleave', () => item.classList.remove('drag-over-top','drag-over-bottom'));
+      item.addEventListener('drop', e => {
+        e.preventDefault();
+        item.classList.remove('drag-over-top','drag-over-bottom');
+        const draggedId=_layerDrag.id;
+        _layerDrag.id=null;
+        if (!draggedId || draggedId===el.id) return;
+        const rect=item.getBoundingClientRect();
+        const before=(e.clientY-rect.top)<rect.height/2;
+        this.reorderLayer(draggedId, el.id, before);
+      });
+
       list.appendChild(item);
     }
   },
@@ -3139,14 +3305,68 @@ const App = {
     this.render();
   },
 
+  // Ebenen-Liste zeigt oben=Vordergrund (hoher Array-Index), unten=Hintergrund (niedriger
+  // Array-Index) - siehe renderLayersList()s ruecklaeufige Schleife. Ein Drop VOR (visuell
+  // ueber) dem Ziel landet damit NACH dessen Index im Array (naeher am Vordergrund), ein
+  // Drop danach (visuell darunter) VOR dessen Index.
+  reorderLayer(draggedId, targetId, before) {
+    const slide=S.slides[S.activeSlideIndex];
+    if (!slide) return;
+    const arr=slide.elements;
+    const fromIdx=arr.findIndex(e=>e.id===draggedId);
+    if (fromIdx<0) return;
+    const [dragged]=arr.splice(fromIdx,1);
+    const targetIdx=arr.findIndex(e=>e.id===targetId);
+    if (targetIdx<0) { arr.push(dragged); this.render(); return; }
+    arr.splice(before?targetIdx+1:targetIdx, 0, dragged);
+    this.render();
+  },
+
   renderInspector() {
     const panel=document.getElementById('element-inspector');
-    if (!panel) return;
+    const widgetPanel=document.getElementById('widget-inspector');
     const slide=S.slides[S.activeSlideIndex];
     const el=slide?.elements.find(e=>e.id===S.selectedElementId);
+    const WIDGET_TYPES=['qr','clock','date','countdown'];
+    const isWidget = el && WIDGET_TYPES.includes(el.type);
 
-    if (!el) {
+    // Widgets-Tab: entweder ein bestehendes, ausgewaehltes Widget bearbeiten, oder - falls
+    // gerade eines im Widgets-Tab konfiguriert wird (S.widgetDraft) - das Entwurfsformular
+    // zeigen (siehe renderWidgetDraftForm(), das dieselben Felder wie hier unten nutzt).
+    if (widgetPanel) {
+      if (isWidget) {
+        const titles={qr:'QR-Code',clock:'Uhr',date:'Datumsanzeige',countdown:'Countdown'};
+        const fn = el.type==='qr' ? 'updateQrProp' : 'updateWidgetProp';
+        let warningHtml='';
+        if (el.type==='qr') {
+          const qrBg = el.bgEnabled ? el.bgColor : (slide.background.solidColor || slide.background.grainy?.colors?.bg || '#ffffff');
+          const qrRatio = contrastRatio(el.fgColor, qrBg);
+          warningHtml=`<p id="qr-contrast-warning" style="display:${qrRatio<3?'block':'none'};font-size:10px;color:#fca5a5;margin:8px 0 0;">⚠️ Kontrast zwischen Farbe und Hintergrund evtl. zu gering - der Code könnte schwer lesbar sein.</p>`;
+        }
+        widgetPanel.innerHTML=`
+          <div class="ctrl-section">
+            <div class="ctrl-section-title">${titles[el.type]}-Widget</div>
+            ${widgetFieldsHtml(el.type, el, fn)}
+            <label class="ctrl-label" style="margin-top:8px;">Breite (%)</label>
+            <input type="range" min="10" max="100" value="${el.width}" oninput="App.updateElProp('width',parseInt(this.value))">
+            ${warningHtml}
+            <button onclick="App.deleteSelectedEl()" class="btn-sm danger" style="width:100%;justify-content:center;margin-top:10px;">
+              <i data-lucide="trash-2" style="width:11px;height:11px;"></i> ${titles[el.type]} löschen
+            </button>
+          </div>`;
+      } else if (!S.widgetDraft) {
+        widgetPanel.innerHTML=`<p style="font-size:11px;color:rgba(148,163,184,0.6);font-style:italic;text-align:center;padding:20px 0;">Klicke auf ein Widget der Folie oder in der Ebenen-Liste (Elemente-Tab), um es zu bearbeiten.</p>`;
+      } else {
+        widgetPanel.innerHTML='';
+      }
+      if (S.widgetDraft) this.renderWidgetDraftForm();
+      else { const df=document.getElementById('widget-draft-form'); if (df) df.innerHTML=''; }
+    }
+
+    if (!panel) { lucide.createIcons(); return; }
+    if (!el || isWidget) {
       panel.innerHTML=`<p style="font-size:11px;color:rgba(148,163,184,0.55);font-style:italic;text-align:center;padding:20px 0;">Klicke auf ein Element auf der Folie.</p>`;
+      lucide.createIcons();
       return;
     }
 
@@ -3213,108 +3433,6 @@ const App = {
           <input type="range" min="10" max="100" value="${el.width}" oninput="App.updateElProp('width',parseInt(this.value))">
           <button onclick="App.deleteSelectedEl()" class="btn-sm danger" style="width:100%;justify-content:center;margin-top:10px;">
             <i data-lucide="trash-2" style="width:11px;height:11px;"></i> Bild löschen
-          </button>
-        </div>`;
-    } else if (el.type==='qr') {
-      const qrBg = el.bgEnabled ? el.bgColor : (slide.background.solidColor || slide.background.grainy?.colors?.bg || '#ffffff');
-      const qrRatio = contrastRatio(el.fgColor, qrBg);
-      panel.innerHTML=`
-        <div class="ctrl-section">
-          <div class="ctrl-section-title">QR-Code-Element</div>
-          <label class="ctrl-label">Inhalt (URL oder Text)</label>
-          <textarea oninput="App.updateQrProp('content',this.value)" style="height:50px;resize:vertical;font-size:11px;">${escapeHtmlEc(el.content)}</textarea>
-          <label class="ctrl-label" style="margin-top:8px;">Form der Module</label>
-          <div style="display:flex;gap:5px;">
-            <button onclick="App.updateQrProp('shape','square')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${el.shape==='square'?'background:rgba(99,102,241,0.25);border-color:rgba(99,102,241,0.4);':''}">◼ Eckig</button>
-            <button onclick="App.updateQrProp('shape','round')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${el.shape==='round'?'background:rgba(99,102,241,0.25);border-color:rgba(99,102,241,0.4);':''}">● Rund</button>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">
-            <div>
-              <label class="ctrl-label">Farbe</label>
-              <input type="color" value="${el.fgColor}" onchange="App.updateQrProp('fgColor',this.value)" style="height:32px;">
-            </div>
-            <div>
-              <label class="ctrl-label">Hintergrundfarbe</label>
-              <input type="color" value="${el.bgColor}" onchange="App.updateQrProp('bgColor',this.value)" style="height:32px;${el.bgEnabled?'':'opacity:0.35;pointer-events:none;'}">
-            </div>
-          </div>
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;">
-            <label class="ctrl-label" style="margin:0;" title="Ohne Hintergrund scheint die Folien-Fläche durch die Ruhezone/zwischen den Modulen durch">Mit Hintergrund</label>
-            <input type="checkbox" ${el.bgEnabled?'checked':''} onchange="App.updateQrProp('bgEnabled',this.checked); App.renderInspector();" style="accent-color:#6366f1;width:15px;height:15px;">
-          </div>
-          <label class="ctrl-label" style="margin-top:8px;">Breite (%)</label>
-          <input type="range" min="10" max="100" value="${el.width}" oninput="App.updateElProp('width',parseInt(this.value))">
-          <p id="qr-contrast-warning" style="display:${qrRatio<3?'block':'none'};font-size:10px;color:#fca5a5;margin:8px 0 0;">⚠️ Kontrast zwischen Farbe und Hintergrund evtl. zu gering - der Code könnte schwer lesbar sein.</p>
-          <button onclick="App.deleteSelectedEl()" class="btn-sm danger" style="width:100%;justify-content:center;margin-top:10px;">
-            <i data-lucide="trash-2" style="width:11px;height:11px;"></i> QR-Code löschen
-          </button>
-        </div>`;
-    } else if (el.type==='clock') {
-      panel.innerHTML=`
-        <div class="ctrl-section">
-          <div class="ctrl-section-title">Uhr-Widget</div>
-          <label class="ctrl-label">Format</label>
-          <div style="display:flex;gap:5px;">
-            <button onclick="App.updateWidgetProp('format','24h')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${el.format==='24h'?'background:rgba(99,102,241,0.25);border-color:rgba(99,102,241,0.4);':''}">24h</button>
-            <button onclick="App.updateWidgetProp('format','12h')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${el.format==='12h'?'background:rgba(99,102,241,0.25);border-color:rgba(99,102,241,0.4);':''}">12h (AM/PM)</button>
-          </div>
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;">
-            <label class="ctrl-label" style="margin:0;">Sekunden anzeigen</label>
-            <input type="checkbox" ${el.showSeconds?'checked':''} onchange="App.updateWidgetProp('showSeconds',this.checked)" style="accent-color:#6366f1;width:15px;height:15px;">
-          </div>
-          <label class="ctrl-label" style="margin-top:8px;">Ausrichtung</label>
-          <div style="display:flex;gap:5px;">
-            ${['left','center','right'].map(a=>`<button onclick="App.updateWidgetProp('textAlign','${a}')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${el.textAlign===a?'background:rgba(99,102,241,0.25);border-color:rgba(99,102,241,0.4);':''}">${a==='left'?'⟸':a==='center'?'≡':'⟹'}</button>`).join('')}
-          </div>
-          <label class="ctrl-label" style="margin-top:8px;">Farbe</label>
-          <input type="color" value="${el.color}" onchange="App.updateWidgetProp('color',this.value)" style="height:32px;">
-          <label class="ctrl-label" style="margin-top:8px;">Breite (%)</label>
-          <input type="range" min="10" max="100" value="${el.width}" oninput="App.updateElProp('width',parseInt(this.value))">
-          <button onclick="App.deleteSelectedEl()" class="btn-sm danger" style="width:100%;justify-content:center;margin-top:10px;">
-            <i data-lucide="trash-2" style="width:11px;height:11px;"></i> Uhr löschen
-          </button>
-        </div>`;
-    } else if (el.type==='date') {
-      panel.innerHTML=`
-        <div class="ctrl-section">
-          <div class="ctrl-section-title">Datums-Widget</div>
-          <label class="ctrl-label">Format</label>
-          <div style="display:flex;gap:5px;">
-            <button onclick="App.updateWidgetProp('format','long')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${el.format==='long'?'background:rgba(99,102,241,0.25);border-color:rgba(99,102,241,0.4);':''}">Lang</button>
-            <button onclick="App.updateWidgetProp('format','short')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${el.format==='short'?'background:rgba(99,102,241,0.25);border-color:rgba(99,102,241,0.4);':''}">Kurz</button>
-          </div>
-          <label class="ctrl-label" style="margin-top:8px;">Ausrichtung</label>
-          <div style="display:flex;gap:5px;">
-            ${['left','center','right'].map(a=>`<button onclick="App.updateWidgetProp('textAlign','${a}')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${el.textAlign===a?'background:rgba(99,102,241,0.25);border-color:rgba(99,102,241,0.4);':''}">${a==='left'?'⟸':a==='center'?'≡':'⟹'}</button>`).join('')}
-          </div>
-          <label class="ctrl-label" style="margin-top:8px;">Farbe</label>
-          <input type="color" value="${el.color}" onchange="App.updateWidgetProp('color',this.value)" style="height:32px;">
-          <label class="ctrl-label" style="margin-top:8px;">Breite (%)</label>
-          <input type="range" min="10" max="100" value="${el.width}" oninput="App.updateElProp('width',parseInt(this.value))">
-          <button onclick="App.deleteSelectedEl()" class="btn-sm danger" style="width:100%;justify-content:center;margin-top:10px;">
-            <i data-lucide="trash-2" style="width:11px;height:11px;"></i> Datumsanzeige löschen
-          </button>
-        </div>`;
-    } else if (el.type==='countdown') {
-      panel.innerHTML=`
-        <div class="ctrl-section">
-          <div class="ctrl-section-title">Countdown-Widget</div>
-          <label class="ctrl-label">Ziel-Datum/Uhrzeit</label>
-          <input type="datetime-local" value="${escapeHtmlEc(el.target)}" onchange="App.updateWidgetProp('target',this.value)" style="width:100%;padding:7px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;font-size:12px;">
-          <label class="ctrl-label" style="margin-top:8px;">Beschriftung (optional, über dem Countdown)</label>
-          <input type="text" value="${escapeHtmlEc(el.label)}" oninput="App.updateWidgetProp('label',this.value)" placeholder="z.B. Bis zum Event" style="width:100%;padding:7px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;font-size:12px;">
-          <label class="ctrl-label" style="margin-top:8px;">Text nach Ablauf</label>
-          <input type="text" value="${escapeHtmlEc(el.doneText)}" oninput="App.updateWidgetProp('doneText',this.value)" style="width:100%;padding:7px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;font-size:12px;">
-          <label class="ctrl-label" style="margin-top:8px;">Ausrichtung</label>
-          <div style="display:flex;gap:5px;">
-            ${['left','center','right'].map(a=>`<button onclick="App.updateWidgetProp('textAlign','${a}')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${el.textAlign===a?'background:rgba(99,102,241,0.25);border-color:rgba(99,102,241,0.4);':''}">${a==='left'?'⟸':a==='center'?'≡':'⟹'}</button>`).join('')}
-          </div>
-          <label class="ctrl-label" style="margin-top:8px;">Farbe</label>
-          <input type="color" value="${el.color}" onchange="App.updateWidgetProp('color',this.value)" style="height:32px;">
-          <label class="ctrl-label" style="margin-top:8px;">Breite (%)</label>
-          <input type="range" min="10" max="100" value="${el.width}" oninput="App.updateElProp('width',parseInt(this.value))">
-          <button onclick="App.deleteSelectedEl()" class="btn-sm danger" style="width:100%;justify-content:center;margin-top:10px;">
-            <i data-lucide="trash-2" style="width:11px;height:11px;"></i> Countdown löschen
           </button>
         </div>`;
     } else if (el.type==='template') {
@@ -3896,6 +4014,15 @@ function encodeQR(text,ecLevelKey){
   return{size,modules:best.matrix,version};
 }
 function isQrFinderCell(size,r,c){return(r<7&&c<7)||(r<7&&c>=size-7)||(r>=size-7&&c<7);}
+function qrRoundedRectPath(ctx,x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);
+  ctx.arcTo(x,y,x+w,y,r);
+  ctx.closePath();
+}
 function renderQrToCanvas(canvas,text,opts){
   const o=opts||{};
   const shape=o.shape||'square',fgColor=o.fgColor||'#000000',bgColor=o.bgColor||'#ffffff',bgEnabled=o.bgEnabled!==false,ecLevel=o.ecLevel||'M';
@@ -3911,7 +4038,8 @@ function renderQrToCanvas(canvas,text,opts){
   for(let r=0;r<size;r++)for(let c=0;c<size;c++){
     if(!modules[r][c])continue;
     const x=(c+quiet)*modulePx,y=(r+quiet)*modulePx;
-    if(shape==='round'&&!isQrFinderCell(size,r,c)){ctx.beginPath();ctx.arc(x+modulePx/2,y+modulePx/2,modulePx*0.46,0,Math.PI*2);ctx.fill();}
+    if(shape==='round'&&isQrFinderCell(size,r,c)){qrRoundedRectPath(ctx,x,y,modulePx,modulePx,modulePx*0.35);ctx.fill();}
+    else if(shape==='round'){ctx.beginPath();ctx.arc(x+modulePx/2,y+modulePx/2,modulePx*0.46,0,Math.PI*2);ctx.fill();}
     else{ctx.fillRect(x,y,modulePx,modulePx);}
   }
 }
@@ -4084,8 +4212,9 @@ window.addEventListener('keydown',e=>{
             <span>${it.mtime?new Date(it.mtime*1000).toLocaleDateString('de-DE'):''}</span>
           </div>
         </div>
-        <div style="border-top:1px solid rgba(255,255,255,0.08);margin-top:6px;">
-          <button type="button" class="ec-gallery-rename" style="width:100%;background:none;border:none;color:#94a3b8;font-size:11px;padding:8px;cursor:pointer;">✎ Umbenennen</button>
+        <div style="border-top:1px solid rgba(255,255,255,0.08);margin-top:6px;display:flex;">
+          <button type="button" class="ec-gallery-rename" style="flex:1;background:none;border:none;border-right:1px solid rgba(255,255,255,0.08);color:#94a3b8;font-size:11px;padding:8px;cursor:pointer;">✎ Umbenennen</button>
+          <button type="button" class="ec-gallery-delete" style="flex:1;background:none;border:none;color:#fca5a5;font-size:11px;padding:8px;cursor:pointer;">🗑 Löschen</button>
         </div>
       </div>`).join('');
 
@@ -4094,12 +4223,16 @@ window.addEventListener('keydown',e=>{
       const item=items.find(i=>i.filename===file);
       if (!item) return;
       card.addEventListener('click', evt => {
-        if (evt.target.closest('.ec-gallery-rename')) return;
+        if (evt.target.closest('.ec-gallery-rename') || evt.target.closest('.ec-gallery-delete')) return;
         this.galleryOpen(item);
       });
       card.querySelector('.ec-gallery-rename').addEventListener('click', evt => {
         evt.stopPropagation();
         this.galleryRenamePrompt(item, card);
+      });
+      card.querySelector('.ec-gallery-delete').addEventListener('click', evt => {
+        evt.stopPropagation();
+        this.galleryDeletePrompt(item, card);
       });
     });
     lucide.createIcons();
@@ -4123,6 +4256,24 @@ window.addEventListener('keydown',e=>{
         if (titleEl) titleEl.textContent=data.title;
       })
       .catch(err=>alert('❌ Konnte nicht umbenennen:\n'+err.message));
+  },
+
+  galleryDeletePrompt(item, card) {
+    if (!confirm('"'+item.title+'" wirklich unwiderruflich löschen?')) return;
+    const fd=new FormData();
+    fd.append('file', item.filename);
+    fd.append('eyecandy_token', S.launchToken);
+    fetch('bento.php?api=delete_eyecandy', { method:'POST', body: fd })
+      .then(r=>r.json().catch(()=>{ throw new Error('Antwort war kein gueltiges JSON.'); }))
+      .then(data=>{
+        if (!data.ok) throw new Error(data.error||'Konnte nicht löschen.');
+        card.remove();
+        const grid=document.getElementById('ec-gallery-grid');
+        if (grid && !grid.querySelector('.ec-gallery-card')) {
+          grid.innerHTML=`<p style="grid-column:1/-1;text-align:center;color:rgba(148,163,184,0.6);padding:40px 0;">Noch keine gespeicherten Präsentationen - auf "+ Neu" klicken, um loszulegen.</p>`;
+        }
+      })
+      .catch(err=>alert('❌ Konnte nicht löschen:\n'+err.message));
   },
 
   galleryStartNew() {
@@ -4192,6 +4343,18 @@ window.addEventListener('keydown',e=>{
   // HTML-Datei - dieser Knopf macht lediglich einen ganz normalen fetch() zu bento.php.
   saveToServer() {
     if (!S.launchToken) return;
+    // Beim ALLERERSTEN Speichern (noch keine Datei auf dem Server) muss die Präsentation
+    // gleich einen Namen bekommen, statt stillschweigend als "Neue Präsentation" abgelegt zu
+    // werden und erst spaeter in der Übersicht umbenannt werden zu muessen. Bei jedem
+    // weiteren Speichern (S.currentFilename bereits gesetzt) wird NICHT erneut gefragt - das
+    // ueberschreibt einfach dieselbe, schon benannte Datei.
+    if (!S.currentFilename) {
+      const name=prompt('Wie soll diese Präsentation heißen?', S.title);
+      if (name===null) return; // abgebrochen
+      const trimmed=name.trim();
+      if (trimmed==='') { alert('Bitte einen Namen eingeben.'); return; }
+      S.title=trimmed;
+    }
     const btn=document.getElementById('save-server-btn');
     const origHtml=btn.innerHTML;
     btn.disabled=true; btn.innerHTML='… speichert';

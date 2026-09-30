@@ -563,6 +563,34 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_GET['api'] ?? '') ===
     exit;
 }
 
+// Loeschen einer gespeicherten EyeCandy-Praesentation aus der Übersicht (siehe
+// App.galleryDelete() in eyecandy.html) - analog zu ?api=delete_deck oben, nur auf
+// eyecandy_-Dateien beschraenkt und mit demselben Token-Abgleich wie beim Speichern/
+// Umbenennen (eyecandy.html hat keine eigene Login-Session, die das sonst absichern wuerde).
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_GET['api'] ?? '') === 'delete_eyecandy') {
+    header('Content-Type: application/json');
+    if (!eyecandyCheckToken((string)($_POST['eyecandy_token'] ?? ''))) {
+        http_response_code(403);
+        echo json_encode(['ok' => false, 'error' => 'Ungueltiges Token.']);
+        exit;
+    }
+    $dir = 'media/bentos';
+    $safeFile = basename((string)($_POST['file'] ?? ''));
+    $path = $dir . '/' . $safeFile;
+    if ($safeFile === '' || strpos($safeFile, 'eyecandy_') !== 0 || !is_file($path)) {
+        http_response_code(404);
+        echo json_encode(['ok' => false, 'error' => 'Datei nicht gefunden.']);
+        exit;
+    }
+    if (!@unlink($path)) {
+        http_response_code(500);
+        echo json_encode(['ok' => false, 'error' => 'Konnte Datei nicht löschen.']);
+        exit;
+    }
+    echo json_encode(['ok' => true]);
+    exit;
+}
+
 /**
  * bento-pronto — a self-hostable, single-PHP-file version of the
  * PPTX→Bento converter (bento-moodle-tools' own template.html), with one
