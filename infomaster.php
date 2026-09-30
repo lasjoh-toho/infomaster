@@ -32,12 +32,12 @@ $allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf', 'mp4'];
 $archiveFolders = ['Archiv Hoch', 'Archiv Quer'];
 // Interne Ablagen von bento-pronto (editierbare Praesentationen bzw. schreibgeschuetzte
 // Kiosk-Exporte) - werden ausschliesslich ueber bento.php selbst verwaltet (Deck-Banner
-// dort), tauchen daher weder in der "Globale Ordner-Verwaltung" noch in der Monitor-
+// dort), tauchen daher weder in der "Ordner-Verwaltung" noch in der Monitor-
 // Inhalts-Auswahl auf (dort waeren sie ohnehin nicht sinnvoll nutzbar).
 $bentoManagedFolders = ['bentos', 'bento-pronto'];
 // Native (nicht umgewandelte) PDFs - siehe storeNativePdf(). Enthalten ganze PDF-Dateien
-// statt einzelner Bilder, tauchen daher weder in der generischen "Globale
-// Ordner-Verwaltung" noch im Ordner-Dropdown der Monitor-Inhaltsauswahl auf (dort waere
+// statt einzelner Bilder, tauchen daher weder in der generischen
+// "Ordner-Verwaltung" noch im Ordner-Dropdown der Monitor-Inhaltsauswahl auf (dort waere
 // eine PDF als "Ordnerinhalt einer Bild-Slideshow" nicht sinnvoll abspielbar) - eigener
 // Abschnitt mit eigenem Renderer (renderPdfFileList()) und eigenes Auswahlfeld je Monitor
 // ("PDF: <Datei>", siehe dortiges modeA/modeB).
@@ -2311,7 +2311,18 @@ function renderAjaxBootstrap() {
     syncHeadStyles(newDoc);
     Array.prototype.forEach.call(Array.prototype.slice.call(document.body.attributes), function(a){ document.body.removeAttribute(a.name); });
     Array.prototype.forEach.call(newDoc.body.attributes, function(a){ document.body.setAttribute(a.name, a.value); });
+    // Aufgeklappte Akkordions (z.B. ein Ordner der Ordner-Verwaltung, aus dessen Datei-Ansicht
+    // heraus gerade geloescht/verschoben wurde) nach dem Austausch wieder aufklappen.
+    var openAcc = Array.prototype.filter.call(document.querySelectorAll('.accordion-content[id]'), function(c){ return c.style.display === 'block'; }).map(function(c){ return c.id; });
     document.body.innerHTML = newDoc.body.innerHTML;
+    openAcc.forEach(function(id){
+      var c = document.getElementById(id);
+      if (!c) return;
+      c.style.display = 'block';
+      var btn = c.previousElementSibling;
+      var ic = btn && (btn.querySelector('.acc-icon') || btn.querySelector('[id$="AccIcon"], #accIcon'));
+      if (ic) ic.innerText = '➖ Zuklappen';
+    });
     // Kopf-Skripte (Funktionsdefinitionen wie toggleInput/applyPresetIfMatch) IMMER erneut
     // ausfuehren - wichtig z.B. direkt nach dem Login, wo die Dashboard-Funktionen vorher
     // noch nie geladen wurden. Nur Funktionsdeklarationen dort (kein top-level const/let
@@ -2560,11 +2571,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $dir = $uploadBase . $safeFolder;
         if(is_dir($dir) && $safeFolder !== "") { array_map('unlink', glob("$dir/*.*")); @rmdir($dir); }
     }
+    // Nur echte Unterordner von media/ - basename() allein laesst ".." durch.
+    $mediaFolderNames = array_map('basename', array_filter(glob($uploadBase . '*') ?: [], 'is_dir'));
     if (!empty($_POST['del_file']) && !empty($_POST['from_folder'])) {
         $safeFile = basename($_POST['del_file']);
         $safeFolder = basename($_POST['from_folder']);
         $targetPath = $uploadBase . $safeFolder . "/" . $safeFile;
-        if(file_exists($targetPath)) unlink($targetPath);
+        if (in_array($safeFolder, $mediaFolderNames, true) && is_file($targetPath)) unlink($targetPath);
     }
     // Statt eines Bildes aus einem normalen Inhalts-Ordner endgueltig zu loeschen: in eines
     // der beiden festen Archiv-Ordner verschieben (nach Ausrichtung sortiert) - das Bild
@@ -2613,6 +2626,86 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 }
                 @rename($srcPath, $destPath);
             }
+        }
+    }
+    // Verschieben aus dem Datei-Ansicht-Modal der Ordner-Verwaltung (Knoepfe "Ins Archiv" und
+    // "Verschieben nach ..."): beliebiger Ordner der Ordner-Verwaltung als Ziel, aber nur
+    // passend zum Dateityp - PDFs nur in die PDF- oder Archiv-Ordner, alles andere nie in die
+    // PDF-Ordner (dort waere es als Monitor-Inhalt nicht auswaehlbar). Bento-Ablagen bleiben tabu.
+    if (!empty($_POST['move_file']) && !empty($_POST['from_folder']) && !empty($_POST['to_folder'])) {
+        $safeFile = basename($_POST['move_file']);
+        $safeFolder = basename($_POST['from_folder']);
+        $toFolder = basename($_POST['to_folder']);
+        $srcPath = $uploadBase . $safeFolder . '/' . $safeFile;
+        $destDir = $uploadBase . $toFolder;
+        $isPdfFile = strtolower(pathinfo($safeFile, PATHINFO_EXTENSION)) === 'pdf';
+        $typeOk = $isPdfFile
+            ? (in_array($toFolder, $pdfFolders, true) || in_array($toFolder, $archiveFolders, true))
+            : !in_array($toFolder, $pdfFolders, true);
+        if ($typeOk && $toFolder !== $safeFolder
+            && in_array($toFolder, $mediaFolderNames, true) && in_array($safeFolder, $mediaFolderNames, true)
+            && !in_array($toFolder, $bentoManagedFolders, true)
+            && !in_array($safeFolder, $bentoManagedFolders, true)
+            && is_file($srcPath) && is_dir($destDir)) {
+            $destPath = $destDir . '/' . $safeFile;
+            if (file_exists($destPath)) {
+                $ext = pathinfo($safeFile, PATHINFO_EXTENSION);
+                $base = pathinfo($safeFile, PATHINFO_FILENAME);
+                $destPath = $destDir . '/' . $base . '_' . date('Ymd_His') . ($ext !== '' ? '.' . $ext : '');
+            }
+            if (@rename($srcPath, $destPath)) {
+                setFlashMessage(in_array($toFolder, $archiveFolders, true)
+                    ? '📦 In "' . $toFolder . '" verschoben'
+                    : '➜ Nach "' . $toFolder . '" verschoben', 'success');
+            } else {
+                setFlashMessage('❌ Datei konnte nicht verschoben werden', 'error');
+            }
+        } else {
+            setFlashMessage('❌ Verschieben nicht möglich (Ziel passt nicht zum Dateityp)', 'error');
+        }
+    }
+    // Import aus dem Kopfzeilen-Modal (Drag&Drop auf die Kopfzeile oder "📥 Datei hinzufügen"):
+    // pro Datei ein Request mit dem im Modal gewaehlten Ziel. "__auto__" = bisheriges
+    // automatisches Einsortieren nach Ausrichtung (PDF -> "PDF Hoch/Quer", Bild -> "Hoch/Quer"),
+    // sonst ein konkreter Ordner der Ordner-Verwaltung (gleiche Typ-Regeln wie bei move_file).
+    // "Nicht speichern" schickt der Client gar nicht erst ab.
+    if (!empty($_FILES['import_file']['name']) && isset($_POST['import_target'])) {
+        $origName = $_FILES['import_file']['name'];
+        $ext = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
+        $isPdfFile = $ext === 'pdf';
+        $isImageFile = in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp'], true);
+        $target = (string)$_POST['import_target'];
+        $storedIn = false;
+        if (($_FILES['import_file']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK && ($isPdfFile || $isImageFile)) {
+            $tmp = $_FILES['import_file']['tmp_name'];
+            if ($target === '__auto__') {
+                $storedIn = $isPdfFile ? storeNativePdf($tmp, $origName, $uploadBase) : storeRoutedImage($tmp, $origName, $uploadBase);
+            } else {
+                $toFolder = basename($target);
+                $destDir = $uploadBase . $toFolder;
+                $typeOk = $isPdfFile
+                    ? (in_array($toFolder, $pdfFolders, true) || in_array($toFolder, $archiveFolders, true))
+                    : !in_array($toFolder, $pdfFolders, true);
+                if ($typeOk && in_array($toFolder, $mediaFolderNames, true) && !in_array($toFolder, $bentoManagedFolders, true)) {
+                    if ($isPdfFile) {
+                        $baseName = preg_replace("/[^a-zA-Z0-9-_]/", "_", pathinfo($origName, PATHINFO_FILENAME));
+                        if ($baseName === '') $baseName = 'pdf';
+                        $destPath = $destDir . '/' . $baseName . '.pdf';
+                        if (file_exists($destPath)) { $destPath = $destDir . '/' . $baseName . '_' . date('Ymd_His') . '.pdf'; }
+                    } else {
+                        if (@getimagesize($tmp) === false) { $destPath = null; }
+                        else { $destPath = $destDir . '/' . time() . '_' . preg_replace("/[^a-zA-Z0-9._-]/", "", $origName); }
+                    }
+                    if ($destPath !== null && (@move_uploaded_file($tmp, $destPath) || @copy($tmp, $destPath))) {
+                        $storedIn = $toFolder;
+                    }
+                }
+            }
+        }
+        if ($storedIn !== false) {
+            setFlashMessage(($isPdfFile ? '📄 ' : '🖼️ ') . $origName . ' gespeichert in "' . $storedIn . '"', 'success');
+        } else {
+            setFlashMessage('❌ ' . $origName . ' konnte nicht gespeichert werden', 'error');
         }
     }
     if (isset($_POST['save_folder_visibility']) && !empty($_POST['folder_name'])) {
@@ -2891,6 +2984,89 @@ foreach ($pdfFolders as $pf) {
 }
 sort($pdfFileOptions);
 
+// Ordnerliste der Ordner-Verwaltung (auch fuer die Modals der Kopfzeile/Datei-Ansicht
+// benoetigt, daher schon hier statt erst beim Rendern der Karte).
+// Beide Archiv-Ordner immer als feste, eigene Ordner in der Liste anbieten (auch
+// bevor je etwas archiviert wurde), damit sie z.B. zum endgueltigen Aufraeumen
+// erreichbar bleiben.
+foreach ($archiveFolders as $af) {
+    $afPath = $uploadBase . $af;
+    if (!is_dir($afPath)) { @mkdir($afPath, 0775, true); }
+}
+$existingFolderPaths = array_filter(glob($uploadBase . '*'), 'is_dir');
+// Die beiden vom PDF-Drop automatisch angelegten Ordner (siehe convertPdfDrop())
+// tragen ihre Ausrichtung schon im Namen - einmalig und selbstheilend als
+// Standardzuordnung uebernehmen, falls noch nicht geschehen (z.B. frisch angelegt).
+if (!isset($config['folder_orientation'])) $config['folder_orientation'] = [];
+$existingFolderNames = array_map('basename', $existingFolderPaths);
+$orientationDefaultsChanged = false;
+foreach (['Hoch' => 'hoch', 'Quer' => 'quer'] as $autoName => $autoOrient) {
+    if (in_array($autoName, $existingFolderNames, true) && !isset($config['folder_orientation'][$autoName])) {
+        $config['folder_orientation'][$autoName] = $autoOrient;
+        $orientationDefaultsChanged = true;
+    }
+}
+if ($orientationDefaultsChanged) { file_put_contents($configFile, json_encode($config, JSON_PRETTY_PRINT)); }
+
+// Beide nativen PDF-Ordner immer als feste, eigene Ordner in der Liste anbieten
+// (auch bevor je eine PDF dort abgelegt wurde) - genau wie die beiden Archiv-Ordner
+// oben.
+foreach ($pdfFolders as $pf) {
+    $pfPath = $uploadBase . $pf;
+    if (!is_dir($pfPath)) { @mkdir($pfPath, 0775, true); }
+}
+$existingFolderPaths = array_filter(glob($uploadBase . '*'), 'is_dir');
+
+// Alle Ordner ausser den bento-pronto-eigenen Ablagen (die werden ausschliesslich
+// ueber bento.php verwaltet) - die Archiv- UND die nativen PDF-Ordner bleiben als
+// ganz normale Ordner in dieser einen Liste erreichbar (u.a. fuer endgueltiges
+// Loeschen), die Archiv-Ordner tauchen zusaetzlich - ohne selbst eine eigene zweite
+// Spalte zu sein - als rechte Spalte im Akkordion jedes dazu passenden Ordners auf
+// (siehe renderArchivePairPanel()). Aktive Ordner zuerst, danach alphabetisch.
+$normalFolderPaths = array_values(array_filter($existingFolderPaths, function ($p) use ($bentoManagedFolders) {
+    $n = basename($p);
+    return !in_array($n, $bentoManagedFolders, true);
+}));
+usort($normalFolderPaths, function ($a, $b) use ($config) {
+    $an = basename($a); $bn = basename($b);
+    $aActive = isFolderActive($an, $config) ? 0 : 1;
+    $bActive = isFolderActive($bn, $config) ? 0 : 1;
+    if ($aActive !== $bActive) return $aActive <=> $bActive;
+    return strnatcasecmp($an, $bn);
+});
+
+// Daten fuer die beiden Modals (Datei-Ansicht in der Ordner-Verwaltung, Import-Dialog der
+// Kopfzeile) - alle Ordner der Ordner-Verwaltung samt Dateien, als JSON-"Dateninsel" im
+// <body> (siehe folder-files-data), damit beide Modals rein clientseitig aufgebaut werden
+// koennen und nach jedem AJAX-Seitenaustausch automatisch aktuell sind.
+$folderFilesData = [];
+foreach ($normalFolderPaths as $folderPath) {
+    $fn = basename($folderPath);
+    if (in_array($fn, $archiveFolders, true)) {
+        $kind = 'archive';
+        $fo = $fn === 'Archiv Hoch' ? 'hoch' : 'quer';
+    } elseif (in_array($fn, $pdfFolders, true)) {
+        $kind = 'pdf';
+        $fo = $fn === 'PDF Hoch' ? 'hoch' : 'quer';
+    } else {
+        $kind = 'normal';
+        $fo = $config['folder_orientation'][$fn] ?? null;
+    }
+    $filesOut = [];
+    foreach (array_values(array_diff(scandir($folderPath), ['.', '..'])) as $f) {
+        if (!is_file($folderPath . '/' . $f)) continue;
+        $filesOut[] = ['n' => $f, 'm' => (int)(@filemtime($folderPath . '/' . $f) ?: 0)];
+    }
+    $folderFilesData[] = [
+        'name' => $fn,
+        'kind' => $kind,
+        'orient' => $fo,
+        'active' => isFolderActive($fn, $config),
+        'hidden' => array_values($config['folder_hidden_files'][$fn] ?? []),
+        'files' => $filesOut,
+    ];
+}
+
 $install_command = "wget -qO- \"" . $baseUrl . "?install=1\" | bash";
 
 function setFlashMessage($text, $kind = 'success') {
@@ -3108,7 +3284,7 @@ function renderPdfFileList($folderName, $uploadBase) {
     if (!is_dir($path)) { @mkdir($path, 0775, true); }
     $files = array_diff(scandir($path), ['.', '..']);
     echo "<div style='background:#151515; padding:15px; border-radius:8px; margin-top:15px; border:1px solid #444;'>";
-    echo "<strong style='font-size:13px; color:#4caf50; display:block; margin-bottom:10px;'>PDF-Dateien in '" . htmlspecialchars($folderName) . "'</strong>";
+    echo "<strong style='font-size:13px; color:#4caf50; display:block; margin-bottom:10px;'>" . (empty($files) ? '' : renderViewFolderButton($folderName)) . "PDF-Dateien in '" . htmlspecialchars($folderName) . "'</strong>";
     echo "<form method='POST' enctype='multipart/form-data' style='display:flex; gap:5px; margin-bottom:10px;'>
             <input type='hidden' name='pdf_native_target_folder' value='" . htmlspecialchars($folderName) . "'>
             <input type='file' name='pdf_native_manual' accept='application/pdf' style='font-size:11px; padding:6px; flex:1;' onchange='this.form.requestSubmit()'>
@@ -3122,7 +3298,7 @@ function renderPdfFileList($folderName, $uploadBase) {
         $fid = 'pdfdelform_' . md5($folderName . '/' . $file);
         echo "<div style='display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-bottom:1px solid #222; gap:8px;'>
                 <span style='flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;'>📄 " . htmlspecialchars($file) . "</span>
-                <a href='" . htmlspecialchars($uploadBase . $folderName . '/' . $file) . "' target='_blank' rel='noopener' title='Ansehen' style='width:24px; height:24px; display:flex; align-items:center; justify-content:center; background:#1e293b; color:#94a3b8; border-radius:4px; text-decoration:none;'>👁</a>
+                " . renderViewFileButton($folderName, $file) . "
                 <button type='submit' form='$fid' title='Endgültig löschen' style='width:24px; height:24px; padding:0; background:#7f1d1d; border:none; color:#fff; border-radius:4px;'>✕</button>
               </div>";
     }
@@ -3146,7 +3322,7 @@ function renderFileManager($folderName, $uploadBase, $label, $hiddenFiles = [], 
     if (!is_dir($path)) return;
     $files = array_diff(scandir($path), ['.','..']);
     echo "<div style='background:#151515; padding:15px; border-radius:8px; margin-top:15px; border:1px solid #444;'>";
-    echo "<strong style='font-size:13px; color:#4caf50; display:block; margin-bottom:10px;'>Medien in '$folderName' ($label)</strong>";
+    echo "<strong style='font-size:13px; color:#4caf50; display:block; margin-bottom:10px;'>" . (empty($files) ? '' : renderViewFolderButton($folderName)) . "Medien in '" . htmlspecialchars($folderName) . "' ($label)</strong>";
     if (!$isArchiveFolder) {
         // Ausrichtung dieses Ordners (Hochkant/Querformat) - legt fest, ob beim Archivieren
         // NUR der passende Archiv-Knopf angezeigt wird (siehe unten) statt immer beider.
@@ -3185,7 +3361,7 @@ function renderFileManager($folderName, $uploadBase, $label, $hiddenFiles = [], 
                 <label style='display:flex; align-items:center; gap:6px; flex:1; cursor:pointer; ".($isVisible ? '' : 'opacity:0.5;')."' title='Datei in der Wiedergabe anzeigen/ausblenden'>
                     <input type='checkbox' name='visible_files[]' value='".htmlspecialchars($file)."' ".($isVisible ? 'checked' : '').">
                     <span>".htmlspecialchars($file)."</span>
-                </label>";
+                </label>" . renderViewFileButton($folderName, $file);
         if ($isArchiveFolder) {
             echo "<button type='submit' form='$fid' title='Endgültig löschen' style='width:24px; height:24px; padding:0; background:#7f1d1d; border:none; color:#fff; border-radius:4px;'>✕</button>";
         } else {
@@ -3251,7 +3427,7 @@ function renderArchivePairPanel($archiveFolderName, $targetFolderName, $uploadBa
     });
     $panelId = 'archpair_' . md5($archiveFolderName . '/' . $targetFolderName);
     echo "<div style='background:#151515; padding:15px; border-radius:8px; margin-top:15px; border:1px solid #444;'>";
-    echo "<strong style='font-size:13px; color:#94a3b8; display:block; margin-bottom:10px;'>📦 ".htmlspecialchars($archiveFolderName)."</strong>";
+    echo "<strong style='font-size:13px; color:#94a3b8; display:block; margin-bottom:10px;'>" . (empty($files) ? '' : renderViewFolderButton($archiveFolderName)) . "📦 ".htmlspecialchars($archiveFolderName)."</strong>";
     if (empty($files)) {
         echo "<span style='color:#777; font-size:12px;'>Archiv ist leer.</span></div>";
         return;
@@ -3269,6 +3445,7 @@ function renderArchivePairPanel($archiveFolderName, $targetFolderName, $uploadBa
         $rfid = 'restform_' . md5($archiveFolderName . '/' . $file . '/' . $targetFolderName);
         echo "<div class='archpair-row' data-mtime='".(int)$mtime."' data-name='".htmlspecialchars(strtolower($file), ENT_QUOTES)."' style='display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-bottom:1px solid #222; gap:8px;'>
                 <span style='flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;' title='".htmlspecialchars($file)."'>".htmlspecialchars($file)."</span>
+                " . renderViewFileButton($archiveFolderName, $file) . "
                 <button type='submit' form='$rfid' title='Zurück in &quot;".htmlspecialchars(addslashes($targetFolderName))."&quot; verschieben' style='width:24px; height:24px; padding:0; background:#1e293b; color:#94a3b8; border:none; border-radius:4px; flex-shrink:0;'>⬅</button>
               </div>";
     }
@@ -3282,6 +3459,338 @@ function renderArchivePairPanel($archiveFolderName, $targetFolderName, $uploadBa
                 <input type='hidden' name='target_folder' value='".htmlspecialchars($targetFolderName)."'>
               </form>";
     }
+}
+
+// Knopf "🔍 Ansehen" fuer die Kopfzeile eines Datei-Listen-Blocks (renderFileManager(),
+// renderPdfFileList(), renderArchivePairPanel()) - oeffnet das Datei-Ansicht-Modal (siehe
+// renderFileModalsScript()) mit der ersten Datei dieses Ordners.
+function renderViewFolderButton($folderName) {
+    return "<button type='button' class='im-view-btn' data-folder='" . htmlspecialchars($folderName, ENT_QUOTES) . "' title='Dateien dieses Ordners im Modal ansehen' style='width:auto; float:right; margin:-4px 0 0; padding:3px 10px; font-size:11px; background:#1e293b; color:#94a3b8;'>🔍 Ansehen</button>";
+}
+
+// Kleiner 👁-Knopf pro Dateizeile - oeffnet das Datei-Ansicht-Modal direkt bei dieser Datei.
+function renderViewFileButton($folderName, $file) {
+    return "<button type='button' class='im-view-btn' data-folder='" . htmlspecialchars($folderName, ENT_QUOTES) . "' data-file='" . htmlspecialchars($file, ENT_QUOTES) . "' title='Ansehen (Löschen / Archivieren / Verschieben)' style='width:24px; height:24px; padding:0; margin:0; background:#1e293b; color:#94a3b8; border:none; border-radius:4px; flex-shrink:0;'>👁</button>";
+}
+
+// Beide Modals des Dashboards, rein clientseitig aus der Dateninsel "folder-files-data":
+//  - Datei-Ansicht (Ordner-Verwaltung / Monitor-Karten): Vorschau einer Datei, blaettern
+//    (‹ › bzw. Pfeiltasten), Loeschen, ins Archiv oder in einen (aktiven) Ordner verschieben.
+//  - Import-Dialog (Kopfzeile, Drag&Drop oder "📥 Datei hinzufügen"): Vorschau jeder Datei,
+//    pro Datei entscheiden, OB und WOHIN sie gespeichert wird.
+// Beide haengen an <html> statt an <body>, da jeder AJAX-Seitenaustausch (imAjaxSubmit) den
+// kompletten <body> ersetzt - ein gerade offenes Import-Modal ueberlebt so z.B. die noch
+// laufenden Uploads eines vorherigen Imports. Das Skript selbst laeuft nach jedem
+// Seitenaustausch erneut (runScripts), globale Listener daher nur einmal registrieren.
+function renderFileModalsScript() {
+    return <<<'HTML'
+<script>
+(function(){
+  function readData(){
+    var el = document.getElementById('folder-files-data');
+    try { return el ? (JSON.parse(el.textContent) || {folders:[]}) : {folders:[]}; } catch (e) { return {folders:[]}; }
+  }
+  function esc(s){ return String(s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+  function extOf(n){ var m = /\.([^.]+)$/.exec(n); return m ? m[1].toLowerCase() : ''; }
+  function typeOf(n){
+    var e = extOf(n);
+    if (/^(jpe?g|png|gif|webp)$/.test(e)) return 'image';
+    if (e === 'pdf') return 'pdf';
+    if (e === 'mp4') return 'video';
+    return 'other';
+  }
+  function fileUrl(base, folder, name){ return base + encodeURIComponent(folder) + '/' + encodeURIComponent(name); }
+  function orientTag(o){ return o === 'hoch' ? ' ⇕' : (o === 'quer' ? ' ⇔' : ''); }
+  function folderLabel(f){ return (f.active ? '🟢 ' : '') + f.name + orientTag(f.orient); }
+  function findFolder(d, name){ for (var i = 0; i < d.folders.length; i++) { if (d.folders[i].name === name) return d.folders[i]; } return null; }
+  function modalRoot(id){
+    var old = document.getElementById(id);
+    if (old) old.remove();
+    var m = document.createElement('div');
+    m.id = id;
+    m.className = 'im-modal';
+    document.documentElement.appendChild(m);
+    return m;
+  }
+  // Moegliche Ziele fuer eine Datei (gleiche Regeln wie serverseitig bei move_file/import_file):
+  // PDFs nur in PDF-/Archiv-Ordner, alles andere nie in PDF-Ordner.
+  function targetGroups(d, isPdf, exclude){
+    var g = {active:[], other:[], pdf:[], archive:[]};
+    d.folders.forEach(function(f){
+      if (f.name === exclude) return;
+      if (f.kind === 'archive') g.archive.push(f);
+      else if (f.kind === 'pdf') { if (isPdf) g.pdf.push(f); }
+      else if (!isPdf) (f.active ? g.active : g.other).push(f);
+    });
+    return g;
+  }
+  function optgroupsHtml(g, selected, withArchive){
+    var html = '';
+    function grp(label, list){
+      if (!list.length) return;
+      html += '<optgroup label="' + esc(label) + '">' + list.map(function(f){
+        return '<option value="' + esc(f.name) + '"' + (f.name === selected ? ' selected' : '') + '>' + esc(folderLabel(f)) + '</option>';
+      }).join('') + '</optgroup>';
+    }
+    grp('Aktive Ordner (auf einem Monitor)', g.active);
+    grp('Weitere Ordner', g.other);
+    grp('PDF-Ordner', g.pdf);
+    if (withArchive) grp('Archiv', g.archive);
+    return html;
+  }
+
+  // ─── DATEI-ANSICHT ───
+  function closeViewer(){
+    var m = document.getElementById('im-file-viewer');
+    if (m) m.remove();
+    window.__imViewer = null;
+  }
+  function openViewer(folderName, index){
+    var d = readData();
+    var folder = findFolder(d, folderName);
+    if (!folder || !folder.files.length) { closeViewer(); return; }
+    index = Math.max(0, Math.min(index, folder.files.length - 1));
+    window.__imViewer = {folder: folderName, index: index};
+    var file = folder.files[index].n;
+    var type = typeOf(file);
+    var url = fileUrl(d.base || 'media/', folderName, file);
+    var isHidden = folder.hidden.indexOf(file) !== -1;
+    var preview;
+    if (type === 'image') preview = '<img src="' + esc(url) + '" alt="">';
+    else if (type === 'pdf') preview = '<iframe src="' + esc(url) + '" title="PDF-Vorschau"></iframe>';
+    else if (type === 'video') preview = '<video src="' + esc(url) + '" controls muted></video>';
+    else preview = '<div class="im-fv-noprev">Keine Vorschau für diesen Dateityp.</div>';
+
+    var actions = '';
+    if (folder.kind !== 'archive') {
+      var archives = folder.orient === 'hoch' ? ['Archiv Hoch'] : (folder.orient === 'quer' ? ['Archiv Quer'] : ['Archiv Hoch', 'Archiv Quer']);
+      archives.forEach(function(a){
+        if (findFolder(d, a)) actions += '<button type="button" class="im-fv-move" data-to="' + esc(a) + '" style="background:#334155;color:#e2e8f0;">📦 Ins ' + esc(a) + '</button>';
+      });
+    }
+    var g = targetGroups(d, type === 'pdf', folderName);
+    // Vorauswahl: erster aktiver Ordner mit passender Ausrichtung, sonst irgendein aktiver.
+    var pre = null;
+    g.active.forEach(function(f){ if (!pre && folder.orient && f.orient === folder.orient) pre = f.name; });
+    if (!pre && g.active.length) pre = g.active[0].name;
+    if (!pre && g.pdf.length) pre = g.pdf[0].name;
+    var opts = optgroupsHtml(g, pre, false);
+    if (opts) {
+      actions += '<span class="im-fv-moveto"><select class="im-fv-target">' + opts + '</select>'
+        + '<button type="button" class="im-fv-move-sel" style="background:#38bdf8;color:#000;">➜ Verschieben</button></span>';
+    }
+    actions += '<a href="' + esc(url) + '" target="_blank" rel="noopener" class="im-fv-open">↗ Neuer Tab</a>';
+    actions += '<button type="button" class="im-fv-del" style="background:#7f1d1d;color:#fff;margin-left:auto;">🗑 Löschen</button>';
+
+    var m = modalRoot('im-file-viewer');
+    m.innerHTML = '<div class="im-modal-box im-fv-box">'
+      + '<div class="im-modal-head"><div class="im-modal-title">📁 ' + esc(folderName) + orientTag(folder.orient)
+      + ' <span class="im-dim">· ' + (index + 1) + ' / ' + folder.files.length + '</span></div>'
+      + '<button type="button" class="im-modal-close" title="Schließen (Esc)">✕</button></div>'
+      + '<div class="im-fv-name">' + esc(file) + (isHidden ? ' <span class="im-badge">in der Wiedergabe ausgeblendet</span>' : '') + '</div>'
+      + '<div class="im-fv-stage">'
+      + '<button type="button" class="im-fv-nav im-fv-prev" title="Vorherige Datei (←)"' + (index === 0 ? ' disabled' : '') + '>‹</button>'
+      + '<div class="im-fv-preview">' + preview + '</div>'
+      + '<button type="button" class="im-fv-nav im-fv-next" title="Nächste Datei (→)"' + (index === folder.files.length - 1 ? ' disabled' : '') + '>›</button>'
+      + '</div>'
+      + '<div class="im-fv-actions">' + actions + '</div>'
+      + '</div>';
+    m.addEventListener('click', function(e){ if (e.target === m) closeViewer(); });
+    m.querySelector('.im-modal-close').addEventListener('click', closeViewer);
+    m.querySelector('.im-fv-prev').addEventListener('click', function(){ openViewer(folderName, index - 1); });
+    m.querySelector('.im-fv-next').addEventListener('click', function(){ openViewer(folderName, index + 1); });
+    function run(fd, fallback){
+      var st = window.__imViewer;
+      closeViewer();
+      window.imAjaxSubmit(fd, fallback, 'success').then(function(){
+        // Nach dem Seitenaustausch direkt bei der naechsten Datei desselben Ordners weiter.
+        if (st) openViewer(st.folder, st.index);
+      }).catch(function(){});
+    }
+    function move(to){
+      var fd = new FormData();
+      fd.append('move_file', file); fd.append('from_folder', folderName); fd.append('to_folder', to);
+      run(fd, '➜ Verschoben');
+    }
+    Array.prototype.forEach.call(m.querySelectorAll('.im-fv-move'), function(b){
+      b.addEventListener('click', function(){ move(b.getAttribute('data-to')); });
+    });
+    var moveSel = m.querySelector('.im-fv-move-sel');
+    if (moveSel) moveSel.addEventListener('click', function(){ move(m.querySelector('.im-fv-target').value); });
+    m.querySelector('.im-fv-del').addEventListener('click', function(){
+      if (!confirm(file + ' wirklich endgültig löschen?')) return;
+      var fd = new FormData();
+      fd.append('del_file', file); fd.append('from_folder', folderName);
+      run(fd, '🗑 Gelöscht');
+    });
+  }
+  window.imOpenFileViewer = function(folderName, fileName){
+    var folder = findFolder(readData(), folderName);
+    if (!folder) return;
+    var idx = 0;
+    if (fileName) { folder.files.forEach(function(f, i){ if (f.n === fileName) idx = i; }); }
+    openViewer(folderName, idx);
+  };
+
+  // ─── IMPORT-DIALOG ───
+  function closeImport(){
+    var m = document.getElementById('im-import-modal');
+    if (m) m.remove();
+    (window.__imImportItems || []).forEach(function(it){ try { URL.revokeObjectURL(it.url); } catch (e) {} });
+    window.__imImportItems = null;
+  }
+  function importCardHtml(it, i, d){
+    var isPdf = it.type === 'pdf';
+    var g = targetGroups(d, isPdf, null);
+    var autoLabel = isPdf ? '🪄 Automatisch (PDF Hoch/Quer nach 1. Seite)' : '🪄 Automatisch (Hoch/Quer nach Ausrichtung)';
+    var sel = '<option value="__auto__"' + (it.target === '__auto__' ? ' selected' : '') + '>' + autoLabel + '</option>'
+      + optgroupsHtml(g, it.target, true)
+      + '<option value="__skip__"' + (it.target === '__skip__' ? ' selected' : '') + '>✕ Nicht speichern</option>';
+    var info = isPdf ? 'PDF' : (it.w ? (it.w + '×' + it.h + ' · ' + (it.orient === 'hoch' ? '⇕ Hochkant' : '⇔ Querformat')) : 'Bild');
+    info += ' · ' + (it.file.size >= 1048576 ? (it.file.size / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(it.file.size / 1024)) + ' KB');
+    var note = '';
+    var tf = findFolder(d, it.target);
+    if (it.target === '__auto__' && it.orient) note = '<div class="im-imp-hint">→ landet in "' + (it.orient === 'hoch' ? 'Hoch' : 'Quer') + '"</div>';
+    else if (it.orient && tf && tf.orient && tf.orient !== it.orient) note = '<div class="im-imp-warn">⚠️ Ausrichtung passt nicht zum Ordner</div>';
+    var preview = isPdf ? '<iframe src="' + esc(it.url) + '#toolbar=0" title="PDF-Vorschau"></iframe>' : '<img src="' + esc(it.url) + '" alt="">';
+    return '<div class="im-imp-card' + (it.target === '__skip__' ? ' skipped' : '') + (it.big ? ' big' : '') + '" data-i="' + i + '">'
+      + '<div class="im-imp-preview">' + preview + '<button type="button" class="im-imp-zoom" title="Größer/kleiner anzeigen">' + (it.big ? '⤡' : '⤢') + '</button></div>'
+      + '<div class="im-imp-name" title="' + esc(it.file.name) + '">' + (isPdf ? '📄 ' : '🖼️ ') + esc(it.file.name) + '</div>'
+      + '<div class="im-dim" style="font-size:11px;">' + esc(info) + '</div>'
+      + '<select class="im-imp-target">' + sel + '</select>' + note
+      + '</div>';
+  }
+  function bindImportCard(card){
+    var it = window.__imImportItems[+card.getAttribute('data-i')];
+    card.querySelector('.im-imp-target').addEventListener('change', function(){
+      it.target = this.value;
+      // Nur Hinweis/Status dieser Karte aktualisieren - ein kompletter Neuaufbau wuerde alle
+      // PDF-Vorschauen neu laden und die Scroll-Position verlieren.
+      var d = readData();
+      card.classList.toggle('skipped', it.target === '__skip__');
+      var old = card.querySelector('.im-imp-hint, .im-imp-warn');
+      if (old) old.remove();
+      var tmp = document.createElement('div');
+      tmp.innerHTML = importCardHtml(it, 0, d);
+      var note = tmp.querySelector('.im-imp-hint, .im-imp-warn');
+      if (note) card.appendChild(note);
+      updateImportFooter();
+    });
+    card.querySelector('.im-imp-zoom').addEventListener('click', function(){
+      it.big = !it.big;
+      card.classList.toggle('big', it.big);
+      this.textContent = it.big ? '⤡' : '⤢';
+    });
+  }
+  function rerenderImportCard(i){
+    var m = document.getElementById('im-import-modal');
+    var card = m && m.querySelector('.im-imp-card[data-i="' + i + '"]');
+    if (!card) return;
+    var tmp = document.createElement('div');
+    tmp.innerHTML = importCardHtml(window.__imImportItems[i], i, readData());
+    var fresh = tmp.firstChild;
+    card.replaceWith(fresh);
+    bindImportCard(fresh);
+  }
+  function updateImportFooter(){
+    var m = document.getElementById('im-import-modal');
+    if (!m) return;
+    var n = window.__imImportItems.filter(function(it){ return it.target !== '__skip__'; }).length;
+    var btn = m.querySelector('.im-imp-save');
+    btn.disabled = !n;
+    btn.textContent = '💾 ' + (n ? n + ' speichern' : 'Nichts zu speichern');
+  }
+  function renderImport(){
+    var items = window.__imImportItems || [];
+    if (!items.length) { closeImport(); return; }
+    var m = document.getElementById('im-import-modal') || modalRoot('im-import-modal');
+    var d = readData();
+    m.innerHTML = '<div class="im-modal-box im-imp-box">'
+      + '<div class="im-modal-head"><div class="im-modal-title">📥 Dateien importieren <span class="im-dim">· ' + items.length + ' Datei' + (items.length === 1 ? '' : 'en') + '</span></div>'
+      + '<button type="button" class="im-modal-close" title="Abbrechen (Esc)">✕</button></div>'
+      + '<div class="im-dim" style="font-size:12px;margin-bottom:10px;">Für jede Datei wählen, ob und wo sie gespeichert wird.</div>'
+      + '<div class="im-imp-grid">' + items.map(function(it, i){ return importCardHtml(it, i, d); }).join('') + '</div>'
+      + '<div class="im-imp-foot"><button type="button" class="im-imp-cancel" style="background:#334155;color:#e2e8f0;">Abbrechen</button>'
+      + '<button type="button" class="im-imp-save" style="background:#22c55e;color:#000;"></button></div>'
+      + '</div>';
+    m.onclick = function(e){ if (e.target === m) closeImport(); };
+    m.querySelector('.im-modal-close').addEventListener('click', closeImport);
+    m.querySelector('.im-imp-cancel').addEventListener('click', closeImport);
+    Array.prototype.forEach.call(m.querySelectorAll('.im-imp-card'), bindImportCard);
+    updateImportFooter();
+    m.querySelector('.im-imp-save').addEventListener('click', function(){
+      window.__imImportItems.forEach(function(it){
+        if (it.target !== '__skip__') window.__imUploadQueue.push({file: it.file, target: it.target});
+      });
+      closeImport();
+      window.imProcessUploadQueue();
+    });
+  }
+  window.imOpenImportModal = function(files){
+    var items = Array.prototype.map.call(files, function(f){
+      return {file: f, type: /\.pdf$/i.test(f.name) ? 'pdf' : 'image', url: URL.createObjectURL(f), target: '__auto__', orient: null, big: files.length === 1};
+    });
+    // Noch offenes Import-Modal (z.B. zweiter Drop) um die neuen Dateien ergaenzen statt es zu ersetzen.
+    if (window.__imImportItems && document.getElementById('im-import-modal')) items = window.__imImportItems.concat(items);
+    window.__imImportItems = items;
+    renderImport();
+    items.forEach(function(it){
+      if (it.type !== 'image' || it.w) return;
+      var img = new Image();
+      img.onload = function(){
+        it.w = img.naturalWidth; it.h = img.naturalHeight;
+        it.orient = it.h >= it.w ? 'hoch' : 'quer'; // dieselbe Regel wie storeRoutedImage()
+        var idx = (window.__imImportItems || []).indexOf(it);
+        if (idx !== -1) rerenderImportCard(idx);
+      };
+      img.src = it.url;
+    });
+  };
+
+  // Eine Datei nach der anderen hochladen (nicht alle auf einmal), da jede einzelne einen
+  // kompletten Seitenaustausch ueber imAjaxSubmit() ausloest - gleichzeitige Requests wuerden
+  // sich gegenseitig die Antwort unter dem Body wegziehen. Warteschlange an window, damit sie
+  // das erneute Ausfuehren dieses Skripts nach jedem Seitenaustausch uebersteht.
+  if (typeof window.__imUploadQueue === 'undefined') window.__imUploadQueue = [];
+  if (typeof window.__imUploadBusy === 'undefined') window.__imUploadBusy = false;
+  function processUploadQueue(){
+    if (window.__imUploadBusy || !window.__imUploadQueue.length) return;
+    window.__imUploadBusy = true;
+    var job = window.__imUploadQueue.shift();
+    var fd = new FormData();
+    fd.append('import_file', job.file, job.file.name);
+    fd.append('import_target', job.target);
+    window.imAjaxSubmit(fd, '📤 ' + job.file.name + ' verarbeitet', 'success').catch(function(e){
+      console.error(e);
+    }).finally(function(){
+      window.__imUploadBusy = false;
+      window.imProcessUploadQueue();
+    });
+  }
+  window.imProcessUploadQueue = processUploadQueue;
+
+  if (!window.__imFileModalsBootstrapped) {
+    window.__imFileModalsBootstrapped = true;
+    document.addEventListener('click', function(e){
+      var b = e.target.closest ? e.target.closest('.im-view-btn') : null;
+      if (!b) return;
+      e.preventDefault();
+      window.imOpenFileViewer(b.getAttribute('data-folder'), b.getAttribute('data-file') || null);
+    });
+    document.addEventListener('keydown', function(e){
+      if (e.key === 'Escape') {
+        if (document.getElementById('im-import-modal')) { closeImport(); return; }
+        if (document.getElementById('im-file-viewer')) { closeViewer(); return; }
+      }
+      if (!window.__imViewer || !document.getElementById('im-file-viewer')) return;
+      if (e.target && /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
+      if (e.key === 'ArrowLeft') { e.preventDefault(); openViewer(window.__imViewer.folder, window.__imViewer.index - 1); }
+      if (e.key === 'ArrowRight') { e.preventDefault(); openViewer(window.__imViewer.folder, window.__imViewer.index + 1); }
+    });
+  }
+})();
+</script>
+HTML;
 }
 
 function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
@@ -3399,6 +3908,50 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
         @media (max-width: 720px) {
             .im-folder-pair { grid-template-columns: 1fr !important; }
         }
+
+        /* Kopfzeile als Drop-Flaeche fuer den Import */
+        .topbar.im-drop-active { background: #0f172a; border-bottom-color: #38bdf8; box-shadow: inset 0 0 0 2px #38bdf8; }
+        .topbar.im-drop-active #topPdfDropZone { border-color: #38bdf8 !important; color: #e2e8f0 !important; }
+
+        /* Modals: Datei-Ansicht + Import (siehe renderFileModalsScript()) */
+        .im-modal { position: fixed; inset: 0; z-index: 9000; background: rgba(0,0,0,.75); display: flex; align-items: center; justify-content: center; padding: 20px; box-sizing: border-box; font-family: system-ui, sans-serif; color: #eee; }
+        .im-modal button, .im-modal select { width: auto; margin: 0; }
+        .im-modal button:disabled { opacity: .35; cursor: default; }
+        .im-modal-box { background: #1e1e1e; border: 1px solid #444; border-radius: 12px; padding: 16px 18px; width: 100%; max-height: 100%; overflow: auto; box-sizing: border-box; box-shadow: 0 20px 60px rgba(0,0,0,.6); }
+        .im-modal-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+        .im-modal-title { font-weight: bold; font-size: 15px; }
+        .im-modal-close { background: #333 !important; color: #fff; padding: 4px 10px; }
+        .im-dim { color: #94a3b8; font-weight: normal; }
+        .im-badge { font-size: 10px; background: #78350f; color: #fde68a; padding: 2px 6px; border-radius: 4px; margin-left: 6px; }
+        .im-fv-box { max-width: 1000px; }
+        .im-fv-name { font-size: 12px; color: #cbd5e1; margin-bottom: 8px; word-break: break-all; }
+        .im-fv-stage { display: flex; align-items: center; gap: 8px; }
+        .im-fv-preview { flex: 1; height: 62vh; background: #000; border: 1px solid #333; border-radius: 8px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+        .im-fv-preview img, .im-fv-preview video { max-width: 100%; max-height: 100%; object-fit: contain; }
+        .im-fv-preview iframe { width: 100%; height: 100%; border: 0; background: #fff; }
+        .im-fv-noprev { color: #777; font-size: 13px; }
+        .im-fv-nav { background: #1e293b !important; color: #e2e8f0; font-size: 26px; padding: 10px 12px; line-height: 1; }
+        .im-fv-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
+        .im-fv-actions button { padding: 8px 12px; font-size: 12px; }
+        .im-fv-moveto { display: inline-flex; gap: 4px; align-items: center; }
+        .im-fv-moveto select { padding: 7px 6px; font-size: 12px; max-width: 260px; }
+        .im-fv-open { color: #38bdf8; font-size: 12px; text-decoration: none; padding: 8px 4px; }
+        .im-imp-box { max-width: 1100px; }
+        .im-imp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+        .im-imp-card { background: #151515; border: 1px solid #333; border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 6px; min-width: 0; transition: opacity .15s; }
+        .im-imp-card.skipped { opacity: .45; }
+        .im-imp-card.big { grid-column: 1 / -1; }
+        .im-imp-preview { position: relative; height: 170px; background: #000; border-radius: 6px; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+        .im-imp-card.big .im-imp-preview { height: 55vh; }
+        .im-imp-preview img { max-width: 100%; max-height: 100%; object-fit: contain; }
+        .im-imp-preview iframe { width: 100%; height: 100%; border: 0; background: #fff; }
+        .im-imp-zoom { position: absolute; top: 6px; right: 6px; background: rgba(15,23,42,.85) !important; color: #e2e8f0; padding: 2px 8px; font-size: 14px; }
+        .im-imp-name { font-size: 12px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .im-imp-card select { width: 100%; padding: 6px; font-size: 12px; }
+        .im-imp-hint { font-size: 11px; color: #86efac; }
+        .im-imp-warn { font-size: 11px; color: #fbbf24; }
+        .im-imp-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+        .im-imp-foot button { padding: 9px 16px; }
     </style>
     <script>
         function toggleInput(sel) {
@@ -3526,14 +4079,16 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
 </head>
 <body data-im-page="dashboard">
 <script type="application/json" id="presets-data"><?php echo json_encode($config['presets'] ?? []); ?></script>
+<script type="application/json" id="folder-files-data"><?php echo json_encode(['base' => $uploadBase, 'folders' => $folderFilesData], JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE); ?></script>
+<?php echo renderFileModalsScript(); ?>
 <?php if (!empty($_SESSION['im_flash'])): $imFlash = $_SESSION['im_flash']; unset($_SESSION['im_flash']); ?>
 <div id="im-flash-msg" style="display:none" data-text="<?php echo htmlspecialchars($imFlash['text']); ?>" data-kind="<?php echo htmlspecialchars($imFlash['kind']); ?>"></div>
 <?php endif; ?>
 
-<div class="topbar">
+<div class="topbar" id="imTopbar">
     <h2 style="margin:0;">Infoscreens Master Hub</h2>
     <div style="display:flex; gap:10px; align-items:center;">
-        <div id="topPdfDropZone" title="PDF oder Bild hier hineinziehen oder klicken zum Auswählen - wird automatisch einsortiert" style="display:flex; align-items:center; gap:6px; color:#94a3b8; text-decoration:none; font-weight:bold; padding:8px 15px; background:#111; border-radius:4px; border:1px dashed #334155; cursor:pointer; font-size:13px; transition:border-color .15s, background .15s;">
+        <div id="topPdfDropZone" title="PDF oder Bild auf die Kopfzeile ziehen oder klicken zum Auswählen - danach im Dialog entscheiden, ob und wo gespeichert wird" style="display:flex; align-items:center; gap:6px; color:#94a3b8; text-decoration:none; font-weight:bold; padding:8px 15px; background:#111; border-radius:4px; border:1px dashed #334155; cursor:pointer; font-size:13px; transition:border-color .15s, background .15s;">
             📥 Datei hinzufügen
         </div>
         <input type="file" id="topPdfDropInput" accept="application/pdf,image/jpeg,image/png,image/gif,image/webp" multiple style="display:none;">
@@ -3543,56 +4098,33 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
     </div>
 </div>
 <script>
+// Import ueber die Kopfzeile: die GANZE Leiste nimmt Dateien per Drag&Drop an, "📥 Datei
+// hinzufügen" oeffnet den Datei-Browser. In beiden Faellen oeffnet sich danach der
+// Import-Dialog (imOpenImportModal(), siehe renderFileModalsScript()) mit einer Vorschau je
+// Datei - erst dort wird entschieden, ob und wohin gespeichert wird.
 (function(){
+  var bar = document.getElementById('imTopbar');
   var zone = document.getElementById('topPdfDropZone');
   var input = document.getElementById('topPdfDropInput');
-  if (!zone || !input) return;
-  var idleColor = '#334155', idleBg = 'transparent';
+  if (!bar || !zone || !input) return;
   var imageExtRe = /\.(jpe?g|png|gif|webp)$/i;
+  var depth = 0;
+  function hasFiles(e){ return e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], 'Files') !== -1; }
   zone.addEventListener('click', function(){ input.click(); });
-  ['dragenter','dragover'].forEach(function(ev){
-    zone.addEventListener(ev, function(e){ e.preventDefault(); e.stopPropagation(); zone.style.borderColor = '#38bdf8'; zone.style.background = '#0f172a'; });
-  });
-  ['dragleave','drop'].forEach(function(ev){
-    zone.addEventListener(ev, function(e){ e.preventDefault(); e.stopPropagation(); zone.style.borderColor = idleColor; zone.style.background = idleBg; });
+  bar.addEventListener('dragenter', function(e){ if (!hasFiles(e)) return; e.preventDefault(); depth++; bar.classList.add('im-drop-active'); });
+  bar.addEventListener('dragover', function(e){ if (!hasFiles(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });
+  bar.addEventListener('dragleave', function(){ depth = Math.max(0, depth - 1); if (!depth) bar.classList.remove('im-drop-active'); });
+  bar.addEventListener('drop', function(e){
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    depth = 0; bar.classList.remove('im-drop-active');
+    handleFileList(e.dataTransfer.files);
   });
   function showTopPdfNotice(msg, isError){
     var orig = zone.innerHTML;
     zone.textContent = msg;
-    zone.style.borderColor = isError ? '#dc2626' : idleColor;
-    setTimeout(function(){ zone.innerHTML = orig; zone.style.borderColor = idleColor; }, 2500);
-  }
-  // Jede Datei fuer sich sofort automatisch einsortieren - keine Rueckfrage noetig: eine PDF
-  // geht immer nach "PDF Hoch"/"PDF Quer" (storeNativePdf(), Ausrichtung der ersten Seite),
-  // ein Bild immer nach "Hoch"/"Quer" (storeRoutedImage(), tatsaechliche Pixel-Masse). Eine
-  // Datei nach der anderen (nicht alle auf einmal), da jede einzelne einen kompletten
-  // Seitenaustausch ueber imAjaxSubmit() ausloest (document.body.innerHTML wird ersetzt) -
-  // gleichzeitige Requests wuerden sich gegenseitig die Antwort unter dem Body wegziehen.
-  // Absichtlich an window haengen und nur EINMAL initialisieren (nicht "var ... = []" bei
-  // jedem Skript-Rerun): sonst wuerden noch wartende Dateien eines Mehrfach-Drops genau
-  // zwischen zwei Uploads aus der Warteschlange verloren gehen.
-  if (typeof window.__imUploadQueue === 'undefined') window.__imUploadQueue = [];
-  if (typeof window.__imUploadBusy === 'undefined') window.__imUploadBusy = false;
-  function queueUploads(files){
-    Array.prototype.forEach.call(files, function(f){ window.__imUploadQueue.push(f); });
-    processUploadQueue();
-  }
-  function processUploadQueue(){
-    if (window.__imUploadBusy || !window.__imUploadQueue.length) return;
-    window.__imUploadBusy = true;
-    var file = window.__imUploadQueue.shift();
-    var isPdf = /\.pdf$/i.test(file.name);
-    var fieldName = isPdf ? 'pdf_native_files[]' : 'topbar_image_files[]';
-    var fallbackText = isPdf ? '📄 PDF verarbeitet' : '🖼️ Bild verarbeitet';
-    var fd = new FormData();
-    fd.append(fieldName, file, file.name);
-    window.imAjaxSubmit(fd, fallbackText, 'success').catch(function(e){
-      console.error(e);
-      showTopPdfNotice('⚠️ ' + file.name + ' konnte nicht gespeichert werden.', true);
-    }).finally(function(){
-      window.__imUploadBusy = false;
-      processUploadQueue();
-    });
+    zone.style.borderColor = isError ? '#dc2626' : '#334155';
+    setTimeout(function(){ zone.innerHTML = orig; zone.style.borderColor = '#334155'; }, 2500);
   }
   function handleFileList(fileList){
     var files = Array.prototype.filter.call(fileList, function(f){ return /\.pdf$/i.test(f.name) || imageExtRe.test(f.name); });
@@ -3602,16 +4134,24 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
         ? '⚠️ Nur PDF/JPG/PNG/GIF/WEBP werden unterstützt (.doc/.docx aktuell nicht).'
         : '⚠️ ' + rejected + ' Datei(en) übersprungen - Format nicht unterstützt.', true);
     }
-    if (files.length) queueUploads(files);
+    if (files.length) window.imOpenImportModal(files);
   }
-  zone.addEventListener('drop', function(e){
-    var files = e.dataTransfer && e.dataTransfer.files;
-    if (files && files.length) handleFileList(files);
-  });
   input.addEventListener('change', function(){
     if (input.files && input.files.length) handleFileList(input.files);
     input.value = '';
   });
+  // Eine knapp neben der Kopfzeile fallengelassene Datei soll nicht die ganze Seite verlassen
+  // (Browser-Standard: Datei anzeigen) - normale Datei-Eingabefelder behalten ihr Drop-Verhalten.
+  if (!window.__imWindowDropGuard) {
+    window.__imWindowDropGuard = true;
+    ['dragover', 'drop'].forEach(function(ev){
+      window.addEventListener(ev, function(e){
+        if (e.defaultPrevented || !hasFiles(e)) return;
+        if (e.target && e.target.matches && e.target.matches('input[type=file]')) return;
+        e.preventDefault();
+      });
+    });
+  }
 })();
 </script>
 
@@ -3788,7 +4328,74 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
     <?php endforeach; ?>
 </div>
 
-<!-- ZEITPLAN, FERIEN & ORDNERVERWALTUNG -->
+<!-- ORDNER-VERWALTUNG (direkt unter den Monitoren) -->
+<div style="padding: 0 25px;">
+    <div class="card">
+        <h3 style="margin-top:0;">Ordner-Verwaltung</h3>
+        <div style="font-size:12px; color:#64748b; margin:-6px 0 12px;">👁 bzw. 🔍 öffnet die Dateien zur Kontrolle im Modal - dort löschen, ins Archiv oder in einen aktiven Ordner verschieben.</div>
+        <form method="POST" style="display:flex; gap:10px; margin-bottom:15px;">
+            <input type="text" name="new_folder" placeholder="Neuer Ordner Name" required>
+            <button type="submit" style="background:#e91e63; width:180px;">Anlegen</button>
+        </form>
+
+        <?php if (empty($normalFolderPaths)): ?>
+            <div style="font-size:12px; color:#64748b;">Noch keine Ordner angelegt.</div>
+        <?php endif; ?>
+        <?php foreach ($normalFolderPaths as $folderPath):
+            $folderName = basename($folderPath);
+            $isArchiveFolderRow = in_array($folderName, $archiveFolders, true);
+            $isPdfFolderRow = in_array($folderName, $pdfFolders, true);
+            $active = isFolderActive($folderName, $config);
+            $fileCount = count(array_diff(scandir($folderPath), ['.', '..']));
+            $safeId = 'folder_' . md5($folderName);
+            $folderOrient = $config['folder_orientation'][$folderName] ?? null;
+            if ($isArchiveFolderRow) {
+                $orientTag = $folderName === 'Archiv Hoch' ? ' ⇕' : ' ⇔';
+            } elseif ($isPdfFolderRow) {
+                $orientTag = $folderName === 'PDF Hoch' ? ' ⇕' : ' ⇔';
+            } else {
+                $orientTag = $folderOrient === 'hoch' ? ' ⇕' : ($folderOrient === 'quer' ? ' ⇔' : '');
+            }
+            // Ist eine Ausrichtung bekannt (und ist dies selbst weder ein Archiv- noch ein
+            // PDF-Ordner), bekommt das Akkordion beim Aufklappen eine zweite Spalte mit dem
+            // dazu passenden Archiv-Ordner (siehe renderArchivePairPanel()) - so kann direkt
+            // zwischen Archiv und aktuell genutztem Ordner verschoben werden, ohne extra
+            // dorthin navigieren zu muessen.
+            $pairedArchiveFolder = ($isArchiveFolderRow || $isPdfFolderRow) ? null : ($folderOrient === 'hoch' ? 'Archiv Hoch' : ($folderOrient === 'quer' ? 'Archiv Quer' : null));
+        ?>
+        <div style="margin-bottom:10px;">
+            <button class="accordion-btn" type="button" onclick="toggleGenericAccordion('<?php echo $safeId; ?>', this)" style="<?php echo $active ? 'border-color:#22c55e; color:#22c55e;' : ''; ?>">
+                <span><?php echo $active ? '🟢' : '⚪'; ?> <?php echo htmlspecialchars($folderName); ?><?php echo $orientTag; ?> <span style="font-weight:normal; opacity:0.7;">(<?php echo $fileCount; ?> Datei<?php echo $fileCount === 1 ? '' : 'en'; ?><?php echo $active ? ', aktiv verwendet' : ''; ?>)</span></span>
+                <span class="acc-icon">➕ Aufklappen</span>
+            </button>
+            <div id="<?php echo $safeId; ?>" class="accordion-content">
+                <?php if ($isPdfFolderRow): ?>
+                    <?php renderPdfFileList($folderName, $uploadBase); ?>
+                <?php elseif ($pairedArchiveFolder !== null): ?>
+                <div class="im-folder-pair" style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; align-items:start;">
+                    <div>
+                        <?php renderFileManager($folderName, $uploadBase, 'Ordnerinhalt', $config['folder_hidden_files'][$folderName] ?? [], $folderOrient); ?>
+                    </div>
+                    <div>
+                        <?php renderArchivePairPanel($pairedArchiveFolder, $folderName, $uploadBase); ?>
+                    </div>
+                </div>
+                <?php else: ?>
+                    <?php renderFileManager($folderName, $uploadBase, $isArchiveFolderRow ? 'Archiv' : 'Ordnerinhalt', $config['folder_hidden_files'][$folderName] ?? [], $folderOrient); ?>
+                <?php endif; ?>
+                <?php if (!$isArchiveFolderRow && !$isPdfFolderRow): ?>
+                <form method="POST" onsubmit="return confirm('Ordner &quot;<?php echo htmlspecialchars(addslashes($folderName)); ?>&quot; inkl. aller Dateien wirklich löschen?');" style="margin-top:10px;">
+                    <input type="hidden" name="del_folder" value="<?php echo htmlspecialchars($folderName); ?>">
+                    <button type="submit" style="background:#7f1d1d; width:auto; padding:6px 14px;">🗑 Ordner löschen</button>
+                </form>
+                <?php endif; ?>
+            </div>
+        </div>
+        <?php endforeach; ?>
+    </div>
+</div>
+
+<!-- ZEITPLAN & FERIEN -->
 <div style="padding: 0 25px;">
     <?php $status = computeGlobalOff($config); $wTag = ["1"=>"Mo","2"=>"Di","3"=>"Mi","4"=>"Do","5"=>"Fr","6"=>"Sa","7"=>"So"][date('N', getAdjustedNow($config))]; ?>
     <?php $statusColorZeitplan = $status['off'] ? '#ef4444' : '#22c55e'; ?>
@@ -3880,119 +4487,6 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
         <?php endif; ?>
         <div style="font-size:11px; color:#475569; margin-top:8px;">Abgelaufene Einträge (Bis-Datum in der Vergangenheit) werden automatisch entfernt.</div>
         </div>
-    </div>
-
-    <div class="card">
-        <h3 style="margin-top:0;">Globale Ordner-Verwaltung</h3>
-        <form method="POST" style="display:flex; gap:10px; margin-bottom:15px;">
-            <input type="text" name="new_folder" placeholder="Neuer Ordner Name" required>
-            <button type="submit" style="background:#e91e63; width:180px;">Anlegen</button>
-        </form>
-
-        <?php
-            // Beide Archiv-Ordner immer als feste, eigene Ordner in der Liste anbieten (auch
-            // bevor je etwas archiviert wurde), damit sie z.B. zum endgueltigen Aufraeumen
-            // erreichbar bleiben.
-            foreach ($archiveFolders as $af) {
-                $afPath = $uploadBase . $af;
-                if (!is_dir($afPath)) { @mkdir($afPath, 0775, true); }
-            }
-            $existingFolderPaths = array_filter(glob($uploadBase . '*'), 'is_dir');
-            // Die beiden vom PDF-Drop automatisch angelegten Ordner (siehe convertPdfDrop())
-            // tragen ihre Ausrichtung schon im Namen - einmalig und selbstheilend als
-            // Standardzuordnung uebernehmen, falls noch nicht geschehen (z.B. frisch angelegt).
-            if (!isset($config['folder_orientation'])) $config['folder_orientation'] = [];
-            $existingFolderNames = array_map('basename', $existingFolderPaths);
-            $orientationDefaultsChanged = false;
-            foreach (['Hoch' => 'hoch', 'Quer' => 'quer'] as $autoName => $autoOrient) {
-                if (in_array($autoName, $existingFolderNames, true) && !isset($config['folder_orientation'][$autoName])) {
-                    $config['folder_orientation'][$autoName] = $autoOrient;
-                    $orientationDefaultsChanged = true;
-                }
-            }
-            if ($orientationDefaultsChanged) { file_put_contents($configFile, json_encode($config, JSON_PRETTY_PRINT)); }
-
-            // Beide nativen PDF-Ordner immer als feste, eigene Ordner in der Liste anbieten
-            // (auch bevor je eine PDF dort abgelegt wurde) - genau wie die beiden Archiv-Ordner
-            // oben.
-            foreach ($pdfFolders as $pf) {
-                $pfPath = $uploadBase . $pf;
-                if (!is_dir($pfPath)) { @mkdir($pfPath, 0775, true); }
-            }
-            $existingFolderPaths = array_filter(glob($uploadBase . '*'), 'is_dir');
-
-            // Alle Ordner ausser den bento-pronto-eigenen Ablagen (die werden ausschliesslich
-            // ueber bento.php verwaltet) - die Archiv- UND die nativen PDF-Ordner bleiben als
-            // ganz normale Ordner in dieser einen Liste erreichbar (u.a. fuer endgueltiges
-            // Loeschen), die Archiv-Ordner tauchen zusaetzlich - ohne selbst eine eigene zweite
-            // Spalte zu sein - als rechte Spalte im Akkordion jedes dazu passenden Ordners auf
-            // (siehe renderArchivePairPanel()). Aktive Ordner zuerst, danach alphabetisch.
-            $normalFolderPaths = array_values(array_filter($existingFolderPaths, function ($p) use ($bentoManagedFolders) {
-                $n = basename($p);
-                return !in_array($n, $bentoManagedFolders, true);
-            }));
-            usort($normalFolderPaths, function ($a, $b) use ($config) {
-                $an = basename($a); $bn = basename($b);
-                $aActive = isFolderActive($an, $config) ? 0 : 1;
-                $bActive = isFolderActive($bn, $config) ? 0 : 1;
-                if ($aActive !== $bActive) return $aActive <=> $bActive;
-                return strnatcasecmp($an, $bn);
-            });
-        ?>
-        <?php if (empty($normalFolderPaths)): ?>
-            <div style="font-size:12px; color:#64748b;">Noch keine Ordner angelegt.</div>
-        <?php endif; ?>
-        <?php foreach ($normalFolderPaths as $folderPath):
-            $folderName = basename($folderPath);
-            $isArchiveFolderRow = in_array($folderName, $archiveFolders, true);
-            $isPdfFolderRow = in_array($folderName, $pdfFolders, true);
-            $active = isFolderActive($folderName, $config);
-            $fileCount = count(array_diff(scandir($folderPath), ['.', '..']));
-            $safeId = 'folder_' . md5($folderName);
-            $folderOrient = $config['folder_orientation'][$folderName] ?? null;
-            if ($isArchiveFolderRow) {
-                $orientTag = $folderName === 'Archiv Hoch' ? ' ⇕' : ' ⇔';
-            } elseif ($isPdfFolderRow) {
-                $orientTag = $folderName === 'PDF Hoch' ? ' ⇕' : ' ⇔';
-            } else {
-                $orientTag = $folderOrient === 'hoch' ? ' ⇕' : ($folderOrient === 'quer' ? ' ⇔' : '');
-            }
-            // Ist eine Ausrichtung bekannt (und ist dies selbst weder ein Archiv- noch ein
-            // PDF-Ordner), bekommt das Akkordion beim Aufklappen eine zweite Spalte mit dem
-            // dazu passenden Archiv-Ordner (siehe renderArchivePairPanel()) - so kann direkt
-            // zwischen Archiv und aktuell genutztem Ordner verschoben werden, ohne extra
-            // dorthin navigieren zu muessen.
-            $pairedArchiveFolder = ($isArchiveFolderRow || $isPdfFolderRow) ? null : ($folderOrient === 'hoch' ? 'Archiv Hoch' : ($folderOrient === 'quer' ? 'Archiv Quer' : null));
-        ?>
-        <div style="margin-bottom:10px;">
-            <button class="accordion-btn" type="button" onclick="toggleGenericAccordion('<?php echo $safeId; ?>', this)" style="<?php echo $active ? 'border-color:#22c55e; color:#22c55e;' : ''; ?>">
-                <span><?php echo $active ? '🟢' : '⚪'; ?> <?php echo htmlspecialchars($folderName); ?><?php echo $orientTag; ?> <span style="font-weight:normal; opacity:0.7;">(<?php echo $fileCount; ?> Datei<?php echo $fileCount === 1 ? '' : 'en'; ?><?php echo $active ? ', aktiv verwendet' : ''; ?>)</span></span>
-                <span class="acc-icon">➕ Aufklappen</span>
-            </button>
-            <div id="<?php echo $safeId; ?>" class="accordion-content">
-                <?php if ($isPdfFolderRow): ?>
-                    <?php renderPdfFileList($folderName, $uploadBase); ?>
-                <?php elseif ($pairedArchiveFolder !== null): ?>
-                <div class="im-folder-pair" style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; align-items:start;">
-                    <div>
-                        <?php renderFileManager($folderName, $uploadBase, 'Ordnerinhalt', $config['folder_hidden_files'][$folderName] ?? [], $folderOrient); ?>
-                    </div>
-                    <div>
-                        <?php renderArchivePairPanel($pairedArchiveFolder, $folderName, $uploadBase); ?>
-                    </div>
-                </div>
-                <?php else: ?>
-                    <?php renderFileManager($folderName, $uploadBase, $isArchiveFolderRow ? 'Archiv' : 'Ordnerinhalt', $config['folder_hidden_files'][$folderName] ?? [], $folderOrient); ?>
-                <?php endif; ?>
-                <?php if (!$isArchiveFolderRow && !$isPdfFolderRow): ?>
-                <form method="POST" onsubmit="return confirm('Ordner &quot;<?php echo htmlspecialchars(addslashes($folderName)); ?>&quot; inkl. aller Dateien wirklich löschen?');" style="margin-top:10px;">
-                    <input type="hidden" name="del_folder" value="<?php echo htmlspecialchars($folderName); ?>">
-                    <button type="submit" style="background:#7f1d1d; width:auto; padding:6px 14px;">🗑 Ordner löschen</button>
-                </form>
-                <?php endif; ?>
-            </div>
-        </div>
-        <?php endforeach; ?>
     </div>
 
     <?php if (isset($_GET['view_reports']) && !empty($errorReports[$_GET['view_reports']])): ?>
