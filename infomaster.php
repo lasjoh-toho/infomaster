@@ -3538,7 +3538,7 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
         </div>
         <input type="file" id="topPdfDropInput" accept="application/pdf,image/jpeg,image/png,image/gif,image/webp" multiple style="display:none;">
         <a href="bento.php" style="color:#38bdf8; text-decoration:none; font-weight:bold; padding:8px 15px; background:#111; border-radius:4px; border:1px solid #333;" title="Bento-Pronto: PPTX/PPT importieren und als Präsentation bearbeiten">🎬 PPT importieren</a>
-        <a href="eyecandy.html?token=<?php echo urlencode($config['eyecandy_token']); ?>" style="color:#e879f9; text-decoration:none; font-weight:bold; padding:8px 15px; background:#111; border-radius:4px; border:1px solid #333;" title="EyeCandy Studio: Präsentations-Editor mit Spotlight-Effekt, Grainy Gradients und Wegpunkten">✨ Schnelle Präsentation erstellen</a>
+        <a href="eyecandy.html?token=<?php echo urlencode($config['eyecandy_token']); ?>" style="color:#e879f9; text-decoration:none; font-weight:bold; padding:8px 15px; background:#111; border-radius:4px; border:1px solid #333;" title="EyeCandy Studio: Präsentations-Editor mit Spotlight-Effekt, Grainy Gradients und Wegpunkten">✨ Editor</a>
         <a href="?logout=1" style="color:#ff5252; text-decoration:none; font-weight:bold; padding:8px 15px; background:#111; border-radius:4px; border:1px solid #333;">Abmelden</a>
     </div>
 </div>

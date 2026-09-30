@@ -390,7 +390,7 @@
 
         <!-- ===== TAB: ELEMENTS ===== -->
         <div class="tab-panel" id="tab-elements">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px;">
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:12px;">
             <button onclick="App.addTextElement()" class="btn-sm" style="justify-content:center;">
               <i data-lucide="type" style="width:13px;height:13px;color:#a5b4fc;"></i> Text
             </button>
@@ -398,6 +398,9 @@
               <i data-lucide="image" style="width:13px;height:13px;color:#34d399;"></i> Bild
               <input type="file" accept="image/*" style="display:none;" onchange="App.handleImageUpload(event)">
             </label>
+            <button onclick="App.addQrElement()" class="btn-sm" style="justify-content:center;">
+              <i data-lucide="qr-code" style="width:13px;height:13px;color:#f59e0b;"></i> QR
+            </button>
           </div>
           <div class="ctrl-section">
             <div class="ctrl-section-title">Ebenen dieser Folie</div>
@@ -794,6 +797,360 @@ function contrastHexColor(hex) {
   const luminance=(0.299*r+0.587*g+0.114*b)/255;
   return luminance>0.55 ? '#000000' : '#ffffff';
 }
+// WCAG-Kontrastverhaeltnis (1..21) zwischen zwei Hex-Farben - fuer die Lesbarkeits-Warnung
+// beim QR-Code-Element (siehe unten).
+function relativeLuminance(hex) {
+  let h=(hex||'#ffffff').replace('#','');
+  if (h.length===3) h=h.split('').map(c=>c+c).join('');
+  if (h.length!==6) return 1;
+  const chan=(v)=>{ v/=255; return v<=0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055,2.4); };
+  const r=chan(parseInt(h.substring(0,2),16)), g=chan(parseInt(h.substring(2,4),16)), b=chan(parseInt(h.substring(4,6),16));
+  return 0.2126*r+0.7152*g+0.0722*b;
+}
+function contrastRatio(hex1, hex2) {
+  const l1=relativeLuminance(hex1), l2=relativeLuminance(hex2);
+  const lighter=Math.max(l1,l2), darker=Math.min(l1,l2);
+  return (lighter+0.05)/(darker+0.05);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  QR-CODE-ENCODER (Byte-Modus/UTF-8, Version 1-10, alle EC-Level)
+// ═══════════════════════════════════════════════════════════════
+// Eigenstaendige Implementierung (Reed-Solomon ueber GF(256), Standard-QR-Struktur) - kein
+// externes CDN/Bibliothek, damit QR-Codes wie der Rest von EyeCandy auch offline auf dem Pi
+// funktionieren. Deckt Version 1-10 ab (bis zu grob 200 Byte je nach EC-Level) - komfortabel
+// genug fuer URLs/kurze Texte; laengere Eingaben werden mit einer klaren Fehlermeldung
+// abgelehnt statt eine riskant unvollstaendige hoehere Version zu versuchen.
+const GF_EXP = new Int32Array(512);
+const GF_LOG = new Int32Array(256);
+(function initGF() {
+  let x = 1;
+  for (let i = 0; i < 255; i++) {
+    GF_EXP[i] = x;
+    GF_LOG[x] = i;
+    x <<= 1;
+    if (x & 0x100) x ^= 0x11D;
+  }
+  for (let i = 255; i < 512; i++) GF_EXP[i] = GF_EXP[i - 255];
+})();
+function gfMul(a, b) {
+  if (a === 0 || b === 0) return 0;
+  return GF_EXP[GF_LOG[a] + GF_LOG[b]];
+}
+function rsGeneratorPoly(degree) {
+  let poly = [1];
+  for (let i = 0; i < degree; i++) {
+    const next = new Array(poly.length + 1).fill(0);
+    for (let j = 0; j < poly.length; j++) {
+      next[j] ^= gfMul(poly[j], 1);
+      next[j + 1] ^= gfMul(poly[j], GF_EXP[i]);
+    }
+    poly = next;
+  }
+  return poly;
+}
+function rsEncode(data, ecCount) {
+  const gen = rsGeneratorPoly(ecCount);
+  const res = new Array(data.length + ecCount).fill(0);
+  for (let i = 0; i < data.length; i++) res[i] = data[i];
+  for (let i = 0; i < data.length; i++) {
+    const coef = res[i];
+    if (coef === 0) continue;
+    for (let j = 0; j < gen.length; j++) res[i + j] ^= gfMul(gen[j], coef);
+  }
+  return res.slice(data.length);
+}
+const QR_VERSIONS = [
+  { v: 1, size: 21, L: [7, [[1, 19]]], M: [10, [[1, 16]]], Q: [13, [[1, 13]]], H: [17, [[1, 9]]] },
+  { v: 2, size: 25, L: [10, [[1, 34]]], M: [16, [[1, 28]]], Q: [22, [[1, 22]]], H: [28, [[1, 16]]] },
+  { v: 3, size: 29, L: [15, [[1, 55]]], M: [26, [[1, 44]]], Q: [18, [[2, 17]]], H: [22, [[2, 13]]] },
+  { v: 4, size: 33, L: [20, [[1, 80]]], M: [18, [[2, 32]]], Q: [26, [[2, 24]]], H: [16, [[4, 9]]] },
+  { v: 5, size: 37, L: [26, [[1, 108]]], M: [24, [[2, 43]]], Q: [18, [[2, 15], [2, 16]]], H: [22, [[2, 11], [2, 12]]] },
+  { v: 6, size: 41, L: [18, [[2, 68]]], M: [16, [[4, 27]]], Q: [24, [[4, 19]]], H: [28, [[4, 15]]] },
+  { v: 7, size: 45, L: [20, [[2, 78]]], M: [18, [[4, 31]]], Q: [18, [[2, 14], [4, 15]]], H: [26, [[4, 13], [1, 14]]] },
+  { v: 8, size: 49, L: [24, [[2, 97]]], M: [22, [[2, 38], [2, 39]]], Q: [22, [[4, 18], [2, 19]]], H: [26, [[4, 14], [2, 15]]] },
+  { v: 9, size: 53, L: [30, [[2, 116]]], M: [22, [[3, 36], [2, 37]]], Q: [20, [[4, 16], [4, 17]]], H: [24, [[4, 12], [4, 13]]] },
+  { v: 10, size: 57, L: [18, [[2, 68], [2, 69]]], M: [26, [[4, 43], [1, 44]]], Q: [24, [[6, 19], [2, 20]]], H: [28, [[6, 15], [2, 16]]] },
+];
+const ALIGNMENT_COORDS = { 1: [], 2: [6, 18], 3: [6, 22], 4: [6, 26], 5: [6, 30], 6: [6, 34], 7: [6, 22, 38], 8: [6, 24, 42], 9: [6, 26, 46], 10: [6, 28, 50] };
+function charCountBits(version) { return version <= 9 ? 8 : 16; }
+function buildDataCodewords(bytes, version, ecLevelKey) {
+  const entry = QR_VERSIONS.find(e => e.v === version);
+  const [ecPerBlock, blockGroups] = entry[ecLevelKey];
+  const totalDataCodewords = blockGroups.reduce((s, [cnt, cw]) => s + cnt * cw, 0);
+  const capacityBits = totalDataCodewords * 8;
+  const bits = [];
+  const pushBits = (val, len) => { for (let i = len - 1; i >= 0; i--) bits.push((val >> i) & 1); };
+  pushBits(0b0100, 4); // Byte mode
+  pushBits(bytes.length, charCountBits(version));
+  for (const b of bytes) pushBits(b, 8);
+  for (let i = 0; i < 4 && bits.length < capacityBits; i++) bits.push(0);
+  while (bits.length % 8 !== 0) bits.push(0);
+  const dataCodewords = [];
+  for (let i = 0; i < bits.length; i += 8) {
+    let byte = 0;
+    for (let j = 0; j < 8; j++) byte = (byte << 1) | bits[i + j];
+    dataCodewords.push(byte);
+  }
+  const padBytes = [0xEC, 0x11];
+  let padIdx = 0;
+  while (dataCodewords.length < totalDataCodewords) { dataCodewords.push(padBytes[padIdx % 2]); padIdx++; }
+  if (dataCodewords.length > totalDataCodewords) throw new Error('QR: Daten zu lang für diese Version');
+  let offset = 0;
+  const blocks = [];
+  for (const [cnt, cw] of blockGroups) {
+    for (let i = 0; i < cnt; i++) {
+      const d = dataCodewords.slice(offset, offset + cw);
+      offset += cw;
+      const ec = rsEncode(d, ecPerBlock);
+      blocks.push({ d, ec });
+    }
+  }
+  const maxDataLen = Math.max(...blocks.map(b => b.d.length));
+  const interleaved = [];
+  for (let i = 0; i < maxDataLen; i++) for (const b of blocks) if (i < b.d.length) interleaved.push(b.d[i]);
+  for (let i = 0; i < ecPerBlock; i++) for (const b of blocks) interleaved.push(b.ec[i]);
+  return interleaved;
+}
+function isQrFunctionModule(size, version, r, c) {
+  if ((r < 8 && c < 8) || (r < 8 && c >= size - 8) || (r >= size - 8 && c < 8)) return true;
+  if (r === 6 || c === 6) return true;
+  const coords = ALIGNMENT_COORDS[version] || [];
+  for (const ar of coords) for (const ac of coords) {
+    if ((ar === 6 && ac === 6) || (ar === 6 && ac === size - 7) || (ar === size - 7 && ac === 6)) continue;
+    if (r >= ar - 2 && r <= ar + 2 && c >= ac - 2 && c <= ac + 2) return true;
+  }
+  if (r === size - 8 && c === 8) return true;
+  if ((r === 8 && (c < 9 || c >= size - 8)) || (c === 8 && (r < 9 || r >= size - 7))) return true;
+  if (version >= 7) {
+    if (r < 6 && c >= size - 11 && c < size - 8) return true;
+    if (c < 6 && r >= size - 11 && r < size - 8) return true;
+  }
+  return false;
+}
+function drawQrFunctionPatterns(matrix, size, version) {
+  function drawFinder(r0, c0) {
+    for (let r = -1; r <= 7; r++) for (let c = -1; c <= 7; c++) {
+      const rr = r0 + r, cc = c0 + c;
+      if (rr < 0 || cc < 0 || rr >= size || cc >= size) continue;
+      const isBorder = r === -1 || r === 7 || c === -1 || c === 7;
+      const isRing = (r >= 0 && r <= 6 && (c === 0 || c === 6)) || (c >= 0 && c <= 6 && (r === 0 || r === 6));
+      const isCore = r >= 2 && r <= 4 && c >= 2 && c <= 4;
+      matrix[rr][cc] = isBorder ? 0 : (isRing || isCore) ? 1 : 0;
+    }
+  }
+  drawFinder(0, 0);
+  drawFinder(0, size - 7);
+  drawFinder(size - 7, 0);
+  for (let i = 8; i < size - 8; i++) { matrix[6][i] = i % 2 === 0 ? 1 : 0; matrix[i][6] = i % 2 === 0 ? 1 : 0; }
+  const coords = ALIGNMENT_COORDS[version] || [];
+  for (const ar of coords) for (const ac of coords) {
+    if ((ar === 6 && ac === 6) || (ar === 6 && ac === size - 7) || (ar === size - 7 && ac === 6)) continue;
+    for (let r = -2; r <= 2; r++) for (let c = -2; c <= 2; c++) {
+      const isBorder = Math.max(Math.abs(r), Math.abs(c)) === 2;
+      const isCenter = r === 0 && c === 0;
+      matrix[ar + r][ac + c] = (isBorder || isCenter) ? 1 : 0;
+    }
+  }
+  matrix[size - 8][8] = 1; // dark module
+  if (version >= 7) writeQrVersionInfo(matrix, size, version);
+}
+
+// Version-Info (2x 18-Bit BCH-Block, nur ab Version 7 noetig - kodiert die Versionsnummer
+// selbst, damit Scanner sie ohne Groessenraten aus den Randmodulen lesen koennen)
+function qrBchDigitLength(x) {
+  let digit = 0;
+  while (x !== 0) { digit++; x >>>= 1; }
+  return digit;
+}
+function qrVersionInfoBits(version) {
+  const G18 = 0x1F25; // x^12+x^11+x^10+x^9+x^8+x^5+x^2+1
+  let d = version << 12;
+  while (qrBchDigitLength(d) - qrBchDigitLength(G18) >= 0) {
+    d ^= G18 << (qrBchDigitLength(d) - qrBchDigitLength(G18));
+  }
+  return (version << 12) | d;
+}
+function writeQrVersionInfo(matrix, size, version) {
+  const bits = qrVersionInfoBits(version);
+  for (let i = 0; i < 18; i++) {
+    const bit = (bits >> i) & 1;
+    matrix[Math.floor(i / 3)][size - 11 + (i % 3)] = bit;
+    matrix[size - 11 + (i % 3)][Math.floor(i / 3)] = bit;
+  }
+}
+
+const QR_FORMAT_MASK = 0b101010000010010;
+function qrFormatBits(ecLevelKey, maskPattern) {
+  const ecIndicator = { L: 1, M: 0, Q: 3, H: 2 }[ecLevelKey];
+  let data = (ecIndicator << 3) | maskPattern;
+  let d = data << 10;
+  const gen = 0b10100110111;
+  for (let i = 4; i >= 0; i--) { if ((d >> (i + 10)) & 1) d ^= gen << i; }
+  return ((data << 10) | d) ^ QR_FORMAT_MASK;
+}
+function applyQrMask(pattern, r, c) {
+  switch (pattern) {
+    case 0: return (r + c) % 2 === 0;
+    case 1: return r % 2 === 0;
+    case 2: return c % 3 === 0;
+    case 3: return (r + c) % 3 === 0;
+    case 4: return (Math.floor(r / 2) + Math.floor(c / 3)) % 2 === 0;
+    case 5: return ((r * c) % 2) + ((r * c) % 3) === 0;
+    case 6: return (((r * c) % 2) + ((r * c) % 3)) % 2 === 0;
+    case 7: return (((r + c) % 2) + ((r * c) % 3)) % 2 === 0;
+  }
+  return false;
+}
+function placeQrData(matrix, size, version, codewords, maskPattern) {
+  const bits = [];
+  for (const cw of codewords) for (let i = 7; i >= 0; i--) bits.push((cw >> i) & 1);
+  let bitIdx = 0;
+  let dir = -1;
+  let c = size - 1;
+  while (c > 0) {
+    if (c === 6) c--;
+    for (let i = 0; i < size; i++) {
+      const r = dir === -1 ? size - 1 - i : i;
+      for (const cc of [c, c - 1]) {
+        if (isQrFunctionModule(size, version, r, cc)) continue;
+        let bit = bitIdx < bits.length ? bits[bitIdx] : 0;
+        bitIdx++;
+        if (applyQrMask(maskPattern, r, cc)) bit ^= 1;
+        matrix[r][cc] = bit;
+      }
+    }
+    dir = -dir;
+    c -= 2;
+  }
+}
+function writeQrFormatInfo(matrix, size, ecLevelKey, maskPattern) {
+  const bits = qrFormatBits(ecLevelKey, maskPattern);
+  const get = (i) => (bits >> i) & 1;
+  for (let i = 0; i <= 5; i++) matrix[i][8] = get(i);
+  matrix[7][8] = get(6);
+  matrix[8][8] = get(7);
+  for (let i = 0; i <= 5; i++) matrix[8][i] = get(14 - i);
+  matrix[8][7] = get(8);
+  for (let i = 0; i < 8; i++) matrix[8][size - 1 - i] = get(i);
+  for (let i = 0; i < 7; i++) matrix[size - 7 + i][8] = get(8 + i);
+}
+function qrPenaltyScore(matrix, size) {
+  let score = 0;
+  for (let r = 0; r < size; r++) {
+    let runColor = matrix[r][0], runLen = 1;
+    for (let c = 1; c < size; c++) {
+      if (matrix[r][c] === runColor) runLen++;
+      else { if (runLen >= 5) score += 3 + (runLen - 5); runColor = matrix[r][c]; runLen = 1; }
+    }
+    if (runLen >= 5) score += 3 + (runLen - 5);
+  }
+  for (let c = 0; c < size; c++) {
+    let runColor = matrix[0][c], runLen = 1;
+    for (let r = 1; r < size; r++) {
+      if (matrix[r][c] === runColor) runLen++;
+      else { if (runLen >= 5) score += 3 + (runLen - 5); runColor = matrix[r][c]; runLen = 1; }
+    }
+    if (runLen >= 5) score += 3 + (runLen - 5);
+  }
+  for (let r = 0; r < size - 1; r++) for (let c = 0; c < size - 1; c++) {
+    const v = matrix[r][c];
+    if (v === matrix[r][c + 1] && v === matrix[r + 1][c] && v === matrix[r + 1][c + 1]) score += 3;
+  }
+  const pattern = [1, 0, 1, 1, 1, 0, 1];
+  function matchesAt(arr, i) {
+    for (let k = 0; k < 7; k++) if (arr[i + k] !== pattern[k]) return false;
+    return true;
+  }
+  for (let r = 0; r < size; r++) {
+    const row = matrix[r];
+    for (let c = 0; c <= size - 7; c++) {
+      if (matchesAt(row, c)) {
+        if (c >= 4 && row.slice(c - 4, c).every(v => v === 0)) score += 40;
+        if (c + 7 + 4 <= size && row.slice(c + 7, c + 11).every(v => v === 0)) score += 40;
+      }
+    }
+  }
+  for (let c = 0; c < size; c++) {
+    const col = matrix.map(row => row[c]);
+    for (let r = 0; r <= size - 7; r++) {
+      if (matchesAt(col, r)) {
+        if (r >= 4 && col.slice(r - 4, r).every(v => v === 0)) score += 40;
+        if (r + 7 + 4 <= size && col.slice(r + 7, r + 11).every(v => v === 0)) score += 40;
+      }
+    }
+  }
+  let dark = 0;
+  for (let r = 0; r < size; r++) for (let c = 0; c < size; c++) dark += matrix[r][c];
+  const percent = (dark * 100) / (size * size);
+  const prevMultipleOf5 = Math.floor(percent / 5) * 5;
+  const nextMultipleOf5 = prevMultipleOf5 + 5;
+  score += Math.min(Math.abs(prevMultipleOf5 - 50) / 5, Math.abs(nextMultipleOf5 - 50) / 5) * 10;
+  return score;
+}
+function encodeQR(text, ecLevelKey) {
+  ecLevelKey = ecLevelKey || 'M';
+  const bytes = Array.from(new TextEncoder().encode(text));
+  let chosen = null;
+  for (const entry of QR_VERSIONS) {
+    const [ecPerBlock, blockGroups] = entry[ecLevelKey];
+    const totalDataCodewords = blockGroups.reduce((s, [cnt, cw]) => s + cnt * cw, 0);
+    const capacityBits = totalDataCodewords * 8;
+    const neededBits = 4 + charCountBits(entry.v) + bytes.length * 8;
+    if (neededBits <= capacityBits) { chosen = entry; break; }
+  }
+  if (!chosen) throw new Error('QR: Text zu lang (max. Version 10 unterstützt)');
+  const version = chosen.v;
+  const size = chosen.size;
+  const codewords = buildDataCodewords(bytes, version, ecLevelKey);
+  let best = null;
+  for (let mask = 0; mask < 8; mask++) {
+    const matrix = Array.from({ length: size }, () => new Array(size).fill(0));
+    drawQrFunctionPatterns(matrix, size, version);
+    placeQrData(matrix, size, version, codewords, mask);
+    writeQrFormatInfo(matrix, size, ecLevelKey, mask);
+    const score = qrPenaltyScore(matrix, size);
+    if (!best || score < best.score) best = { matrix, score, mask };
+  }
+  return { size, modules: best.matrix, version };
+}
+function isQrFinderCell(size, r, c) {
+  return (r < 7 && c < 7) || (r < 7 && c >= size - 7) || (r >= size - 7 && c < 7);
+}
+// Zeichnet den QR-Code auf ein Canvas - "rund" laesst nur die Datenmodule zu Punkten werden,
+// die drei grossen Finder-Muster (Ecken) bleiben immer volle Quadrate, da Scanner sich zur
+// Erkennung/Ausrichtung auf deren exakte Form verlassen (Industriestandard fuer "gestylte"
+// QR-Codes). Ruhezone (mind. 4 Module) bleibt IMMER Platz, auch ohne Hintergrundfuellung.
+function renderQrToCanvas(canvas, text, opts) {
+  const { shape = 'square', fgColor = '#000000', bgColor = '#ffffff', bgEnabled = true, ecLevel = 'M' } = opts || {};
+  const ctx = canvas.getContext('2d');
+  let result;
+  try { result = encodeQR(text || ' ', ecLevel); }
+  catch (e) { ctx.clearRect(0, 0, canvas.width, canvas.height); return { error: e.message }; }
+  const { size, modules } = result;
+  const quiet = 4;
+  const modulePx = 10;
+  const total = size + quiet * 2;
+  canvas.width = total * modulePx;
+  canvas.height = total * modulePx;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (bgEnabled) { ctx.fillStyle = bgColor; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+  ctx.fillStyle = fgColor;
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      if (!modules[r][c]) continue;
+      const x = (c + quiet) * modulePx, y = (r + quiet) * modulePx;
+      if (shape === 'round' && !isQrFinderCell(size, r, c)) {
+        ctx.beginPath();
+        ctx.arc(x + modulePx / 2, y + modulePx / 2, modulePx * 0.46, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.fillRect(x, y, modulePx, modulePx);
+      }
+    }
+  }
+  return { error: null };
+}
 
 // Fuer per innerHTML eingefuegten, frei eingegebenen Text (z.B. Layer-Labels aus
 // el.content) - verhindert, dass Zeichen wie "<" darin als HTML interpretiert werden.
@@ -1118,6 +1475,18 @@ function renderTemplateElement(el, isEditor) {
 // ═══════════════════════════════════════════════════════════════
 //  SLIDE RENDERING
 // ═══════════════════════════════════════════════════════════════
+// Waehlt das Element aus und wechselt zusaetzlich auf den "Elemente"-Tab, damit der
+// Inspector (der nur dort im DOM sichtbar ist) sofort zu sehen ist - sonst landet die
+// Auswahl unbemerkt "im Hintergrund", wenn man z.B. gerade auf "Hintergrund" oder
+// "Folien" war und auf der Folie selbst doppelklickt.
+function selectElAndShowTab(el, wrapper) {
+  document.querySelectorAll('.slide-el.selected-el').forEach(w => w.classList.remove('selected-el'));
+  wrapper.classList.add('selected-el');
+  S.selectedElementId = el.id;
+  App.setTab('elements');
+  App.renderInspector();
+  App.renderLayersList();
+}
 function renderSlideContent(slide, container, isEditor, stageEl) {
   container.innerHTML = '';
   stageEl = stageEl || container.parentElement;
@@ -1152,6 +1521,7 @@ function renderSlideContent(slide, container, isEditor, stageEl) {
       if (isEditor) {
         div.ondblclick = evt => {
           evt.stopPropagation();
+          selectElAndShowTab(el, wrapper);
           div.contentEditable='true'; div.focus();
         };
         div.onblur = () => {
@@ -1166,7 +1536,24 @@ function renderSlideContent(slide, container, isEditor, stageEl) {
     } else if (el.type==='image') {
       const img=document.createElement('img');
       img.src=el.src; img.style.width='100%'; img.style.borderRadius='12px'; img.style.boxShadow='0 20px 60px rgba(0,0,0,0.5)';
+      if (isEditor) {
+        img.ondblclick = evt => {
+          evt.stopPropagation();
+          selectElAndShowTab(el, wrapper);
+        };
+      }
       wrapper.appendChild(img);
+
+    } else if (el.type==='qr') {
+      // aspect-ratio:1/1 haelt das Canvas quadratisch, unabhaengig von der Prozent-Breite
+      // des Wrappers - kein JS-Resize-Handling noetig.
+      const qrCanvas=document.createElement('canvas');
+      qrCanvas.style.cssText='width:100%;height:100%;display:block;border-radius:4px;';
+      const qrBox=document.createElement('div');
+      qrBox.style.cssText='width:100%;aspect-ratio:1/1;';
+      qrBox.appendChild(qrCanvas);
+      wrapper.appendChild(qrBox);
+      renderQrToCanvas(qrCanvas, el.content, el);
 
     } else if (el.type==='template') {
       wrapper.innerHTML += renderTemplateElement(el, isEditor);
@@ -2395,6 +2782,30 @@ const App = {
     this.render(); this.renderInspector();
   },
 
+  addQrElement() {
+    const slide=S.slides[S.activeSlideIndex];
+    const el={id:'el-'+Date.now(),type:'qr',content:'https://',shape:'square',fgColor:'#000000',bgColor:'#ffffff',bgEnabled:true,ecLevel:'M',x:35,y:30,width:30};
+    slide.elements.push(el);
+    S.selectedElementId=el.id;
+    this.render(); this.renderInspector();
+  },
+
+  updateQrProp(key, val) {
+    const slide=S.slides[S.activeSlideIndex];
+    const el=slide?.elements.find(e=>e.id===S.selectedElementId);
+    if (!el) return;
+    el[key]=val;
+    this.render();
+    // Kontrast-Warnung live aktualisieren, ohne das ganze Inspector-Panel (und damit den
+    // Fokus im gerade bearbeiteten Feld) neu aufzubauen.
+    const warn=document.getElementById('qr-contrast-warning');
+    if (warn) {
+      const bg = el.bgEnabled ? el.bgColor : (slide.background.solidColor || slide.background.grainy?.colors?.bg || '#ffffff');
+      const ratio = contrastRatio(el.fgColor, bg);
+      warn.style.display = ratio < 3 ? 'block' : 'none';
+    }
+  },
+
   handleImageUpload(evt) {
     const file=evt.target.files[0]; if (!file) return;
     const r=new FileReader();
@@ -2479,6 +2890,7 @@ const App = {
       let icon='🔤', label='Text';
       if (el.type==='text') { label=(el.content||'').replace(/\s+/g,' ').trim().slice(0,40) || '(leerer Text)'; }
       else if (el.type==='image') { icon='🖼️'; label='Bild'; }
+      else if (el.type==='qr') { icon='▦'; label='QR: '+(el.content||'').slice(0,30); }
       else if (el.type==='template') { icon='◧'; label='Vorlage: '+el.template; }
       const item=document.createElement('div');
       item.className='layer-item'+(S.selectedElementId===el.id?' selected-layer':'');
@@ -2579,6 +2991,40 @@ const App = {
           <input type="range" min="10" max="100" value="${el.width}" oninput="App.updateElProp('width',parseInt(this.value))">
           <button onclick="App.deleteSelectedEl()" class="btn-sm danger" style="width:100%;justify-content:center;margin-top:10px;">
             <i data-lucide="trash-2" style="width:11px;height:11px;"></i> Bild löschen
+          </button>
+        </div>`;
+    } else if (el.type==='qr') {
+      const qrBg = el.bgEnabled ? el.bgColor : (slide.background.solidColor || slide.background.grainy?.colors?.bg || '#ffffff');
+      const qrRatio = contrastRatio(el.fgColor, qrBg);
+      panel.innerHTML=`
+        <div class="ctrl-section">
+          <div class="ctrl-section-title">QR-Code-Element</div>
+          <label class="ctrl-label">Inhalt (URL oder Text)</label>
+          <textarea oninput="App.updateQrProp('content',this.value)" style="height:50px;resize:vertical;font-size:11px;">${escapeHtmlEc(el.content)}</textarea>
+          <label class="ctrl-label" style="margin-top:8px;">Form der Module</label>
+          <div style="display:flex;gap:5px;">
+            <button onclick="App.updateQrProp('shape','square')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${el.shape==='square'?'background:rgba(99,102,241,0.25);border-color:rgba(99,102,241,0.4);':''}">◼ Eckig</button>
+            <button onclick="App.updateQrProp('shape','round')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${el.shape==='round'?'background:rgba(99,102,241,0.25);border-color:rgba(99,102,241,0.4);':''}">● Rund</button>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">
+            <div>
+              <label class="ctrl-label">Farbe</label>
+              <input type="color" value="${el.fgColor}" onchange="App.updateQrProp('fgColor',this.value)" style="height:32px;">
+            </div>
+            <div>
+              <label class="ctrl-label">Hintergrundfarbe</label>
+              <input type="color" value="${el.bgColor}" onchange="App.updateQrProp('bgColor',this.value)" style="height:32px;${el.bgEnabled?'':'opacity:0.35;pointer-events:none;'}">
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;">
+            <label class="ctrl-label" style="margin:0;" title="Ohne Hintergrund scheint die Folien-Fläche durch die Ruhezone/zwischen den Modulen durch">Mit Hintergrund</label>
+            <input type="checkbox" ${el.bgEnabled?'checked':''} onchange="App.updateQrProp('bgEnabled',this.checked); App.renderInspector();" style="accent-color:#6366f1;width:15px;height:15px;">
+          </div>
+          <label class="ctrl-label" style="margin-top:8px;">Breite (%)</label>
+          <input type="range" min="10" max="100" value="${el.width}" oninput="App.updateElProp('width',parseInt(this.value))">
+          <p id="qr-contrast-warning" style="display:${qrRatio<3?'block':'none'};font-size:10px;color:#fca5a5;margin:8px 0 0;">⚠️ Kontrast zwischen Farbe und Hintergrund evtl. zu gering - der Code könnte schwer lesbar sein.</p>
+          <button onclick="App.deleteSelectedEl()" class="btn-sm danger" style="width:100%;justify-content:center;margin-top:10px;">
+            <i data-lucide="trash-2" style="width:11px;height:11px;"></i> QR-Code löschen
           </button>
         </div>`;
     } else if (el.type==='template') {
@@ -2899,6 +3345,7 @@ function renderSlideEls(cont, slide, stageEl){
     w.style.cssText=\`position:absolute;left:\${el.x||0}%;top:\${el.y||0}%;width:\${el.width||80}%;z-index:10;\`;
     if(el.type==='text'){const d=document.createElement('div');d.style.fontFamily=el.fontFamily;d.style.fontSize=el.fontSize+'px';d.style.color=el.color;d.style.textAlign=el.textAlign;d.style.fontWeight=el.fontWeight||'400';d.style.lineHeight='1.3';d.innerText=el.content;w.appendChild(d);cont.appendChild(w);if(el.autoFit)autoFitQueue.push({div:d,wrapper:w,base:el.fontSize||28});return;}
     else if(el.type==='image'){const img=document.createElement('img');img.src=el.src;img.style.width='100%';img.style.borderRadius='12px';w.appendChild(img);}
+    else if(el.type==='qr'){const qrBox=document.createElement('div');qrBox.style.width='100%';qrBox.style.aspectRatio='1/1';const qrCanvas=document.createElement('canvas');qrCanvas.style.width='100%';qrCanvas.style.height='100%';qrCanvas.style.display='block';qrCanvas.style.borderRadius='4px';qrBox.appendChild(qrCanvas);w.appendChild(qrBox);renderQrToCanvas(qrCanvas,el.content,el);}
     else if(el.type==='template'){w.innerHTML=renderTmpl(el);}
     cont.appendChild(w);
   });
@@ -2958,6 +3405,218 @@ function tickB(dt){
 
 function smoothStep(t){return t*t*(3-2*t);}
 function hexToRgb(hex){let h=(hex||'#ffffff').replace('#','');if(h.length===3)h=h.split('').map(c=>c+c).join('');const n=parseInt(h,16)||0xffffff;return{r:(n>>16)&255,g:(n>>8)&255,b:n&255};}
+
+// ─── QR-CODE-ENCODER (siehe eyecandy.html selbst fuer die kommentierte Fassung - identischer
+// Code, hier ohne Kommentare fuer eine kompaktere Export-Datei) ───
+const GF_EXP=new Int32Array(512),GF_LOG=new Int32Array(256);
+(function(){let x=1;for(let i=0;i<255;i++){GF_EXP[i]=x;GF_LOG[x]=i;x<<=1;if(x&0x100)x^=0x11D;}for(let i=255;i<512;i++)GF_EXP[i]=GF_EXP[i-255];})();
+function gfMul(a,b){if(a===0||b===0)return 0;return GF_EXP[GF_LOG[a]+GF_LOG[b]];}
+function rsGeneratorPoly(degree){let poly=[1];for(let i=0;i<degree;i++){const next=new Array(poly.length+1).fill(0);for(let j=0;j<poly.length;j++){next[j]^=gfMul(poly[j],1);next[j+1]^=gfMul(poly[j],GF_EXP[i]);}poly=next;}return poly;}
+function rsEncode(data,ecCount){const gen=rsGeneratorPoly(ecCount);const res=new Array(data.length+ecCount).fill(0);for(let i=0;i<data.length;i++)res[i]=data[i];for(let i=0;i<data.length;i++){const coef=res[i];if(coef===0)continue;for(let j=0;j<gen.length;j++)res[i+j]^=gfMul(gen[j],coef);}return res.slice(data.length);}
+const QR_VERSIONS=[
+  {v:1,size:21,L:[7,[[1,19]]],M:[10,[[1,16]]],Q:[13,[[1,13]]],H:[17,[[1,9]]]},
+  {v:2,size:25,L:[10,[[1,34]]],M:[16,[[1,28]]],Q:[22,[[1,22]]],H:[28,[[1,16]]]},
+  {v:3,size:29,L:[15,[[1,55]]],M:[26,[[1,44]]],Q:[18,[[2,17]]],H:[22,[[2,13]]]},
+  {v:4,size:33,L:[20,[[1,80]]],M:[18,[[2,32]]],Q:[26,[[2,24]]],H:[16,[[4,9]]]},
+  {v:5,size:37,L:[26,[[1,108]]],M:[24,[[2,43]]],Q:[18,[[2,15],[2,16]]],H:[22,[[2,11],[2,12]]]},
+  {v:6,size:41,L:[18,[[2,68]]],M:[16,[[4,27]]],Q:[24,[[4,19]]],H:[28,[[4,15]]]},
+  {v:7,size:45,L:[20,[[2,78]]],M:[18,[[4,31]]],Q:[18,[[2,14],[4,15]]],H:[26,[[4,13],[1,14]]]},
+  {v:8,size:49,L:[24,[[2,97]]],M:[22,[[2,38],[2,39]]],Q:[22,[[4,18],[2,19]]],H:[26,[[4,14],[2,15]]]},
+  {v:9,size:53,L:[30,[[2,116]]],M:[22,[[3,36],[2,37]]],Q:[20,[[4,16],[4,17]]],H:[24,[[4,12],[4,13]]]},
+  {v:10,size:57,L:[18,[[2,68],[2,69]]],M:[26,[[4,43],[1,44]]],Q:[24,[[6,19],[2,20]]],H:[28,[[6,15],[2,16]]]},
+];
+const ALIGNMENT_COORDS={1:[],2:[6,18],3:[6,22],4:[6,26],5:[6,30],6:[6,34],7:[6,22,38],8:[6,24,42],9:[6,26,46],10:[6,28,50]};
+function charCountBits(version){return version<=9?8:16;}
+function buildDataCodewords(bytes,version,ecLevelKey){
+  const entry=QR_VERSIONS.find(e=>e.v===version);
+  const [ecPerBlock,blockGroups]=entry[ecLevelKey];
+  const totalDataCodewords=blockGroups.reduce((s,[cnt,cw])=>s+cnt*cw,0);
+  const capacityBits=totalDataCodewords*8;
+  const bits=[];
+  const pushBits=(val,len)=>{for(let i=len-1;i>=0;i--)bits.push((val>>i)&1);};
+  pushBits(0b0100,4);
+  pushBits(bytes.length,charCountBits(version));
+  for(const b of bytes)pushBits(b,8);
+  for(let i=0;i<4&&bits.length<capacityBits;i++)bits.push(0);
+  while(bits.length%8!==0)bits.push(0);
+  const dataCodewords=[];
+  for(let i=0;i<bits.length;i+=8){let byte=0;for(let j=0;j<8;j++)byte=(byte<<1)|bits[i+j];dataCodewords.push(byte);}
+  const padBytes=[0xEC,0x11];let padIdx=0;
+  while(dataCodewords.length<totalDataCodewords){dataCodewords.push(padBytes[padIdx%2]);padIdx++;}
+  if(dataCodewords.length>totalDataCodewords)throw new Error('QR: Daten zu lang für diese Version');
+  let offset=0;const blocks=[];
+  for(const [cnt,cw] of blockGroups){for(let i=0;i<cnt;i++){const d=dataCodewords.slice(offset,offset+cw);offset+=cw;const ec=rsEncode(d,ecPerBlock);blocks.push({d,ec});}}
+  const maxDataLen=Math.max(...blocks.map(b=>b.d.length));
+  const interleaved=[];
+  for(let i=0;i<maxDataLen;i++)for(const b of blocks)if(i<b.d.length)interleaved.push(b.d[i]);
+  for(let i=0;i<ecPerBlock;i++)for(const b of blocks)interleaved.push(b.ec[i]);
+  return interleaved;
+}
+function isQrFunctionModule(size,version,r,c){
+  if((r<8&&c<8)||(r<8&&c>=size-8)||(r>=size-8&&c<8))return true;
+  if(r===6||c===6)return true;
+  const coords=ALIGNMENT_COORDS[version]||[];
+  for(const ar of coords)for(const ac of coords){
+    if((ar===6&&ac===6)||(ar===6&&ac===size-7)||(ar===size-7&&ac===6))continue;
+    if(r>=ar-2&&r<=ar+2&&c>=ac-2&&c<=ac+2)return true;
+  }
+  if(r===size-8&&c===8)return true;
+  if((r===8&&(c<9||c>=size-8))||(c===8&&(r<9||r>=size-7)))return true;
+  if(version>=7){if(r<6&&c>=size-11&&c<size-8)return true;if(c<6&&r>=size-11&&r<size-8)return true;}
+  return false;
+}
+function drawQrFunctionPatterns(matrix,size,version){
+  function drawFinder(r0,c0){
+    for(let r=-1;r<=7;r++)for(let c=-1;c<=7;c++){
+      const rr=r0+r,cc=c0+c;
+      if(rr<0||cc<0||rr>=size||cc>=size)continue;
+      const isBorder=r===-1||r===7||c===-1||c===7;
+      const isRing=(r>=0&&r<=6&&(c===0||c===6))||(c>=0&&c<=6&&(r===0||r===6));
+      const isCore=r>=2&&r<=4&&c>=2&&c<=4;
+      matrix[rr][cc]=isBorder?0:(isRing||isCore)?1:0;
+    }
+  }
+  drawFinder(0,0);drawFinder(0,size-7);drawFinder(size-7,0);
+  for(let i=8;i<size-8;i++){matrix[6][i]=i%2===0?1:0;matrix[i][6]=i%2===0?1:0;}
+  const coords=ALIGNMENT_COORDS[version]||[];
+  for(const ar of coords)for(const ac of coords){
+    if((ar===6&&ac===6)||(ar===6&&ac===size-7)||(ar===size-7&&ac===6))continue;
+    for(let r=-2;r<=2;r++)for(let c=-2;c<=2;c++){
+      const isBorder=Math.max(Math.abs(r),Math.abs(c))===2;
+      const isCenter=r===0&&c===0;
+      matrix[ar+r][ac+c]=(isBorder||isCenter)?1:0;
+    }
+  }
+  matrix[size-8][8]=1;
+  if(version>=7)writeQrVersionInfo(matrix,size,version);
+}
+function qrBchDigitLength(x){let digit=0;while(x!==0){digit++;x>>>=1;}return digit;}
+function qrVersionInfoBits(version){
+  const G18=0x1F25;
+  let d=version<<12;
+  while(qrBchDigitLength(d)-qrBchDigitLength(G18)>=0){d^=G18<<(qrBchDigitLength(d)-qrBchDigitLength(G18));}
+  return (version<<12)|d;
+}
+function writeQrVersionInfo(matrix,size,version){
+  const bits=qrVersionInfoBits(version);
+  for(let i=0;i<18;i++){
+    const bit=(bits>>i)&1;
+    matrix[Math.floor(i/3)][size-11+(i%3)]=bit;
+    matrix[size-11+(i%3)][Math.floor(i/3)]=bit;
+  }
+}
+const QR_FORMAT_MASK=0b101010000010010;
+function qrFormatBits(ecLevelKey,maskPattern){
+  const ecIndicator={L:1,M:0,Q:3,H:2}[ecLevelKey];
+  let data=(ecIndicator<<3)|maskPattern;
+  let d=data<<10;
+  const gen=0b10100110111;
+  for(let i=4;i>=0;i--){if((d>>(i+10))&1)d^=gen<<i;}
+  return ((data<<10)|d)^QR_FORMAT_MASK;
+}
+function applyQrMask(pattern,r,c){
+  switch(pattern){
+    case 0:return(r+c)%2===0;
+    case 1:return r%2===0;
+    case 2:return c%3===0;
+    case 3:return(r+c)%3===0;
+    case 4:return(Math.floor(r/2)+Math.floor(c/3))%2===0;
+    case 5:return((r*c)%2)+((r*c)%3)===0;
+    case 6:return(((r*c)%2)+((r*c)%3))%2===0;
+    case 7:return(((r+c)%2)+((r*c)%3))%2===0;
+  }
+  return false;
+}
+function placeQrData(matrix,size,version,codewords,maskPattern){
+  const bits=[];
+  for(const cw of codewords)for(let i=7;i>=0;i--)bits.push((cw>>i)&1);
+  let bitIdx=0,dir=-1,c=size-1;
+  while(c>0){
+    if(c===6)c--;
+    for(let i=0;i<size;i++){
+      const r=dir===-1?size-1-i:i;
+      for(const cc of [c,c-1]){
+        if(isQrFunctionModule(size,version,r,cc))continue;
+        let bit=bitIdx<bits.length?bits[bitIdx]:0;
+        bitIdx++;
+        if(applyQrMask(maskPattern,r,cc))bit^=1;
+        matrix[r][cc]=bit;
+      }
+    }
+    dir=-dir;c-=2;
+  }
+}
+function writeQrFormatInfo(matrix,size,ecLevelKey,maskPattern){
+  const bits=qrFormatBits(ecLevelKey,maskPattern);
+  const get=(i)=>(bits>>i)&1;
+  for(let i=0;i<=5;i++)matrix[i][8]=get(i);
+  matrix[7][8]=get(6);matrix[8][8]=get(7);
+  for(let i=0;i<=5;i++)matrix[8][i]=get(14-i);
+  matrix[8][7]=get(8);
+  for(let i=0;i<8;i++)matrix[8][size-1-i]=get(i);
+  for(let i=0;i<7;i++)matrix[size-7+i][8]=get(8+i);
+}
+function qrPenaltyScore(matrix,size){
+  let score=0;
+  for(let r=0;r<size;r++){let runColor=matrix[r][0],runLen=1;for(let c=1;c<size;c++){if(matrix[r][c]===runColor)runLen++;else{if(runLen>=5)score+=3+(runLen-5);runColor=matrix[r][c];runLen=1;}}if(runLen>=5)score+=3+(runLen-5);}
+  for(let c=0;c<size;c++){let runColor=matrix[0][c],runLen=1;for(let r=1;r<size;r++){if(matrix[r][c]===runColor)runLen++;else{if(runLen>=5)score+=3+(runLen-5);runColor=matrix[r][c];runLen=1;}}if(runLen>=5)score+=3+(runLen-5);}
+  for(let r=0;r<size-1;r++)for(let c=0;c<size-1;c++){const v=matrix[r][c];if(v===matrix[r][c+1]&&v===matrix[r+1][c]&&v===matrix[r+1][c+1])score+=3;}
+  const pattern=[1,0,1,1,1,0,1];
+  function matchesAt(arr,i){for(let k=0;k<7;k++)if(arr[i+k]!==pattern[k])return false;return true;}
+  for(let r=0;r<size;r++){const row=matrix[r];for(let c=0;c<=size-7;c++){if(matchesAt(row,c)){if(c>=4&&row.slice(c-4,c).every(v=>v===0))score+=40;if(c+7+4<=size&&row.slice(c+7,c+11).every(v=>v===0))score+=40;}}}
+  for(let c=0;c<size;c++){const col=matrix.map(row=>row[c]);for(let r=0;r<=size-7;r++){if(matchesAt(col,r)){if(r>=4&&col.slice(r-4,r).every(v=>v===0))score+=40;if(r+7+4<=size&&col.slice(r+7,r+11).every(v=>v===0))score+=40;}}}
+  let dark=0;for(let r=0;r<size;r++)for(let c=0;c<size;c++)dark+=matrix[r][c];
+  const percent=(dark*100)/(size*size);
+  const prevMultipleOf5=Math.floor(percent/5)*5,nextMultipleOf5=prevMultipleOf5+5;
+  score+=Math.min(Math.abs(prevMultipleOf5-50)/5,Math.abs(nextMultipleOf5-50)/5)*10;
+  return score;
+}
+function encodeQR(text,ecLevelKey){
+  ecLevelKey=ecLevelKey||'M';
+  const bytes=Array.from(new TextEncoder().encode(text));
+  let chosen=null;
+  for(const entry of QR_VERSIONS){
+    const [ecPerBlock,blockGroups]=entry[ecLevelKey];
+    const totalDataCodewords=blockGroups.reduce((s,[cnt,cw])=>s+cnt*cw,0);
+    const capacityBits=totalDataCodewords*8;
+    const neededBits=4+charCountBits(entry.v)+bytes.length*8;
+    if(neededBits<=capacityBits){chosen=entry;break;}
+  }
+  if(!chosen)throw new Error('QR: Text zu lang (max. Version 10 unterstützt)');
+  const version=chosen.v,size=chosen.size;
+  const codewords=buildDataCodewords(bytes,version,ecLevelKey);
+  let best=null;
+  for(let mask=0;mask<8;mask++){
+    const matrix=Array.from({length:size},()=>new Array(size).fill(0));
+    drawQrFunctionPatterns(matrix,size,version);
+    placeQrData(matrix,size,version,codewords,mask);
+    writeQrFormatInfo(matrix,size,ecLevelKey,mask);
+    const score=qrPenaltyScore(matrix,size);
+    if(!best||score<best.score)best={matrix,score,mask};
+  }
+  return{size,modules:best.matrix,version};
+}
+function isQrFinderCell(size,r,c){return(r<7&&c<7)||(r<7&&c>=size-7)||(r>=size-7&&c<7);}
+function renderQrToCanvas(canvas,text,opts){
+  const o=opts||{};
+  const shape=o.shape||'square',fgColor=o.fgColor||'#000000',bgColor=o.bgColor||'#ffffff',bgEnabled=o.bgEnabled!==false,ecLevel=o.ecLevel||'M';
+  const ctx=canvas.getContext('2d');
+  let result;
+  try{result=encodeQR(text||' ',ecLevel);}catch(e){ctx.clearRect(0,0,canvas.width,canvas.height);return;}
+  const {size,modules}=result;
+  const quiet=4,modulePx=10,total=size+quiet*2;
+  canvas.width=total*modulePx;canvas.height=total*modulePx;
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  if(bgEnabled){ctx.fillStyle=bgColor;ctx.fillRect(0,0,canvas.width,canvas.height);}
+  ctx.fillStyle=fgColor;
+  for(let r=0;r<size;r++)for(let c=0;c<size;c++){
+    if(!modules[r][c])continue;
+    const x=(c+quiet)*modulePx,y=(r+quiet)*modulePx;
+    if(shape==='round'&&!isQrFinderCell(size,r,c)){ctx.beginPath();ctx.arc(x+modulePx/2,y+modulePx/2,modulePx*0.46,0,Math.PI*2);ctx.fill();}
+    else{ctx.fillRect(x,y,modulePx,modulePx);}
+  }
+}
+
 const SPOT_GLOW_PEAK_ALPHA=0.5, SPOT_EDGE_STEPS=10;
 function drawSpot(ctx,pos,beam,w,h){
   ctx.clearRect(0,0,w,h);
