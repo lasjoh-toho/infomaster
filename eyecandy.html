@@ -1214,6 +1214,8 @@ const S = {
   addingWaypoint: false,
   installedFonts: [],
   launchToken: null, // gueltig gesetzt, wenn die Seite mit ?token=... geoeffnet wurde - siehe setupSaveToServer()
+  title: 'Neue Präsentation', // wird beim Speichern mit eingebettet (eyecandy-meta) und in der Übersicht (App.showGallery()) angezeigt/umbenannt
+  currentFilename: null, // gesetzt, sobald diese Sitzung eine bestehende Datei aus der Übersicht geladen hat ODER selbst einmal gespeichert hat - App.saveToServer() ueberschreibt dann dieselbe Datei statt staendig neue anzulegen
   orientation: 'landscape', // 'landscape' (16:9, Quer) | 'portrait' (9:16, Hochkant) - siehe App.toggleOrientation()
   // transitionMode ist jetzt PRO FOLIE (slide.transitionMode, siehe defaultSlide()) statt
   // hier global - beschreibt den Uebergang beim Hineinwechseln in die jeweilige Folie.
@@ -2384,6 +2386,22 @@ const App = {
     this.setTab('slides');
     lucide.createIcons();
 
+    // Mit gueltigem Token (also ueber den echten "✨ Editor"-Link im Dashboard geoeffnet)
+    // UND ohne file=/new=-Parameter zunaechst die Übersicht zeigen, statt direkt eine neue,
+    // leere Praesentation zu starten - siehe App.showGallery(). "new=1" (vom "Neu"-Knopf
+    // dort) und "file=<name>" (Karte angeklickt) ueberspringen die Übersicht entsprechend.
+    const params=new URLSearchParams(location.search);
+    const fileParam=params.get('file');
+    const isNew=params.get('new')==='1';
+    if (S.launchToken && fileParam) {
+      this.galleryOpen({ filename: fileParam, title: 'Präsentation', url: 'media/bentos/'+fileParam });
+      return;
+    }
+    if (S.launchToken && !isNew) {
+      this.showGallery();
+      return;
+    }
+
     // Start in presentation mode (clean)
     this.startPresentation();
   },
@@ -3261,6 +3279,7 @@ const App = {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>EyeCandy Präsentation</title>
 <meta name="description" content="Exportierte EyeCandy Studio Präsentation">
+<script id="eyecandy-meta" type="application/json">${JSON.stringify({title: S.title, slideCount: stateSnapshot.length, orientation: S.orientation}).replace(/</g,'\\u003c')}<\/script>
 <script src="https://cdn.tailwindcss.com"><\/script>
 <style>
 *,*::before,*::after{box-sizing:border-box;}
@@ -3691,6 +3710,164 @@ window.addEventListener('keydown',e=>{
     URL.revokeObjectURL(url);
   },
 
+  // ─── ÜBERSICHT ("EDITOR" MIT GÜLTIGEM TOKEN, OHNE file=/new=) ───
+  // Landet man ueber den Dashboard-Link zunaechst hier statt direkt in einer neuen,
+  // leeren Praesentation - zeigt die zuletzt gespeicherten eyecandy_*.html als Karten
+  // (per bento.php?api=list_eyecandy), mit "Neu" oben links zum Start einer frischen
+  // Praesentation. Ein Klick auf eine Karte laedt genau diese Datei zum Weiterbearbeiten
+  // (siehe galleryOpen()), das Umbenennen passiert direkt auf der Karte.
+  showGallery() {
+    const overlay=document.createElement('div');
+    overlay.id='ec-gallery-overlay';
+    overlay.style.cssText='position:fixed;inset:0;z-index:9000;background:#030712;color:#f1f5f9;overflow-y:auto;padding:32px 20px;';
+    overlay.innerHTML=`
+      <div style="max-width:1100px;margin:0 auto;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:28px;flex-wrap:wrap;">
+          <button id="ec-gallery-new" class="btn-sm accent" style="width:auto;padding:10px 20px;font-size:14px;">
+            <i data-lucide="plus" style="width:15px;height:15px;"></i> Neu
+          </button>
+          <h1 style="margin:0;font-size:18px;font-weight:700;">✨ Deine Präsentationen</h1>
+          <div style="width:70px;"></div>
+        </div>
+        <div id="ec-gallery-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:18px;">
+          <p style="grid-column:1/-1;text-align:center;color:rgba(148,163,184,0.6);padding:40px 0;">Lade…</p>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('#ec-gallery-new').addEventListener('click', () => this.galleryStartNew());
+    lucide.createIcons();
+
+    fetch('bento.php?api=list_eyecandy&token='+encodeURIComponent(S.launchToken))
+      .then(r=>r.json().catch(()=>{ throw new Error('Antwort war kein gueltiges JSON.'); }))
+      .then(data=>{
+        if (!data.ok) throw new Error(data.error||'Unbekannter Fehler.');
+        this.renderGalleryGrid(data.items||[]);
+      })
+      .catch(err=>{
+        const grid=document.getElementById('ec-gallery-grid');
+        if (grid) grid.innerHTML=`<p style="grid-column:1/-1;text-align:center;color:#fca5a5;padding:40px 0;">Konnte Präsentationen nicht laden:<br>${escapeHtmlEc(err.message)}</p>`;
+      });
+  },
+
+  renderGalleryGrid(items) {
+    const grid=document.getElementById('ec-gallery-grid');
+    if (!grid) return;
+    if (items.length===0) {
+      grid.innerHTML=`<p style="grid-column:1/-1;text-align:center;color:rgba(148,163,184,0.6);padding:40px 0;">Noch keine gespeicherten Präsentationen - auf "+ Neu" klicken, um loszulegen.</p>`;
+      return;
+    }
+    grid.innerHTML=items.map(it=>`
+      <div class="ec-gallery-card" data-file="${escapeHtmlEc(it.filename)}" style="background:#0f172a;border:1px solid rgba(255,255,255,0.1);border-radius:12px;overflow:hidden;cursor:pointer;">
+        <div style="aspect-ratio:16/9;background:linear-gradient(135deg,#6366f1,#e879f9);display:flex;align-items:center;justify-content:center;">
+          <i data-lucide="monitor-play" style="width:30px;height:30px;color:rgba(255,255,255,0.85);"></i>
+        </div>
+        <div style="padding:10px 12px 4px;">
+          <div class="ec-gallery-title" style="font-size:13px;font-weight:600;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtmlEc(it.title)}</div>
+          <div style="font-size:11px;color:#94a3b8;display:flex;justify-content:space-between;">
+            <span>${it.slideCount!=null?it.slideCount+' Folie'+(it.slideCount===1?'':'n'):''}</span>
+            <span>${it.mtime?new Date(it.mtime*1000).toLocaleDateString('de-DE'):''}</span>
+          </div>
+        </div>
+        <div style="border-top:1px solid rgba(255,255,255,0.08);margin-top:6px;">
+          <button type="button" class="ec-gallery-rename" style="width:100%;background:none;border:none;color:#94a3b8;font-size:11px;padding:8px;cursor:pointer;">✎ Umbenennen</button>
+        </div>
+      </div>`).join('');
+
+    grid.querySelectorAll('.ec-gallery-card').forEach(card=>{
+      const file=card.getAttribute('data-file');
+      const item=items.find(i=>i.filename===file);
+      if (!item) return;
+      card.addEventListener('click', evt => {
+        if (evt.target.closest('.ec-gallery-rename')) return;
+        this.galleryOpen(item);
+      });
+      card.querySelector('.ec-gallery-rename').addEventListener('click', evt => {
+        evt.stopPropagation();
+        this.galleryRenamePrompt(item, card);
+      });
+    });
+    lucide.createIcons();
+  },
+
+  galleryRenamePrompt(item, card) {
+    const newTitle=prompt('Neuer Titel:', item.title);
+    if (newTitle===null) return;
+    const trimmed=newTitle.trim();
+    if (trimmed==='' || trimmed===item.title) return;
+    const fd=new FormData();
+    fd.append('file', item.filename);
+    fd.append('new_name', trimmed);
+    fd.append('eyecandy_token', S.launchToken);
+    fetch('bento.php?api=rename_eyecandy', { method:'POST', body: fd })
+      .then(r=>r.json().catch(()=>{ throw new Error('Antwort war kein gueltiges JSON.'); }))
+      .then(data=>{
+        if (!data.ok) throw new Error(data.error||'Konnte nicht umbenennen.');
+        item.title=data.title;
+        const titleEl=card.querySelector('.ec-gallery-title');
+        if (titleEl) titleEl.textContent=data.title;
+      })
+      .catch(err=>alert('❌ Konnte nicht umbenennen:\n'+err.message));
+  },
+
+  galleryStartNew() {
+    const overlay=document.getElementById('ec-gallery-overlay');
+    if (overlay) overlay.remove();
+    this.startPresentation();
+  },
+
+  // Laedt eine bestehende, ueber die Übersicht ausgewaehlte Praesentation zum
+  // Weiterbearbeiten: holt die gespeicherte HTML-Datei direkt (liegt als statische Datei
+  // unter media/bentos/, kein eigener Lese-Endpunkt noetig) und liest NUR die drei
+  // "const NAME=...;"-Zuweisungen per Zeilen-Regex heraus (jede steht dank JSON.stringify()
+  // garantiert auf einer einzigen Zeile - eingebettete Zeilenumbrueche in Textinhalten
+  // werden als "\n" escaped, nicht als echte Zeilenumbrueche). Bewusst NICHT das ganze
+  // eingebettete <script> ausfuehren: das ist der fertige PRAESENTATIONS-Player mit eigenen
+  // Event-Listenern/DOM-Zugriffen (#pres-content, #stage, ...), die im aktuellen Editor-
+  // Dokument entweder fehlen oder etwas anderes bedeuten und beim Ausfuehren abstuerzen
+  // wuerden - hier soll nur der Zustand zurueckgewonnen werden, nichts von alldem laufen.
+  // Eigene Schriftarten werden beim Export nur als CSS eingebacken, nicht als
+  // wiederherstellbarer Zustand - bleiben nach dem Neuladen also unangetastet.
+  galleryOpen(item) {
+    const overlay=document.getElementById('ec-gallery-overlay');
+    if (overlay) overlay.innerHTML=`<p style="text-align:center;padding:60px 0;color:rgba(148,163,184,0.6);">Lade „${escapeHtmlEc(item.title)}"…</p>`;
+    fetch(item.url)
+      .then(r=>{ if (!r.ok) throw new Error('HTTP '+r.status); return r.text(); })
+      .then(html=>{
+        function extractConst(name) {
+          const m=html.match(new RegExp('^const '+name+'=(.+);$','m'));
+          if (!m) return undefined;
+          return new Function('return ('+m[1]+');')();
+        }
+        const slides=extractConst('SLIDES');
+        const beam=extractConst('BEAM');
+        const glitter=extractConst('GLITTER');
+        if (!slides || !Array.isArray(slides) || slides.length===0) throw new Error('Keine Folien in dieser Datei gefunden.');
+        const metaMatch=html.match(/<script[^>]*id=["']eyecandy-meta["'][^>]*>([\s\S]*?)<\/script>/);
+        let meta={};
+        if (metaMatch) { try { meta=JSON.parse(metaMatch[1]); } catch(e) {} }
+
+        S.slides=slides;
+        if (beam) S.beam=beam;
+        if (glitter) S.glitter=glitter;
+        S.activeSlideIndex=0;
+        S.selectedElementId=null;
+        S.title=meta.title||item.title;
+        S.currentFilename=item.filename;
+        if (meta.orientation==='portrait'||meta.orientation==='landscape') S.orientation=meta.orientation;
+
+        if (overlay) overlay.remove();
+        this.applyOrientation();
+        this.render();
+        renderWaypointsList();
+        if (!S.isEditor) this.toggleEditor();
+      })
+      .catch(err=>{
+        if (overlay) overlay.remove();
+        alert('❌ Konnte Präsentation nicht laden:\n'+err.message);
+        this.showGallery();
+      });
+  },
+
   // ─── IM INFOMASTER SPEICHERN (nur sichtbar mit gueltigem ?token=..., siehe
   // setupSaveToServer()) - schreibt die exportierte Praesentation in denselben Ordner, in
   // dem auch Bento-Pronto seine bearbeitbaren Praesentationen ablegt (media/bentos/ auf dem
@@ -3709,13 +3886,18 @@ window.addEventListener('keydown',e=>{
     fd.append('bento_save_html', blob, 'eyecandy.html');
     fd.append('bento_kind', 'eyecandy');
     fd.append('eyecandy_token', S.launchToken);
-    fd.append('bento_filename', 'praesentation');
+    fd.append('bento_filename', S.title);
     fd.append('orientation', S.orientation);
+    // Wurde diese Praesentation ueber die Übersicht (App.showGallery()) geoeffnet oder schon
+    // einmal in dieser Sitzung gespeichert, ueberschreibt der Server dieselbe Datei in place
+    // statt bei jedem Speichern eine neue anzulegen (siehe bento.php: "eyecandy_file"-Feld).
+    if (S.currentFilename) fd.append('eyecandy_file', S.currentFilename);
 
     fetch('bento.php', { method:'POST', body: fd })
       .then(r=>r.json().catch(()=>{ throw new Error('Antwort war kein gueltiges JSON - bitte erneut über den Link im Infomaster-Dashboard öffnen (Login evtl. abgelaufen).'); }))
       .then(data=>{
         if (!data.ok) throw new Error(data.error||'Unbekannter Fehler beim Speichern.');
+        S.currentFilename=data.filename;
         showSaveResultModal(data.url, data.screens||[]);
       })
       .catch(err=>{

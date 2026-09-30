@@ -191,14 +191,34 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && (isset($_POST['bento_sav
             exit;
         }
         $dir = $uploadBase . 'bentos';
-        if (!is_dir($dir)) { @mkdir($dir, 0775, true); }
-        $rawName = bentoSafeBaseName((string)($_POST['bento_filename'] ?? 'eyecandy'));
-        $filename = 'eyecandy_' . $rawName . '_' . date('Ymd_His') . '.html';
-        $path = $dir . '/' . $filename;
-        if (!is_dir($dir) || file_put_contents($path, $html) === false) {
-            http_response_code(500);
-            echo json_encode(['ok' => false, 'error' => 'Konnte Datei nicht auf dem Server speichern.']);
-            exit;
+        // Ueberschreiben einer bereits bestehenden EyeCandy-Praesentation in place, wenn die
+        // Übersichtsseite (App.showGallery() in eyecandy.html) eine geoeffnete Datei mitschickt
+        // - "eyecandy_file" ist dabei per Praefix+Endung genauso eingeschraenkt wie "file" bei
+        // bento.phps eigenem ?api=save_deck oben, nur eben fuer EyeCandy-Dateien statt Bento-Decks.
+        $overwriteFile = basename((string)($_POST['eyecandy_file'] ?? ''));
+        if ($overwriteFile !== '' && strpos($overwriteFile, 'eyecandy_') === 0 && preg_match('/\.html?$/i', $overwriteFile)) {
+            $path = $dir . '/' . $overwriteFile;
+            if (!is_file($path)) {
+                http_response_code(404);
+                echo json_encode(['ok' => false, 'error' => 'Diese Datei existiert nicht (mehr) auf dem Server - bitte über die Übersicht erneut öffnen.']);
+                exit;
+            }
+            if (file_put_contents($path, $html) === false) {
+                http_response_code(500);
+                echo json_encode(['ok' => false, 'error' => 'Konnte Datei nicht auf dem Server speichern.']);
+                exit;
+            }
+            $filename = $overwriteFile;
+        } else {
+            if (!is_dir($dir)) { @mkdir($dir, 0775, true); }
+            $rawName = bentoSafeBaseName((string)($_POST['bento_filename'] ?? 'eyecandy'));
+            $filename = 'eyecandy_' . $rawName . '_' . date('Ymd_His') . '.html';
+            $path = $dir . '/' . $filename;
+            if (!is_dir($dir) || file_put_contents($path, $html) === false) {
+                http_response_code(500);
+                echo json_encode(['ok' => false, 'error' => 'Konnte Datei nicht auf dem Server speichern.']);
+                exit;
+            }
         }
 
         // Fuer das Speichern-Modal in eyecandy.html: gleich passende Monitore vorschlagen,
@@ -419,6 +439,127 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_GET['api'] ?? '') ===
         bentoRenameInOrder($dir, $safeFile, $newFile);
     }
     echo json_encode(['ok' => true, 'filename' => $newFile, 'url' => bentoServerUrlFor($dir . '/' . $newFile)]);
+    exit;
+}
+
+// ============================================================================
+// EyeCandy Studio: "Zuletzt bearbeitete Praesentationen"-Uebersicht (siehe
+// App.showGallery() in eyecandy.html) - eigene, kleine Endpunkte statt die
+// obigen Bento-Deck-Endpunkte mitzubenutzen, weil eyecandy_*.html-Dateien
+// bewusst NICHT in bentoLoadDeckOrder()s Liste auftauchen (siehe Kommentar
+// beim Speichern oben) und weil eyecandy.html keine eigene Login-Session hat -
+// hier zusaetzlich zur (schon global oben erzwungenen) Session noch derselbe
+// Token-Abgleich wie beim Speichern selbst.
+function eyecandyCheckToken(string $provided): bool {
+    $cfg = file_exists('config.json') ? json_decode(file_get_contents('config.json'), true) : null;
+    $expected = is_array($cfg) ? (string)($cfg['eyecandy_token'] ?? '') : '';
+    return $expected !== '' && hash_equals($expected, $provided);
+}
+
+// Liest wie bentoReadDeckMeta() oben nur die ersten paar KB jeder Datei (dort liegt das
+// eyecandy-meta-Script, siehe App.buildExportedDoc() in eyecandy.html), nicht die ganze
+// (potentiell mehrere MB grosse) Praesentation.
+function eyecandyReadMeta(string $path): array {
+    $meta = ['title' => null, 'slideCount' => null];
+    $fh = @fopen($path, 'rb');
+    if (!$fh) return $meta;
+    $chunk = fread($fh, 512 * 1024);
+    fclose($fh);
+    if ($chunk === false) return $meta;
+    if (!preg_match('/<script[^>]*id=["\']eyecandy-meta["\'][^>]*>([\s\S]*?)<\/script>/', $chunk, $m)) return $meta;
+    $doc = json_decode(trim($m[1]), true);
+    if (!is_array($doc)) return $meta;
+    $meta['title'] = isset($doc['title']) ? (string)$doc['title'] : null;
+    $meta['slideCount'] = isset($doc['slideCount']) ? (int)$doc['slideCount'] : null;
+    return $meta;
+}
+
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET' && ($_GET['api'] ?? '') === 'list_eyecandy') {
+    header('Content-Type: application/json');
+    if (!eyecandyCheckToken((string)($_GET['token'] ?? ''))) {
+        http_response_code(403);
+        echo json_encode(['ok' => false, 'error' => 'Ungueltiges Token.']);
+        exit;
+    }
+    $dir = 'media/bentos';
+    $items = [];
+    if (is_dir($dir)) {
+        foreach (scandir($dir) as $f) {
+            if (!preg_match('/^eyecandy_.*\.html?$/i', $f)) continue;
+            $path = $dir . '/' . $f;
+            if (!is_file($path)) continue;
+            $meta = eyecandyReadMeta($path);
+            $fallbackTitle = preg_replace('/_\d{8}_\d{6}\.html?$/i', '', preg_replace('/^eyecandy_/', '', $f));
+            $items[] = [
+                'filename' => $f,
+                'title' => $meta['title'] !== null && $meta['title'] !== '' ? $meta['title'] : str_replace('_', ' ', $fallbackTitle),
+                'slideCount' => $meta['slideCount'],
+                'mtime' => @filemtime($path) ?: 0,
+                'url' => bentoServerUrlFor($dir . '/' . $f),
+            ];
+        }
+    }
+    usort($items, function ($a, $b) { return $b['mtime'] <=> $a['mtime']; });
+    echo json_encode(['ok' => true, 'items' => array_values($items)]);
+    exit;
+}
+
+// Umbenennen: aktualisiert sowohl den Dateinamen als auch den Titel im eingebetteten
+// eyecandy-meta-Script (analog zu ?api=rename_deck oben, nur auf eyecandy_-Dateien
+// beschraenkt). Der Zeitstempel-Teil des Dateinamens bleibt dabei erhalten.
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_GET['api'] ?? '') === 'rename_eyecandy') {
+    header('Content-Type: application/json');
+    if (!eyecandyCheckToken((string)($_POST['eyecandy_token'] ?? ''))) {
+        http_response_code(403);
+        echo json_encode(['ok' => false, 'error' => 'Ungueltiges Token.']);
+        exit;
+    }
+    $dir = 'media/bentos';
+    $safeFile = basename((string)($_POST['file'] ?? ''));
+    $path = $dir . '/' . $safeFile;
+    if ($safeFile === '' || strpos($safeFile, 'eyecandy_') !== 0 || !is_file($path)) {
+        http_response_code(404);
+        echo json_encode(['ok' => false, 'error' => 'Datei nicht gefunden.']);
+        exit;
+    }
+    $newTitle = trim((string)($_POST['new_name'] ?? ''));
+    if ($newTitle === '') {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'Name darf nicht leer sein.']);
+        exit;
+    }
+    $content = file_get_contents($path);
+    if ($content === false) {
+        http_response_code(500);
+        echo json_encode(['ok' => false, 'error' => 'Konnte Datei nicht lesen.']);
+        exit;
+    }
+    if (preg_match('/(<script[^>]*id=["\']eyecandy-meta["\'][^>]*>)([\s\S]*?)(<\/script>)/', $content, $dm)) {
+        $doc = json_decode(trim($dm[2]), true);
+        if (!is_array($doc)) $doc = [];
+        $doc['title'] = $newTitle;
+        $newJson = json_encode($doc, JSON_UNESCAPED_UNICODE);
+        if ($newJson !== false) {
+            $content = substr_replace($content, $dm[1] . $newJson . $dm[3], strpos($content, $dm[0]), strlen($dm[0]));
+        }
+    } else {
+        // Vor dieser Funktion gespeicherte Dateien haben noch kein eyecandy-meta-Script -
+        // eines frisch in <head> einfuegen statt das Umbenennen daran scheitern zu lassen
+        // (analog zur bento-host-config-Einfuegung weiter oben bei neuen Bento-Decks).
+        $metaJson = json_encode(['title' => $newTitle], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG);
+        $metaTag = '<script id="eyecandy-meta" type="application/json">' . $metaJson . '</script>';
+        if (stripos($content, '<head>') !== false) {
+            $content = preg_replace('/<head>/i', '<head>' . $metaTag, $content, 1);
+        } else {
+            $content = $metaTag . $content;
+        }
+    }
+    if (file_put_contents($path, $content) === false) {
+        http_response_code(500);
+        echo json_encode(['ok' => false, 'error' => 'Konnte Datei nicht speichern.']);
+        exit;
+    }
+    echo json_encode(['ok' => true, 'title' => $newTitle]);
     exit;
 }
 

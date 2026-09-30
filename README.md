@@ -261,7 +261,17 @@ PHP, keine eigene Session) und wird nur per Link integriert:
   Token-Abgleich). Nach dem Speichern schlägt ein Modal gleich passende Monitore vor (gleiche
   Ausrichtung wie unten beschrieben) - ein Klick auf "Hierher legen" setzt die Präsentation
   direkt als Inhalt A dieses Monitors (genau derselbe Weg wie Bento-Prontos eigenes "🔗 Auf
-  Monitor legen").
+  Monitor legen"). Wurde die Präsentation über die Übersicht (siehe unten) geöffnet, überschreibt
+  jedes weitere Speichern dieselbe Datei, statt bei jedem Klick eine neue anzulegen.
+- **Übersicht zum Weiterbearbeiten** - der Dashboard-Link "✨ Editor" führt zunächst auf eine
+  Übersichtsseite mit den zuletzt gespeicherten Präsentationen als Karten (Titel, Folienzahl,
+  Datum); oben links startet "+ Neu" eine frische, leere Präsentation. Ein Klick auf eine Karte
+  lädt genau diese Datei zum Weiterbearbeiten (Folien, Spotlight/Wegpunkte, Glitter, Titel und
+  Quer-/Hochkant-Ausrichtung werden dafür aus der gespeicherten Datei zurückgelesen - eigene,
+  hochgeladene Schriftarten dagegen nicht, die stecken beim Export nur als fertiges CSS in der
+  Datei und müssten im Zweifel neu hinzugefügt werden). Der Titel lässt sich direkt auf der Karte
+  über "✎ Umbenennen" ändern (eigener `bento.php`-Endpunkt mit demselben Token-Abgleich wie beim
+  Speichern, beschränkt auf `eyecandy_`-Dateien - rührt an Bento-Pronto-eigenen Decks nichts an).
 - **Quer-/Hochkant-Vorschau und -Anlage** - ein Knopf in der Kopfzeile schaltet die Bühne
   (Editor UND Vollbild-Präsentation) zwischen 16:9 (Quer) und 9:16 (Hochkant) um - der
   Rest bleibt als schwarzer Rand ("Letterbox") sichtbar, wie auf einem echten Monitor mit
