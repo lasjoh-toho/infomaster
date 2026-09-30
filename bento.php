@@ -200,7 +200,40 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && (isset($_POST['bento_sav
             echo json_encode(['ok' => false, 'error' => 'Konnte Datei nicht auf dem Server speichern.']);
             exit;
         }
-        echo json_encode(['ok' => true, 'url' => bentoServerUrlFor($dir . '/' . $filename), 'filename' => $filename]);
+
+        // Fuer das Speichern-Modal in eyecandy.html: gleich passende Monitore vorschlagen,
+        // auf denen die Praesentation direkt angezeigt werden koennte - "passend" heisst hier
+        // dieselbe Ausrichtung (Quer/Hochkant, siehe App.S.orientation dort und infomaster.phps
+        // eigene "orient"-Kodierung: 90/270 = Hochkant, alles andere = Quer). Gibt es keinen
+        // passenden Monitor, werden ersatzweise ALLE Monitore mitgeschickt (orientationMatch:
+        // false), damit das Modal nicht leer bleibt statt einfach gar nichts vorzuschlagen.
+        $wantPortrait = ($_POST['orientation'] ?? 'landscape') === 'portrait';
+        $allScreens = [];
+        if (is_array($eyecandyCfg) && !empty($eyecandyCfg['screens']) && is_array($eyecandyCfg['screens'])) {
+            foreach ($eyecandyCfg['screens'] as $sid => $sVal) {
+                $curType = $sVal['type'] ?? 'url';
+                if ($curType === 'url') $curLabel = trim((string)($sVal['content'] ?? '')) !== '' ? (string)$sVal['content'] : '(leer)';
+                elseif ($curType === 'nextcloud') $curLabel = 'Nextcloud-Ordner';
+                elseif (strpos($curType, 'folder:') === 0) $curLabel = 'Ordner: ' . substr($curType, 7);
+                elseif ($curType === 'pdf') $curLabel = '📄 PDF';
+                else $curLabel = (string)$curType;
+                $screenIsPortrait = in_array((string)($sVal['orient'] ?? '0'), ['90', '270'], true);
+                $allScreens[] = [
+                    'id' => (string)$sid,
+                    'orient' => (string)($sVal['orient'] ?? '0'),
+                    'split' => (string)($sVal['split'] ?? 'none'),
+                    'duration' => (string)($sVal['duration'] ?? 10),
+                    'modeB' => (string)($sVal['typeB'] ?? 'url'),
+                    'valB' => (string)($sVal['contentB'] ?? ''),
+                    'currentLabel' => $curLabel,
+                    'orientationMatch' => $screenIsPortrait === $wantPortrait,
+                ];
+            }
+        }
+        $matchingScreens = array_values(array_filter($allScreens, function ($s) { return $s['orientationMatch']; }));
+        $screensForModal = !empty($matchingScreens) ? $matchingScreens : $allScreens;
+
+        echo json_encode(['ok' => true, 'url' => bentoServerUrlFor($dir . '/' . $filename), 'filename' => $filename, 'screens' => $screensForModal]);
         exit;
     }
 

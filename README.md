@@ -209,7 +209,8 @@ und als `bento.php` speichern.
 
 `eyecandy.html` ist ein zweiter, eigenständiger Präsentationseditor (Spotlight-Effekt,
 Grainy Gradients, Glass-Card-Templates, Wegpunkt-gesteuerte Lichtführung) - erreichbar über
-den Link "✨ EyeCandy Studio" oben im Dashboard. Er bleibt bewusst eine reine,
+den Link "✨ Schnelle Präsentation erstellen" oben im Dashboard (der Bento-Pronto-Link
+daneben heißt entsprechend "🎬 PPT importieren"). Er bleibt bewusst eine reine,
 serverlose HTML-Datei (kein eigenes PHP, keine eigene Session) und wird nur per Link
 integriert:
 
@@ -227,11 +228,14 @@ integriert:
 - **Eigene Schriftarten per Drag & Drop** - `.ttf`/`.otf`/`.woff`/`.woff2`-Dateien lassen
   sich im Fonts-Tab hineinziehen, werden per `FontFace`-API registriert und beim Export als
   `@font-face` mit eingebetteter Data-URL mitgeliefert (funktioniert offline auf dem Pi).
-- **Übergänge zwischen Folien - pro Folie** - Gleiten (beide Folien ziehen gemeinsam
-  weiter, nahtlos wie ein Filmstreifen), Überblenden oder harter Schnitt, einstellbar unter
-  Folien-Einstellungen; gilt jeweils für den Übergang BEIM Hineinwechseln in die gerade
-  bearbeitete Folie (jede Folie kann also ihren eigenen Übergang haben), im Editor, im
-  Vollbild UND im HTML-Export.
+- **Übergänge zwischen Folien - pro Folie, mit Richtung und Geschwindigkeit** - Gleiten
+  seitlich, Gleiten vertikal, Überblenden oder harter Schnitt, plus ein Geschwindigkeits-
+  Regler (150–2000 ms), alles einstellbar unter Folien-Einstellungen; gilt jeweils für den
+  Übergang BEIM Hineinwechseln in die gerade bearbeitete Folie (jede Folie kann also ihren
+  eigenen Übergang samt Richtung und Tempo haben), im Editor, im Vollbild UND im HTML-Export.
+- **Farb-Stops in der richtigen Reihenfolge** - die Liste der Verlaufs-Farbstopps zeigt sie
+  jetzt nach Position sortiert (0% oben, 100% unten) statt in der Reihenfolge, in der sie
+  angelegt wurden.
 - **Spotlight ein/aus - pro Folie** - der Schalter "Spotlight aktivieren" im Spotlight-Tab
   gilt für die gerade ausgewählte Folie (Muster/Größe/Farbe/Wegpunkte bleiben weiterhin
   geteilt) - so lässt sich der Effekt gezielt nur auf einzelnen Folien einsetzen.
@@ -250,8 +254,29 @@ integriert:
 - **Kopfzeilen-Dropzone nimmt jetzt auch Bilder** - dieselbe Dropzone oben rechts wie für
   native PDFs (siehe oben) akzeptiert zusätzlich JPG/PNG/GIF/WEBP und sortiert sie
   automatisch nach Ausrichtung in "Hoch"/"Quer" ein.
-- **Im Infomaster speichern** - neben "Herunterladen" erscheint ein zweiter Knopf, sobald
-  die Seite über den echten Dashboard-Link (mit gültigem `?token=...`) geöffnet wurde;
-  speichert die exportierte Präsentation direkt in `media/bentos/` - demselben Ordner, in
-  dem auch bearbeitbare Bento-Präsentationen liegen (über `bento.php`s Speicher-Endpunkt,
-  also mit derselben Login-Session UND einem zusätzlichen serverseitigen Token-Abgleich).
+- **Im Infomaster speichern - mit Monitor-Vorschlag** - neben "Herunterladen" erscheint ein
+  zweiter Knopf, sobald die Seite über den echten Dashboard-Link (mit gültigem `?token=...`)
+  geöffnet wurde; speichert die exportierte Präsentation direkt in `media/bentos/` -
+  demselben Ordner, in dem auch bearbeitbare Bento-Präsentationen liegen (über `bento.php`s
+  Speicher-Endpunkt, also mit derselben Login-Session UND einem zusätzlichen serverseitigen
+  Token-Abgleich). Nach dem Speichern schlägt ein Modal gleich passende Monitore vor (gleiche
+  Ausrichtung wie unten beschrieben) - ein Klick auf "Hierher legen" setzt die Präsentation
+  direkt als Inhalt A dieses Monitors (genau derselbe Weg wie Bento-Prontos eigenes "🔗 Auf
+  Monitor legen").
+- **Quer-/Hochkant-Vorschau und -Anlage** - ein Knopf in der Kopfzeile schaltet die Bühne
+  (Editor UND Vollbild-Präsentation) zwischen 16:9 (Quer) und 9:16 (Hochkant) um - der
+  Rest bleibt als schwarzer Rand ("Letterbox") sichtbar, wie auf einem echten Monitor mit
+  anderem Format. Die gewählte Ausrichtung wird beim Speichern mitgeschickt und bestimmt,
+  welche Monitore im Speichern-Modal vorgeschlagen werden (siehe oben).
+- **Kopfzeile deutlich schlanker** - Logo/Titel und die Editor/Präsentation-Status-Anzeige
+  wurden entfernt, damit rechts daneben immer Platz für die Tab-Kopfzeile der Seitenleiste
+  bleibt (die beiden überlappten sich vorher bei normalen Fensterbreiten). Übrig bleiben nur
+  Folien-Navigation samt Foliennummer, "+ Neu", der Auto-Play-Schalter, die Quer/Hochkant-
+  Umschaltung und "Präsentieren"; zurück in den Editor geht weiterhin per ESC.
+- **Zuverlässiger in Textfelder klicken** - ein Klick zum Auswählen eines Elements hat bisher
+  die komplette Folie neu aufgebaut, wodurch ein Doppelklick zum Reintippen (neuer DOM-Knoten
+  zwischen den beiden Klicks) so gut wie nie erkannt wurde. Die Auswahl aktualisiert jetzt nur
+  noch die betroffenen Elemente, ohne die Folie anzufassen - Doppelklick zum Bearbeiten
+  funktioniert dadurch zuverlässig. Das Verschieben von Elementen hat zusätzlich einen kleinen
+  Bewegungs-Schwellwert bekommen, damit ein normaler Klick nicht schon als (minimaler) Drag
+  gewertet wird.

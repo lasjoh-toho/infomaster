@@ -31,9 +31,13 @@
     #app { display: flex; flex-direction: column; width: 100%; height: 100%; position: relative; }
 
     /* Presentation canvas fills everything */
-    #stage-wrap { flex: 1; position: relative; overflow: hidden; }
+    /* Quer/Hochkant-Vorschau (siehe App.toggleOrientation()): die Buehne bekommt statt voller
+       Wrap-Groesse eine per JS berechnete, seitenverhaeltnis-treue Pixelgroesse (16:9 bzw.
+       9:16) und wird per Flex zentriert - der Rest bleibt als "Letterbox" schwarz sichtbar,
+       genau wie bei einem echten Monitor mit anderem Format. */
+    #stage-wrap { flex: 1; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; background: #000; }
     #presentation-stage {
-      width: 100%; height: 100%; position: relative; overflow: hidden;
+      position: relative; overflow: hidden;
       transition: background 0.6s ease;
     }
     #slide-content { position: absolute; inset: 0; z-index: 10; }
@@ -195,7 +199,10 @@
       overflow: hidden;
     }
     #pres-overlay.hidden-ui { display: none; }
-    #pres-stage-full { position: absolute; inset: 0; overflow: hidden; }
+    /* Gleiche Quer/Hochkant-Letterbox wie #presentation-stage (siehe dort) - #pres-overlay
+       ist bereits Flex-zentriert (schwarzer Hintergrund), die Buehne selbst bekommt hier nur
+       noch eine explizite, seitenverhaeltnis-treue Pixelgroesse statt voller Bildschirmgroesse. */
+    #pres-stage-full { position: relative; overflow: hidden; }
     #pres-content-full { position: absolute; inset: 0; z-index: 10; }
     #pres-spotlight-canvas, #pres-glitter-canvas {
       pointer-events: none; position: absolute; inset: 0; width: 100%; height: 100%;
@@ -260,15 +267,12 @@
 <div id="app">
 
   <!-- ════════════════════ TOP TOOLBAR ════════════════════ -->
+  <!-- Bewusst knapp gehalten (nur das Noetigste: Folien-Navigation, Neu, Auto-Play,
+       Ausrichtung, Praesentieren) - Logo/Titel und ein Editor/Praesentation-Status-Label
+       wurden entfernt, damit rechts daneben noch Platz fuer die Kopfzeile der Seitenleiste
+       (Tab-Header) bleibt, statt sich mit ihr zu ueberlappen. ESC bleibt der Weg zurueck aus
+       der Praesentation in den Editor. -->
   <header id="top-toolbar" class="hidden-ui">
-    <div style="display:flex;align-items:center;gap:8px;">
-      <div style="width:28px;height:28px;border-radius:10px;background:linear-gradient(135deg,#6366f1,#8b5cf6);display:flex;align-items:center;justify-content:center;">
-        <i data-lucide="sparkles" style="width:14px;height:14px;color:#fff;"></i>
-      </div>
-      <span style="font-size:12px;font-weight:700;background:linear-gradient(to right,#a5b4fc,#e879f9);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">EyeCandy Studio</span>
-      <span id="presentation-status" class="badge badge-emerald">Editor</span>
-    </div>
-
     <!-- Slide Controls -->
     <div style="display:flex;align-items:center;gap:6px;background:rgba(0,0,0,0.3);padding:4px;border-radius:12px;border:1px solid var(--border);">
       <button onclick="App.prevSlide()" class="btn-sm" style="padding:4px 8px;border-radius:7px;" title="Vorherige Folie">
@@ -279,6 +283,9 @@
         <i data-lucide="chevron-right" style="width:14px;height:14px;"></i>
       </button>
       <div style="width:1px;height:20px;background:var(--border);margin:0 2px;"></div>
+      <button onclick="App.addSlide()" class="btn-sm" style="font-size:10px;" title="Neue Folie">
+        <i data-lucide="plus" style="width:12px;height:12px;"></i> Neu
+      </button>
       <button id="btn-toggle-play" onclick="App.toggleAutoplay()" class="btn-sm accent" style="font-size:10px;">
         <i id="play-icon" data-lucide="play" style="width:12px;height:12px;"></i>
         <span id="play-text">Auto</span>
@@ -286,15 +293,11 @@
     </div>
 
     <div style="display:flex;align-items:center;gap:6px;">
+      <button id="orientation-toggle-btn" onclick="App.toggleOrientation()" class="btn-sm" style="font-size:10px;" title="Vorschau/Anlage als Quer- oder Hochkant-Präsentation">
+        <i data-lucide="monitor" style="width:13px;height:13px;"></i> Quer
+      </button>
       <button onclick="App.startPresentation()" class="btn-sm success" title="Präsentation starten (Fullscreen)">
         <i data-lucide="monitor-play" style="width:13px;height:13px;"></i> Präsentieren
-      </button>
-      <button onclick="App.confirmReset()" class="btn-sm danger" title="Zurücksetzen">
-        <i data-lucide="rotate-ccw" style="width:12px;height:12px;"></i>
-      </button>
-      <button onclick="App.toggleEditor()" class="btn-sm" id="btn-toggle-mode" title="Editor ein-/ausblenden (ESC)">
-        <i id="mode-icon" data-lucide="edit-3" style="width:12px;height:12px;"></i>
-        <span id="mode-label">Editor</span>
       </button>
     </div>
   </header>
@@ -344,10 +347,13 @@
             <input type="number" id="slide-duration-input" min="1" max="120" value="6" oninput="App.updateSlideDuration(this.value)">
             <label class="ctrl-label" style="margin-top:8px;">Übergang zwischen Folien</label>
             <select id="transition-mode-select" onchange="App.setTransitionMode(this.value)">
-              <option value="slide">↔ Gleiten (beide Folien ziehen gemeinsam weiter)</option>
+              <option value="slide-h">↔ Gleiten seitlich (beide Folien ziehen gemeinsam weiter)</option>
+              <option value="slide-v">↕ Gleiten vertikal</option>
               <option value="fade">◐ Überblenden (Ab-/Aufblenden)</option>
               <option value="none">— Kein Übergang (harter Schnitt)</option>
             </select>
+            <label class="ctrl-label" style="margin-top:8px;">Geschwindigkeit: <span id="transition-speed-val">500</span> ms</label>
+            <input type="range" id="transition-speed-input" min="150" max="2000" step="50" value="500" oninput="App.setTransitionSpeed(parseInt(this.value))">
           </div>
 
           <!-- Template Layouts from Grainy Editor -->
@@ -818,7 +824,8 @@ function defaultSlide(num=1) {
     duration:6,
     template: null,
     beamEnabled: true, // Spotlight an/aus - pro Folie (siehe App.setBeamEnabled())
-    transitionMode: 'slide', // Uebergang BEIM HINEINWECHSELN in diese Folie - 'slide'|'fade'|'none'
+    transitionMode: 'slide-h', // Uebergang BEIM HINEINWECHSELN in diese Folie - 'slide-h'|'slide-v'|'fade'|'none'
+    transitionSpeed: 500, // ms
     elements:[
       {id:'el-'+Date.now(), type:'text', content:'EYECANDY STUDIO', fontFamily:'Inter, sans-serif', fontSize:56, color:'#ffffff', textAlign:'center', fontWeight:'800', x:5, y:30, width:90},
       {id:'el-'+(Date.now()+1), type:'text', content:'Drücke ESC für den Editor · Doppelklick zum Editieren', fontFamily:'Inter, sans-serif', fontSize:18, color:'#94a3b8', textAlign:'center', fontWeight:'400', x:5, y:55, width:90}
@@ -850,6 +857,7 @@ const S = {
   addingWaypoint: false,
   installedFonts: [],
   launchToken: null, // gueltig gesetzt, wenn die Seite mit ?token=... geoeffnet wurde - siehe setupSaveToServer()
+  orientation: 'landscape', // 'landscape' (16:9, Quer) | 'portrait' (9:16, Hochkant) - siehe App.toggleOrientation()
   // transitionMode ist jetzt PRO FOLIE (slide.transitionMode, siehe defaultSlide()) statt
   // hier global - beschreibt den Uebergang beim Hineinwechseln in die jeweilige Folie.
 
@@ -896,6 +904,21 @@ let _grainyAnimReq = null;
 function resizeCanvas(canvas, container) {
   canvas.width = container.clientWidth;
   canvas.height = container.clientHeight;
+}
+
+// ─── QUER/HOCHKANT-VORSCHAU ───
+// Gibt der Buehne eine explizite, seitenverhaeltnis-treue Pixelgroesse (16:9 bzw. 9:16),
+// die groesstmoeglich in den verfuegbaren Platz des Elternelements passt (wie object-fit:
+// contain) - der Rest bleibt als schwarze Letterbox sichtbar. Wird bei jedem Orientierungs-
+// Wechsel und Fenster-Resize neu berechnet (siehe App.toggleOrientation()).
+function fitStageToOrientation(stageEl, wrapEl, orientation) {
+  const wrapW = wrapEl.clientWidth, wrapH = wrapEl.clientHeight;
+  if (wrapW === 0 || wrapH === 0) return;
+  const targetRatio = orientation === 'portrait' ? 9 / 16 : 16 / 9;
+  let w = wrapW, h = w / targetRatio;
+  if (h > wrapH) { h = wrapH; w = h * targetRatio; }
+  stageEl.style.width = Math.round(w) + 'px';
+  stageEl.style.height = Math.round(h) + 'px';
 }
 
 // ─── GRAINY GRADIENT RENDERER ───
@@ -1153,11 +1176,22 @@ function renderSlideContent(slide, container, isEditor, stageEl) {
     // Drag to reposition in editor
     if (isEditor) {
       makeDraggable(wrapper, el);
+      // WICHTIG: hier bewusst KEIN App.render() - das wuerde bei jedem Klick die komplette
+      // Folie neu aufbauen (neue DOM-Knoten), wodurch ein Doppelklick zum Reintippen in ein
+      // Textfeld nie als "derselbe Knoten, zweimal geklickt" erkannt wird und Doppelklicks
+      // dadurch praktisch nie ausloesen - genau das machte das Klicken in Textboxen bisher so
+      // schwierig. Auswahl daher nur als leichte Klassen-/Inspector-Aktualisierung, ohne die
+      // Folie selbst anzufassen (spiegelt das Abwaehlen weiter unten in stage's eigenem
+      // click-Handler, das genauso leichtgewichtig ist).
       wrapper.addEventListener('click', evt => {
         evt.stopPropagation();
-        if (S.addingWaypoint) return;
+        if (S.addingWaypoint || _elDrag.moved) return;
+        if (S.selectedElementId === el.id) return;
+        document.querySelectorAll('.slide-el.selected-el').forEach(w => w.classList.remove('selected-el'));
+        wrapper.classList.add('selected-el');
         S.selectedElementId = el.id;
-        App.render(); App.renderInspector();
+        App.renderInspector();
+        App.renderLayersList();
       });
     }
     container.appendChild(wrapper);
@@ -1185,34 +1219,51 @@ function attachTemplateEditing(wrapper, slide, el) {
 }
 
 // ─── DRAG ELEMENT ───
-function makeDraggable(el, data) {
-  let startX, startY, startLeft, startTop, isDragging=false;
-  const stage = document.getElementById('presentation-stage');
-
-  el.addEventListener('mousedown', e => {
-    if (e.target.closest('[contenteditable="true"]')) return;
-    e.preventDefault(); isDragging=true;
-    startX=e.clientX; startY=e.clientY;
-    startLeft=data.x; startTop=data.y;
+// Ein einziges, dauerhaft registriertes Drag-Zustandsobjekt statt pro Element/Render neu
+// angehaengter window-Listener (die sich sonst bei jedem Re-Render ansammeln wuerden -
+// dasselbe Muster wie bei den Wegpunkt-Markern, siehe _wpDrag). Ein kleiner Bewegungs-
+// Schwellwert verhindert ausserdem, dass ein normaler (Doppel-)Klick durch minimales
+// Zittern der Maus schon als Drag gewertet und die Position leicht verschoben wird -
+// genau das machte praezises Klicken/Doppelklicken in Textfelder bisher so unzuverlaessig.
+const _elDrag = { active:false, moved:false, el:null, data:null, startX:0, startY:0, startLeft:0, startTop:0 };
+const EL_DRAG_THRESHOLD = 4;
+function _elDragMove(e) {
+  if (!_elDrag.active) return;
+  const dx0=e.clientX-_elDrag.startX, dy0=e.clientY-_elDrag.startY;
+  if (!_elDrag.moved) {
+    if (Math.hypot(dx0,dy0) < EL_DRAG_THRESHOLD) return;
+    _elDrag.moved=true;
     document.body.style.userSelect='none';
     document.body.style.cursor='move';
-  });
-  window.addEventListener('mousemove', e => {
-    if (!isDragging) return;
-    const stageRect = stage.getBoundingClientRect();
-    const dx=(e.clientX-startX)/stageRect.width*100;
-    const dy=(e.clientY-startY)/stageRect.height*100;
-    data.x = Math.max(0,Math.min(90,startLeft+dx));
-    data.y = Math.max(0,Math.min(90,startTop+dy));
-    el.style.left=`${data.x}%`;
-    el.style.top=`${data.y}%`;
-  });
-  window.addEventListener('mouseup', () => {
-    if (!isDragging) return;
-    isDragging=false;
+  }
+  const stage=document.getElementById('presentation-stage');
+  const stageRect=stage.getBoundingClientRect();
+  const dx=dx0/stageRect.width*100, dy=dy0/stageRect.height*100;
+  const data=_elDrag.data;
+  data.x=Math.max(0,Math.min(90,_elDrag.startLeft+dx));
+  data.y=Math.max(0,Math.min(90,_elDrag.startTop+dy));
+  _elDrag.el.style.left=`${data.x}%`;
+  _elDrag.el.style.top=`${data.y}%`;
+}
+function _elDragUp() {
+  if (!_elDrag.active) return;
+  _elDrag.active=false;
+  if (_elDrag.moved) {
     document.body.style.userSelect='';
     document.body.style.cursor='';
     App.renderInspector();
+  }
+}
+window.addEventListener('mousemove', _elDragMove);
+window.addEventListener('mouseup', _elDragUp);
+
+function makeDraggable(el, data) {
+  el.addEventListener('mousedown', e => {
+    if (e.target.closest('[contenteditable="true"]')) return;
+    _elDrag.active=true; _elDrag.moved=false;
+    _elDrag.el=el; _elDrag.data=data;
+    _elDrag.startX=e.clientX; _elDrag.startY=e.clientY;
+    _elDrag.startLeft=data.x; _elDrag.startTop=data.y;
   });
 }
 
@@ -1260,12 +1311,18 @@ function fitTextToBox(div, wrapper, stageEl, baseFontSize) {
 
 // ─── FOLIENUEBERGANG (Gleiten/Ueberblenden statt hartem Schnitt) ───
 // Rendert die naechste Folie in ein temporaeres Overlay-Div und animiert dann ENTWEDER
-// beide Inhalts-Ebenen gemeinsam seitlich weiter ("slide" - wirkt wie ein durchgehender
-// Filmstreifen statt zweier getrennter Schnitte) ODER blendet die neue Ebene ueber die
-// alte ("fade"). "container" ist die persistente Elemente-Ebene der jeweiligen Buehne
-// (#slide-content im Editor, #pres-content-full im Vollbild) - deren direkter Elternteil
-// (position:relative/absolute, siehe CSS) liefert den Bezugsrahmen fuer beide Ebenen.
-function transitionElements(container, slide, isEditor, mode) {
+// beide Inhalts-Ebenen gemeinsam seitlich ODER vertikal weiter ("slide-h"/"slide-v" - wirkt
+// wie ein durchgehender Filmstreifen statt zweier getrennter Schnitte) ODER blendet die neue
+// Ebene ueber die alte ("fade"). "container" ist die persistente Elemente-Ebene der
+// jeweiligen Buehne (#slide-content im Editor, #pres-content-full im Vollbild) - deren
+// direkter Elternteil (position:relative/absolute, siehe CSS) liefert den Bezugsrahmen fuer
+// beide Ebenen. speedMs kommt aus slide.transitionSpeed (siehe defaultSlide()) und steuert
+// sowohl die CSS-transition-Dauer als auch den Timeout, der die temporaere Ebene wieder
+// einraeumt.
+function transitionElements(container, slide, isEditor, mode, speedMs) {
+  const speed = Math.max(100, speedMs || 500);
+  // "slide" (ohne Suffix) ist die alte Kodierung von vor der Seitlich/Vertikal-Auswahl -
+  // wird nur noch beim Lesen bereits gespeicherter Folien als "seitlich" verstanden.
   if (mode === 'none' || !container.firstChild) {
     container.innerHTML = '';
     renderSlideContent(slide, container, isEditor);
@@ -1286,16 +1343,18 @@ function transitionElements(container, slide, isEditor, mode) {
 
   if (mode === 'fade') {
     temp.style.opacity = '0';
-    temp.style.transition = 'opacity 0.6s ease';
-    container.style.transition = 'opacity 0.6s ease';
+    temp.style.transition = `opacity ${speed}ms ease`;
+    container.style.transition = `opacity ${speed}ms ease`;
     requestAnimationFrame(() => { temp.style.opacity = '1'; container.style.opacity = '0'; });
-    setTimeout(finish, 620);
-  } else { // 'slide' - beide Ebenen ziehen gemeinsam nach links weiter, nahtlos wie ein Streifen
-    temp.style.transform = 'translateX(100%)';
-    temp.style.transition = 'transform 0.5s cubic-bezier(.4,0,.2,1)';
-    container.style.transition = 'transform 0.5s cubic-bezier(.4,0,.2,1)';
-    requestAnimationFrame(() => { temp.style.transform = 'translateX(0%)'; container.style.transform = 'translateX(-100%)'; });
-    setTimeout(finish, 520);
+    setTimeout(finish, speed + 100);
+  } else { // 'slide-h' / legacy 'slide' (seitlich) oder 'slide-v' (vertikal) - beide Ebenen
+    // ziehen gemeinsam weiter, nahtlos wie ein Streifen.
+    const axis = mode === 'slide-v' ? 'Y' : 'X';
+    temp.style.transform = `translate${axis}(100%)`;
+    temp.style.transition = `transform ${speed}ms cubic-bezier(.4,0,.2,1)`;
+    container.style.transition = `transform ${speed}ms cubic-bezier(.4,0,.2,1)`;
+    requestAnimationFrame(() => { temp.style.transform = `translate${axis}(0%)`; container.style.transform = `translate${axis}(-100%)`; });
+    setTimeout(finish, speed);
   }
 }
 
@@ -1437,7 +1496,11 @@ function startEditorCanvasLoop() {
 
   _editorParticles = createParticles(glitCanvas, S.glitter);
 
+  // fitStageToOrientation() direkt hier (statt ueber App.applyOrientation(), das seinerseits
+  // ein eigenes "resize"-Event ausloest) - sonst wuerde ein Aufruf ueber applyOrientation()
+  // dieses selbe resize-Event erneut ausloesen und einen Endlos-Kreislauf erzeugen.
   function resize() {
+    fitStageToOrientation(stage, document.getElementById('stage-wrap'), S.orientation);
     spotCanvas.width=stage.clientWidth; spotCanvas.height=stage.clientHeight;
     glitCanvas.width=stage.clientWidth; glitCanvas.height=stage.clientHeight;
     _editorParticles=createParticles(glitCanvas,S.glitter);
@@ -1491,6 +1554,7 @@ function startEditorCanvasLoop() {
 
 // ─── PRESENTATION CANVAS LOOP ───
 let _presLoopId=null;
+let _presResizeBound=false;
 function startPresCanvasLoop() {
   const spotCanvas = document.getElementById('pres-spotlight-canvas');
   const glitCanvas = document.getElementById('pres-glitter-canvas');
@@ -1498,12 +1562,22 @@ function startPresCanvasLoop() {
   const spotCtx    = spotCanvas.getContext('2d');
   const glitCtx    = glitCanvas.getContext('2d');
 
+  // Buehne ist seit der Quer/Hochkant-Letterbox (siehe fitStageToOrientation()) nicht mehr
+  // automatisch bildschirmfuellend - Canvas-Pixelgroesse muss der TATSAECHLICHEN Buehnengroesse
+  // folgen (stage.clientWidth/Height), nicht mehr window.innerWidth/Height.
   function resize() {
-    spotCanvas.width=window.innerWidth; spotCanvas.height=window.innerHeight;
-    glitCanvas.width=window.innerWidth; glitCanvas.height=window.innerHeight;
+    fitStageToOrientation(stage, document.getElementById('pres-overlay'), S.orientation);
+    spotCanvas.width=stage.clientWidth; spotCanvas.height=stage.clientHeight;
+    glitCanvas.width=stage.clientWidth; glitCanvas.height=stage.clientHeight;
     _presParticles=createParticles(glitCanvas,S.glitter);
   }
   resize();
+  // Nur EINMAL registrieren, nicht bei jedem Betreten der Vollbild-Praesentation erneut
+  // (startPresCanvasLoop() laeuft bei jedem "Praesentieren"-Klick neu) - sonst wuerden sich
+  // bei wiederholtem Ein-/Aussteigen immer mehr window-Listener ansammeln. Die hier
+  // erfasste stage/spotCanvas/glitCanvas bleiben dieselben DOM-Knoten ueber die gesamte
+  // Seiten-Lebensdauer, daher bleibt auch dieser eine registrierte resize() dauerhaft korrekt.
+  if (!_presResizeBound) { window.addEventListener('resize', resize); _presResizeBound=true; }
 
   // Separate beam state for presentation
   const presBeam = JSON.parse(JSON.stringify(S.beam));
@@ -1627,6 +1701,74 @@ function setupSaveToServer() {
   }
 }
 
+// Nach erfolgreichem "Im Infomaster speichern": zu passenden (gleiche Ausrichtung) Monitoren
+// direkt "Hierher legen" anbieten - derselbe Weg (Feldliste + Endpunkt), den bento.phps
+// eigenes "🔗 Auf Monitor legen"-Modal fuer seine Praesentationen schon nutzt, nur mit
+// eigenem, zu EyeCandys dunklem Look passendem Markup statt bentos CSS-Klassen.
+function showSaveResultModal(url, screens) {
+  const overlay=document.createElement('div');
+  overlay.style.cssText='position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;';
+  const box=document.createElement('div');
+  box.style.cssText='background:#0f172a;border:1px solid rgba(255,255,255,0.12);border-radius:16px;padding:24px;max-width:460px;width:90%;max-height:80vh;overflow-y:auto;color:#f1f5f9;';
+  const rowsHtml = screens.length ? screens.map(s=>`
+    <div class="ec-screen-row" data-id="${escapeHtmlEc(s.id)}" style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.08);">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:600;">Monitor ${escapeHtmlEc(s.id)}${s.orientationMatch?'':' <span style="color:#f59e0b;font-size:10px;">(andere Ausrichtung)</span>'}</div>
+        <div style="font-size:11px;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtmlEc(s.currentLabel)}">z.Z.: ${escapeHtmlEc(s.currentLabel)}</div>
+      </div>
+      <button type="button" class="ec-screen-pick-btn btn-sm accent" style="width:auto;flex:0 0 auto;">Hierher legen</button>
+    </div>`).join('') : '<div style="font-size:12px;color:#94a3b8;padding:8px 0;">Keine Monitore konfiguriert.</div>';
+  box.innerHTML = `
+    <h3 style="margin:0 0 4px;font-size:16px;">✅ Gespeichert!</h3>
+    <p style="font-size:12px;color:#94a3b8;margin:0 0 14px;">Im selben Ordner wie die Bento-Präsentationen abgelegt - direkt auf einem Monitor anzeigen?</p>
+    <div style="max-height:280px;overflow-y:auto;margin-bottom:14px;">${rowsHtml}</div>
+    <div style="display:flex;justify-content:space-between;gap:8px;">
+      <button type="button" class="ec-copy-only btn-sm" style="width:auto;">📋 Nur Link kopieren</button>
+      <button type="button" class="ec-close btn-sm" style="width:auto;">Schließen</button>
+    </div>
+    <div class="ec-modal-error" style="display:none;margin-top:10px;font-size:12px;color:#fca5a5;"></div>`;
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+
+  function close(){ overlay.remove(); }
+  overlay.addEventListener('click', e=>{ if (e.target===overlay) close(); });
+  box.querySelector('.ec-close').addEventListener('click', close);
+  box.querySelector('.ec-copy-only').addEventListener('click', ()=>{
+    (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject())
+      .then(close).catch(()=>{ prompt('Link zum manuellen Kopieren:', url); close(); });
+  });
+  box.querySelectorAll('.ec-screen-pick-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const row=btn.closest('.ec-screen-row');
+      const sid=row.getAttribute('data-id');
+      const s=screens.find(x=>x.id===sid);
+      if (!s) return;
+      btn.disabled=true; const orig=btn.textContent; btn.textContent='…';
+      const fd=new FormData();
+      fd.append('screen_id', s.id);
+      fd.append('orient', s.orient);
+      fd.append('split', s.split);
+      fd.append('duration', s.duration);
+      fd.append('modeA', 'url');
+      fd.append('valA', url);
+      fd.append('modeB', s.modeB);
+      fd.append('valB', s.valB);
+      fetch('infomaster.php', { method:'POST', body: fd })
+        .then(resp=>{
+          if (!resp.ok) throw new Error('HTTP '+resp.status);
+          close();
+          alert('📺 Auf Monitor '+sid+' gelegt');
+        })
+        .catch(e=>{
+          const errBox=box.querySelector('.ec-modal-error');
+          errBox.style.display='block';
+          errBox.textContent='Konnte Monitor '+sid+' nicht setzen: '+(e.message||e);
+          btn.disabled=false; btn.textContent=orig;
+        });
+    });
+  });
+}
+
 // ─── FONT DRAG & DROP ───
 function setupFontDropzone() {
   const zone=document.getElementById('font-dropzone');
@@ -1695,8 +1837,13 @@ function renderColorStopsList() {
   if (!list) return;
 
   const stops=slide.background.colorStops||[];
+  // Nach Position sortiert ANZEIGEN (0% oben, 100% unten) - die zugrundeliegende Reihenfolge
+  // in slide.background.colorStops selbst bleibt Einfuege-Reihenfolge (fuer addColorStop()
+  // & Co. unveraendert), nur die Liste hier soll dem tatsaechlichen Verlauf entsprechen statt
+  // der Reihenfolge, in der die Stopps angelegt wurden.
+  const sortedStops=[...stops].sort((a,b)=>a.pos-b.pos);
   list.innerHTML='';
-  stops.forEach((cs,i)=>{
+  sortedStops.forEach((cs,i)=>{
     const item=document.createElement('div');
     item.className='cs-item'+(S.selectedStopId===cs.id?' selected-cs':'');
     item.innerHTML=`
@@ -1845,12 +1992,39 @@ const App = {
     setupFontDropzone();
     setupPresMouseIdle();
     setupSaveToServer();
+    this.applyOrientation();
     this.render();
     this.setTab('slides');
     lucide.createIcons();
 
     // Start in presentation mode (clean)
     this.startPresentation();
+  },
+
+  // Passt Editor- UND Vollbild-Buehne auf das aktuelle Seitenverhaeltnis an (siehe
+  // fitStageToOrientation()) und stoesst danach ein "resize"-Event an, damit die
+  // Spotlight-/Glitzer-Canvases (deren eigene resize()-Funktionen bereits auf window-resize
+  // hoeren) ihre Pixelgroesse an die neue Buehnengroesse anpassen.
+  applyOrientation() {
+    const stage=document.getElementById('presentation-stage');
+    const wrap=document.getElementById('stage-wrap');
+    if (stage && wrap) fitStageToOrientation(stage, wrap, S.orientation);
+    const presStage=document.getElementById('pres-stage-full');
+    const presOverlay=document.getElementById('pres-overlay');
+    if (presStage && presOverlay) fitStageToOrientation(presStage, presOverlay, S.orientation);
+    window.dispatchEvent(new Event('resize'));
+  },
+
+  toggleOrientation() {
+    S.orientation = S.orientation === 'landscape' ? 'portrait' : 'landscape';
+    this.applyOrientation();
+    const btn=document.getElementById('orientation-toggle-btn');
+    if (btn) {
+      btn.innerHTML = S.orientation==='portrait'
+        ? '<i data-lucide="smartphone" style="width:13px;height:13px;"></i> Hochkant'
+        : '<i data-lucide="monitor" style="width:13px;height:13px;"></i> Quer';
+      lucide.createIcons();
+    }
   },
 
   // ─── TAB SWITCHING ───
@@ -1882,7 +2056,7 @@ const App = {
     const slide=S.slides[S.activeSlideIndex];
     const container=document.getElementById('slide-content');
     if (useTransition) {
-      transitionElements(container, slide, S.isEditor, slide.transitionMode || 'slide');
+      transitionElements(container, slide, S.isEditor, slide.transitionMode || 'slide-h', slide.transitionSpeed);
     } else {
       container.innerHTML='';
       renderSlideContent(slide, container, S.isEditor);
@@ -1898,17 +2072,31 @@ const App = {
     const glassToggle=document.getElementById('template-glass-toggle');
     if (slide && glassToggle) glassToggle.checked = slide.template_glass !== false;
     const transitionSelect=document.getElementById('transition-mode-select');
-    if (slide && transitionSelect) transitionSelect.value = slide.transitionMode || 'slide';
+    if (slide && transitionSelect) transitionSelect.value = slide.transitionMode || 'slide-h';
+    const transitionSpeedInput=document.getElementById('transition-speed-input');
+    const transitionSpeedVal=document.getElementById('transition-speed-val');
+    if (slide && transitionSpeedInput) {
+      const speed=slide.transitionSpeed||500;
+      transitionSpeedInput.value=speed;
+      if (transitionSpeedVal) transitionSpeedVal.textContent=speed;
+    }
     const beamToggle=document.getElementById('beam-enabled');
     if (slide && beamToggle) beamToggle.checked = slide.beamEnabled !== false;
     lucide.createIcons();
   },
 
   // Uebergang gilt fuer das HINEINWECHSELN in die aktuell ausgewaehlte Folie - daher auf
-  // deren eigenem slide.transitionMode gespeichert, nicht global.
+  // deren eigenem slide.transitionMode/transitionSpeed gespeichert, nicht global.
   setTransitionMode(mode) {
     const slide=S.slides[S.activeSlideIndex];
     if (slide) slide.transitionMode = mode;
+  },
+
+  setTransitionSpeed(ms) {
+    const slide=S.slides[S.activeSlideIndex];
+    if (slide) slide.transitionSpeed = ms;
+    const label=document.getElementById('transition-speed-val');
+    if (label) label.textContent = ms;
   },
 
   // Spotlight an/aus gilt nur fuer die aktuell ausgewaehlte Folie.
@@ -2502,6 +2690,8 @@ const App = {
   },
 
   // ─── EDITOR TOGGLE ───
+  // Kein Status-Label/Badge mehr in der (bewusst schlanken) Kopfzeile - Editor- vs.
+  // Praesentationsmodus zeigt sich einfach daran, ob Kopfzeile/Seitenleiste sichtbar sind.
   toggleEditor() {
     S.isEditor=!S.isEditor;
     const sidebar=document.getElementById('editor-sidebar');
@@ -2509,17 +2699,9 @@ const App = {
     if (S.isEditor) {
       sidebar.classList.remove('hidden-ui');
       toolbar.classList.remove('hidden-ui');
-      document.getElementById('presentation-status').textContent='Editor';
-      document.getElementById('presentation-status').className='badge badge-indigo';
-      document.getElementById('mode-label').textContent='Präsentation';
-      document.getElementById('mode-icon').setAttribute('data-lucide','monitor-play');
     } else {
       sidebar.classList.add('hidden-ui');
       S.selectedElementId=null;
-      document.getElementById('presentation-status').textContent='Präsentation';
-      document.getElementById('presentation-status').className='badge badge-emerald';
-      document.getElementById('mode-label').textContent='Editor';
-      document.getElementById('mode-icon').setAttribute('data-lucide','edit-3');
       this.render();
     }
     lucide.createIcons();
@@ -2531,6 +2713,7 @@ const App = {
     S.presSlideIndex=S.activeSlideIndex;
     this._presShowSlide(S.presSlideIndex, false);
     document.getElementById('pres-overlay').classList.remove('hidden-ui');
+    this.applyOrientation();
     startPresCanvasLoop();
     // Start autoplay
     this._presStartAutoplay();
@@ -2572,7 +2755,7 @@ const App = {
 
     container.style.cssText='position:absolute;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;padding:5%;';
     if (useTransition) {
-      transitionElements(container, slide, false, slide.transitionMode || 'slide');
+      transitionElements(container, slide, false, slide.transitionMode || 'slide-h', slide.transitionSpeed);
     } else {
       container.innerHTML='';
       renderSlideContent(slide, container, false);
@@ -2725,7 +2908,8 @@ function renderSlideEls(cont, slide, stageEl){
 // Folie in ein temporaeres Overlay rendern, dann beide Ebenen gemeinsam verschieben
 // ("slide") oder die neue ueberblenden ("fade"), statt hart umzuschalten.
 function transitionEls(cont, slide, stageEl){
-  const mode=slide.transitionMode||'slide';
+  const mode=slide.transitionMode||'slide-h';
+  const speed=Math.max(100, slide.transitionSpeed||500);
   if (mode==='none' || !cont.firstChild) { renderSlideEls(cont, slide, stageEl); return; }
   const parent=cont.parentElement;
   const temp=document.createElement('div');
@@ -2734,13 +2918,14 @@ function transitionEls(cont, slide, stageEl){
   renderSlideEls(temp, slide, stageEl);
   function finish(){ cont.innerHTML=''; while(temp.firstChild) cont.appendChild(temp.firstChild); cont.style.transition='';cont.style.opacity='';cont.style.transform=''; temp.remove(); }
   if (mode==='fade') {
-    temp.style.opacity='0'; temp.style.transition='opacity 0.6s ease'; cont.style.transition='opacity 0.6s ease';
+    temp.style.opacity='0'; temp.style.transition=\`opacity \${speed}ms ease\`; cont.style.transition=\`opacity \${speed}ms ease\`;
     requestAnimationFrame(()=>{ temp.style.opacity='1'; cont.style.opacity='0'; });
-    setTimeout(finish,620);
+    setTimeout(finish,speed+100);
   } else {
-    temp.style.transform='translateX(100%)'; temp.style.transition='transform 0.5s cubic-bezier(.4,0,.2,1)'; cont.style.transition='transform 0.5s cubic-bezier(.4,0,.2,1)';
-    requestAnimationFrame(()=>{ temp.style.transform='translateX(0%)'; cont.style.transform='translateX(-100%)'; });
-    setTimeout(finish,520);
+    const axis=mode==='slide-v'?'Y':'X';
+    temp.style.transform=\`translate\${axis}(100%)\`; temp.style.transition=\`transform \${speed}ms cubic-bezier(.4,0,.2,1)\`; cont.style.transition=\`transform \${speed}ms cubic-bezier(.4,0,.2,1)\`;
+    requestAnimationFrame(()=>{ temp.style.transform=\`translate\${axis}(0%)\`; cont.style.transform=\`translate\${axis}(-100%)\`; });
+    setTimeout(finish,speed);
   }
 }
 function showSlide(i, useTransition){
@@ -2866,12 +3051,13 @@ window.addEventListener('keydown',e=>{
     fd.append('bento_kind', 'eyecandy');
     fd.append('eyecandy_token', S.launchToken);
     fd.append('bento_filename', 'praesentation');
+    fd.append('orientation', S.orientation);
 
     fetch('bento.php', { method:'POST', body: fd })
       .then(r=>r.json().catch(()=>{ throw new Error('Antwort war kein gueltiges JSON - bitte erneut über den Link im Infomaster-Dashboard öffnen (Login evtl. abgelaufen).'); }))
       .then(data=>{
         if (!data.ok) throw new Error(data.error||'Unbekannter Fehler beim Speichern.');
-        prompt('✅ Gespeichert! Link (im selben Ordner wie die Bento-Präsentationen):', data.url);
+        showSaveResultModal(data.url, data.screens||[]);
       })
       .catch(err=>{
         alert('❌ Konnte nicht im Infomaster speichern:\n'+err.message);
