@@ -697,15 +697,8 @@
         <div class="tab-panel" id="tab-fonts">
           <div class="ctrl-section">
             <div class="ctrl-section-title">Google Fonts Katalog</div>
-            <select id="font-category-select" onchange="App.renderFontCatalog()" style="margin-bottom:8px;">
-              <option value="improvisiert">Improvisiert / Marker</option>
-              <option value="party">Party & Festlich</option>
-              <option value="scifi">Sci-Fi & Futuristisch</option>
-              <option value="horror">Horror & Grusel</option>
-              <option value="fraktur">Fraktur & Gotisch</option>
-              <option value="stencil">Stencil & Military</option>
-              <option value="effekt">Effekt / Rubik</option>
-            </select>
+            <!-- Optionen kommen aus FONT_COLLECTION_SRC (siehe App.renderFontCatalog()) -->
+            <select id="font-category-select" onchange="App.renderFontCatalog()" style="margin-bottom:8px;"></select>
             <div id="font-catalog-list"></div>
           </div>
           <div class="ctrl-section">
@@ -770,55 +763,67 @@ const CLASSIC_FONTS = [
   { name:'Helvetica', family:'Helvetica, sans-serif' }
 ];
 
-const FONT_CATALOG = {
-  improvisiert:[
-    {name:'Barrio',family:'Barrio',url:'https://fonts.googleapis.com/css2?family=Barrio&display=swap'},
-    {name:'Barriecito',family:'Barriecito',url:'https://fonts.googleapis.com/css2?family=Barriecito&display=swap'},
-    {name:'Permanent Marker',family:'Permanent Marker',url:'https://fonts.googleapis.com/css2?family=Permanent+Marker&display=swap'},
-    {name:'Gochi Hand',family:'Gochi Hand',url:'https://fonts.googleapis.com/css2?family=Gochi+Hand&display=swap'},
-    {name:'Rock Salt',family:'Rock Salt',url:'https://fonts.googleapis.com/css2?family=Rock+Salt&display=swap'}
-  ],
-  party:[
-    {name:'Monoton',family:'Monoton',url:'https://fonts.googleapis.com/css2?family=Monoton&display=swap'},
-    {name:'Bungee',family:'Bungee',url:'https://fonts.googleapis.com/css2?family=Bungee&display=swap'},
-    {name:'Shrikhand',family:'Shrikhand',url:'https://fonts.googleapis.com/css2?family=Shrikhand&display=swap'},
-    {name:'Nabla',family:'Nabla',url:'https://fonts.googleapis.com/css2?family=Nabla&display=swap'},
-    {name:'Faster One',family:'Faster One',url:'https://fonts.googleapis.com/css2?family=Faster+One&display=swap'}
-  ],
-  scifi:[
-    {name:'Orbitron',family:'Orbitron',url:'https://fonts.googleapis.com/css2?family=Orbitron:wght@600;900&display=swap'},
-    {name:'Press Start 2P',family:'Press Start 2P',url:'https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap'},
-    {name:'Audiowide',family:'Audiowide',url:'https://fonts.googleapis.com/css2?family=Audiowide&display=swap'},
-    {name:'Michroma',family:'Michroma',url:'https://fonts.googleapis.com/css2?family=Michroma&display=swap'},
-    {name:'Silkscreen',family:'Silkscreen',url:'https://fonts.googleapis.com/css2?family=Silkscreen&display=swap'}
-  ],
-  horror:[
-    {name:'Creepster',family:'Creepster',url:'https://fonts.googleapis.com/css2?family=Creepster&display=swap'},
-    {name:'Nosifer',family:'Nosifer',url:'https://fonts.googleapis.com/css2?family=Nosifer&display=swap'},
-    {name:'Butcherman',family:'Butcherman',url:'https://fonts.googleapis.com/css2?family=Butcherman&display=swap'},
-    {name:'Frijole',family:'Frijole',url:'https://fonts.googleapis.com/css2?family=Frijole&display=swap'},
-    {name:'Lacquer',family:'Lacquer',url:'https://fonts.googleapis.com/css2?family=Lacquer&display=swap'}
-  ],
-  fraktur:[
-    {name:'UnifrakturMaguntia',family:'UnifrakturMaguntia',url:'https://fonts.googleapis.com/css2?family=UnifrakturMaguntia&display=swap'},
-    {name:'MedievalSharp',family:'MedievalSharp',url:'https://fonts.googleapis.com/css2?family=MedievalSharp&display=swap'},
-    {name:'New Rocker',family:'New Rocker',url:'https://fonts.googleapis.com/css2?family=New+Rocker&display=swap'},
-    {name:'Pirata One',family:'Pirata One',url:'https://fonts.googleapis.com/css2?family=Pirata+One&display=swap'}
-  ],
-  stencil:[
-    {name:'Black Ops One',family:'Black Ops One',url:'https://fonts.googleapis.com/css2?family=Black+Ops+One&display=swap'},
-    {name:'Allerta Stencil',family:'Allerta Stencil',url:'https://fonts.googleapis.com/css2?family=Allerta+Stencil&display=swap'},
-    {name:'Wallpoet',family:'Wallpoet',url:'https://fonts.googleapis.com/css2?family=Wallpoet&display=swap'},
-    {name:'Plaster',family:'Plaster',url:'https://fonts.googleapis.com/css2?family=Plaster&display=swap'}
-  ],
-  effekt:[
-    {name:'Rubik Glitch',family:'Rubik Glitch',url:'https://fonts.googleapis.com/css2?family=Rubik+Glitch&display=swap'},
-    {name:'Rubik Microbe',family:'Rubik Microbe',url:'https://fonts.googleapis.com/css2?family=Rubik+Microbe&display=swap'},
-    {name:'Rubik Puddles',family:'Rubik Puddles',url:'https://fonts.googleapis.com/css2?family=Rubik+Puddles&display=swap'},
-    {name:'Rubik Iso',family:'Rubik Iso',url:'https://fonts.googleapis.com/css2?family=Rubik+Iso&display=swap'},
-    {name:'Rubik Mono One',family:'Rubik Mono One',url:'https://fonts.googleapis.com/css2?family=Rubik+Mono+One&display=swap'}
-  ]
+// ─── SCHRIFTEN-KATALOG (Fonts-Tab) ───
+// Thematisch geordnete Sammlung in Kurzform, der Lesbarkeit halber genau so gepflegt:
+// "kategorie: Name Name [[Name mit Leerzeichen]] ...". parseFontCollection() ergaenzt daraus
+// fuer jede Schrift den Google-Fonts-Download-Link, z.B.
+//   [[Purple Purse]] >> https://fonts.googleapis.com/css2?family=Purple+Purse&display=swap
+// Websafe-Schriften (WEBSAFE_FONTS) sind auf den Geraeten schon vorhanden und bekommen keinen
+// Link. Doppelte Namen innerhalb einer Kategorie werden nur einmal aufgefuehrt.
+const FONT_COLLECTION_SRC = `
+deko: Notable Diplomata Arbutus Cookie Jomhuria Crushed Limelight Fascinate Gorditas Monoton Modak Mogra Merienda Tillana Coustard Fresca Lobster Codystar Ranga Skranji Ultra Foldit Oi Nabla Texturina Danfo
+effect: Akronim Neonderthaw [[Rubik Maze]] [[Rubik Distressed]] [[Rubik 80s Fade]] [[Rubik Gemstones]] [[Rubik Iso]] [[Rubik Dirt]] [[Rubik Wet Paint]] [[Rubik Puddles]] [[Rubik Moonrocks]] [[Rubik Microbe]] [[Rubik Glitch]] [[Rubik Beastly]] [[Rubik Bubbles]] [[Rubik Burned]] [[Rubik Spray Paint]] [[Rubik Storm]] [[Rubik Vinyl]] [[Rubik Marker Hatch]] [[Black And White Picture]] [[Moo Lah Lah]] [[Faster One]] [[Cabin Sketch]]
+foreign: Smokum Rye Ewert Bonbon Sancreek Kenia Hanalei Shojumaru [[Joti One]] Trochut [[Ruslan Display]] Stick [[Eagle Lake]] [[Uncial Antiqua]] [[Caesar Dressing]] Kings Aladin
+fraktur: Astloch Fruktur Iceberg Bokor UnifrakturMaguntia UnifrakturCook MedievalSharp Texturina Rakkas Fondamento [[Grenze Gotisch]] [[Germania One]] [[Pirata One]] [[Nova Cut]] [[New Rocker]] [[Manufacturing Consent]]
+hand: Meddon Elsie Bilbo Unkempt Pacifico Knewave Calligraffitti Margarine Allan Borel Charmonman [[Leckerli One]] [[Homemade Apple]] [[Sedgwick Ave Display]] [[Sedgwick Ave]] Sail Yellowtail [[Kaushan Script]] Festive
+horror: Eater Creepster Nosifer Flavors Butcherman Frijole Piedra Smythe Grenze [[Metal Mania]] [[Special Elite]] [[Trade Winds]] [[Road Rage]] Lacquer [[Reggae One]] [[Jolly Lodger]]
+impro: Peralta Bangers Unkempt Ranchers Mansalva Slackey Barriecito Barrio Schoolbell Dokdo Underdog [[Finger Paint]] [[Rampart One]] [[Freckle Face]] Pangolin [[Londrina Sketch]]
+monospaced: [[Courier New]] Arvo Roboto BioRhyme Cinzel
+narrow: [[Stint Ultra Condensed]] [[Instrument Serif]] Allan Karantina [[Mouse Memoirs]] Acme Staatliches Dorsa Bahiana Smythe Smokum Bokor Handjet Ranga Bangers [[Jolly Lodger]] Boogaloo [[Bubblegum Sans]] [[Amatic SC]]
+party: Risque Bonbon Griffy Miltonian Kranky [[Purple Purse]] Kablammo [[Fontdiner Swanky]] [[Henny Penny]] [[Princess Sofia]]
+readable: Acme Andika [[Atkinson Hyperlegible]] [[Cormorant Upright]] Lexend Lato Ranchers
+schlagzeile: Anton
+scifi: VT323 Geo Iceberg Offside Orbitron Audiowide Megrim Baumans Tomorrow Vibes Tektur [[Press Start 2P]] Foldit Plaster DotGothic16 Handjet Monofett [[Atomic Age]] [[Bitcount Prop Single]]
+sortfield: [[Kaushan Script]] Ultra [[Carter One]] [[Raleway Dots]] [[Bungee Shade]] [[Original Surfer]] [[Ceviche One]] [[Vast Shadow]] Coiny [[Cherry Cream Soda]] [[Passero One]] [[Autour One]] [[Train One]] Tourney [[Tilt Prism]]
+stencil: [[Stick No Bills]] [[Sirin Stencil]] [[Emblema One]] [[Saira Stencil One]] [[Allerta Stencil]] [[Stardos Stencil]] Plaster
+websafe: [[Open Sans]] [[Courier New]] [[Arial Narrow]] [[Century Gothic]] [[Georgia]] [[Courier New]] [[Times New Roman]] [[Palatino]]
+`;
+const FONT_CATEGORY_LABELS = {
+  deko:'Deko', effect:'Effekt', foreign:'Fremdländisch', fraktur:'Fraktur & Gotisch', hand:'Handschrift',
+  horror:'Horror', impro:'Improvisiert', monospaced:'Monospaced', narrow:'Schmal', party:'Party',
+  readable:'Gut lesbar', schlagzeile:'Schlagzeile', scifi:'Sci-Fi', sortfield:'Sortfield',
+  stencil:'Stencil', websafe:'Websafe (ohne Download)'
 };
+// Auf den Geraeten vorinstalliert - kein Google-Fonts-Download.
+const WEBSAFE_FONTS = ['Courier New','Arial Narrow','Century Gothic','Georgia','Times New Roman','Palatino','Arial','Helvetica','Verdana','Impact','Trebuchet MS'];
+// Schriften ohne normale (400) Stärke brauchen im Link die vorhandene Stärke, sonst antwortet
+// Google mit HTTP 400.
+const FONT_FAMILY_PARAM_OVERRIDES = { 'UnifrakturCook': 'UnifrakturCook:wght@700' };
+function googleFontFamilyParam(name) {
+  return FONT_FAMILY_PARAM_OVERRIDES[name] || name.trim().replace(/\s+/g, '+');
+}
+function googleFontUrl(name) {
+  return 'https://fonts.googleapis.com/css2?family=' + googleFontFamilyParam(name) + '&display=swap';
+}
+function parseFontCollection(src) {
+  const catalog = {};
+  src.split('\n').forEach(line => {
+    const m = line.match(/^\s*([a-z0-9_-]+)\s*:(.*)$/i);
+    if (!m) return;
+    const names = [];
+    // [[mehrere Woerter]] ODER ein einzelnes Wort ohne Leerzeichen
+    m[2].replace(/\[\[([^\]]+)\]\]|(\S+)/g, (all, multi, single) => {
+      const n = (multi || single || '').trim();
+      if (n && !names.includes(n)) names.push(n);
+      return all;
+    });
+    catalog[m[1]] = names.map(name => WEBSAFE_FONTS.includes(name)
+      ? { name, family: name, websafe: true }
+      : { name, family: name, url: googleFontUrl(name) });
+  });
+  return catalog;
+}
+const FONT_CATALOG = parseFontCollection(FONT_COLLECTION_SRC);
 
 const GRAINY_PRESETS = [
   {name:'Sunset Grain',colors:{bg:'#0c0a09',c1:'#f43f5e',c2:'#fb923c',c3:'#facc15'},noise:42,scale:110,angle:30},
@@ -3724,14 +3729,35 @@ const App = {
 
   // ─── FONTS ───
   renderFontCatalog() {
-    const cat=document.getElementById('font-category-select').value;
+    const sel=document.getElementById('font-category-select');
+    if (!sel.options.length) {
+      sel.innerHTML=Object.keys(FONT_CATALOG).map(k=>`<option value="${k}">${escapeHtmlEc(FONT_CATEGORY_LABELS[k]||k)} (${FONT_CATALOG[k].length})</option>`).join('');
+    }
+    const cat=sel.value;
     const list=document.getElementById('font-catalog-list');
     const fonts=FONT_CATALOG[cat]||[];
-    list.innerHTML=fonts.map(f=>`
+    // Vorschau: jeder Name in seiner eigenen Schrift. Pro Kategorie EIN kleines Stylesheet,
+    // das per "text=" nur die Buchstaben der Namen laedt (wenige KB statt ganzer Schriften).
+    const google=fonts.filter(f=>f.url);
+    const previewId='font-preview-'+cat;
+    if (google.length && !document.getElementById(previewId)) {
+      const chars=Array.from(new Set(google.map(f=>f.name).join(''))).join('');
+      const link=document.createElement('link');
+      link.id=previewId; link.rel='stylesheet';
+      link.href='https://fonts.googleapis.com/css2?'+google.map(f=>'family='+googleFontFamilyParam(f.name)).join('&')+'&text='+encodeURIComponent(chars)+'&display=swap';
+      document.head.appendChild(link);
+    }
+    list.innerHTML=fonts.map((f,i)=>{
+      const installed=S.installedFonts.some(x=>x.family===f.family);
+      return `
       <div class="font-catalog-item">
-        <span style="font-size:11px;color:#e2e8f0;">${f.name}</span>
-        <button onclick='App.installFont(${JSON.stringify(f)})' class="btn-sm accent" style="font-size:9px;padding:3px 8px;">+ Laden</button>
-      </div>`).join('');
+        <span style="font-size:15px;color:#e2e8f0;font-family:'${f.family.replace(/'/g,"\\'")}',sans-serif;" title="${escapeHtmlEc(f.url||'Websafe - auf dem Gerät vorhanden, kein Download')}">${escapeHtmlEc(f.name)}</span>
+        <button data-font-idx="${i}" class="btn-sm accent" style="font-size:9px;padding:3px 8px;"${installed?' disabled':''}>${installed?'✓ Geladen':(f.websafe?'+ Nutzen':'+ Laden')}</button>
+      </div>`;
+    }).join('');
+    list.querySelectorAll('button[data-font-idx]').forEach(b=>{
+      b.addEventListener('click', ()=>{ this.installFont(fonts[+b.getAttribute('data-font-idx')]); this.renderFontCatalog(); });
+    });
   },
 
   installFont(f) {

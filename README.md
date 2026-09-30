@@ -259,6 +259,16 @@ PHP, keine eigene Session) und wird nur per Link integriert:
 - **Automatische Schriftgrößen-Skalierung** - ein Schalter pro Textelement verkleinert die
   Schrift automatisch, bis sie in die Breite des Kastens und die verbleibende Höhe bis zum
   Folienrand passt (die eingestellte Größe wirkt dann als Maximum).
+- **Schriften-Katalog (Fonts-Tab)** - 16 thematische Kategorien (Deko, Effekt, Fremdländisch,
+  Fraktur, Handschrift, Horror, Improvisiert, Monospaced, Schmal, Party, Gut lesbar, Schlagzeile,
+  Sci-Fi, Sortfield, Stencil, Websafe) mit gut 200 Google Fonts. Gepflegt wird die Liste in
+  `eyecandy.html` als lesbare Kurzform (`FONT_COLLECTION_SRC`: `kategorie: Name [[Name mit
+  Leerzeichen]] ...`); `parseFontCollection()` ergänzt daraus beim Laden die Download-Links
+  (`[[Purple Purse]]` → `https://fonts.googleapis.com/css2?family=Purple+Purse&display=swap`).
+  Websafe-Schriften (Georgia, Courier New, ...) bekommen keinen Link. Jeder Eintrag zeigt seinen
+  Namen als Vorschau in der eigenen Schrift - pro Kategorie ein einziges, winziges Stylesheet,
+  das per `text=` nur die Buchstaben der Namen lädt. Schriften ohne normale Stärke (z.B.
+  UnifrakturCook, nur fett) stehen in `FONT_FAMILY_PARAM_OVERRIDES`.
 - **Eigene Schriftarten per Drag & Drop** - `.ttf`/`.otf`/`.woff`/`.woff2`-Dateien lassen
   sich im Fonts-Tab hineinziehen, werden per `FontFace`-API registriert und beim Export als
   `@font-face` mit eingebetteter Data-URL mitgeliefert (funktioniert offline auf dem Pi).
