@@ -286,9 +286,9 @@
       <button onclick="App.addSlide()" class="btn-sm" style="font-size:10px;" title="Neue Folie">
         <i data-lucide="plus" style="width:12px;height:12px;"></i> Neu
       </button>
-      <button id="btn-toggle-play" onclick="App.toggleAutoplay()" class="btn-sm accent" style="font-size:10px;">
+      <button id="btn-toggle-play" onclick="App.toggleAutoplay()" ondblclick="App.startAutoplayLoop()" class="btn-sm accent" style="font-size:10px;" title="Einmal eine kurze Runde Spotlight/Folienwechsel vorschauen - Doppelklick fuer Dauerschleife">
         <i id="play-icon" data-lucide="play" style="width:12px;height:12px;"></i>
-        <span id="play-text">Auto</span>
+        <span id="play-text">Play</span>
       </button>
     </div>
 
@@ -390,7 +390,7 @@
 
         <!-- ===== TAB: ELEMENTS ===== -->
         <div class="tab-panel" id="tab-elements">
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:12px;">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;">
             <button onclick="App.addTextElement()" class="btn-sm" style="justify-content:center;">
               <i data-lucide="type" style="width:13px;height:13px;color:#a5b4fc;"></i> Text
             </button>
@@ -398,9 +398,23 @@
               <i data-lucide="image" style="width:13px;height:13px;color:#34d399;"></i> Bild
               <input type="file" accept="image/*" style="display:none;" onchange="App.handleImageUpload(event)">
             </label>
-            <button onclick="App.addQrElement()" class="btn-sm" style="justify-content:center;">
-              <i data-lucide="qr-code" style="width:13px;height:13px;color:#f59e0b;"></i> QR
-            </button>
+          </div>
+          <div style="margin-bottom:12px;">
+            <div class="ctrl-label" style="margin-bottom:5px;">Widgets</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;">
+              <button onclick="App.addQrElement()" class="btn-sm" style="justify-content:center;font-size:10px;padding:8px 4px;" title="QR-Code">
+                <i data-lucide="qr-code" style="width:13px;height:13px;color:#f59e0b;"></i>
+              </button>
+              <button onclick="App.addClockElement()" class="btn-sm" style="justify-content:center;font-size:10px;padding:8px 4px;" title="Uhr">
+                <i data-lucide="clock" style="width:13px;height:13px;color:#38bdf8;"></i>
+              </button>
+              <button onclick="App.addDateElement()" class="btn-sm" style="justify-content:center;font-size:10px;padding:8px 4px;" title="Datumsanzeige">
+                <i data-lucide="calendar" style="width:13px;height:13px;color:#fb7185;"></i>
+              </button>
+              <button onclick="App.addCountdownElement()" class="btn-sm" style="justify-content:center;font-size:10px;padding:8px 4px;" title="Countdown">
+                <i data-lucide="hourglass" style="width:13px;height:13px;color:#c084fc;"></i>
+              </button>
+            </div>
           </div>
           <div class="ctrl-section">
             <div class="ctrl-section-title">Ebenen dieser Folie</div>
@@ -1158,6 +1172,57 @@ function escapeHtmlEc(s) {
   return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
+// ─── WIDGETS (Uhr/Datum/Countdown) ───
+// Reiner Text-Formatierer, unabhaengig von S/App - dieselbe Funktion wird 1:1 (siehe
+// Export-Kopie in buildExportedDoc()) auch im fertigen, eigenstaendigen Praesentations-
+// Export genutzt.
+function formatWidgetText(el) {
+  const now = new Date();
+  if (el.type === 'clock') {
+    const h24 = now.getHours(), m = String(now.getMinutes()).padStart(2,'0'), s = String(now.getSeconds()).padStart(2,'0');
+    if (el.format === '12h') {
+      const h12 = ((h24+11)%12)+1;
+      return `${h12}:${m}${el.showSeconds?':'+s:''} ${h24<12?'AM':'PM'}`;
+    }
+    return `${String(h24).padStart(2,'0')}:${m}${el.showSeconds?':'+s:''}`;
+  }
+  if (el.type === 'date') {
+    return el.format === 'short'
+      ? now.toLocaleDateString('de-DE')
+      : now.toLocaleDateString('de-DE', { weekday:'long', day:'2-digit', month:'long', year:'numeric' });
+  }
+  if (el.type === 'countdown') {
+    const target = el.target ? new Date(el.target) : null;
+    if (!target || isNaN(target.getTime())) return '--:--:--';
+    const diffMs = target.getTime() - now.getTime();
+    const prefix = el.label ? el.label+'\n' : '';
+    if (diffMs <= 0) return prefix + (el.doneText || '00:00:00');
+    const totalSec = Math.floor(diffMs/1000);
+    const days = Math.floor(totalSec/86400);
+    const hours = String(Math.floor((totalSec%86400)/3600)).padStart(2,'0');
+    const mins = String(Math.floor((totalSec%3600)/60)).padStart(2,'0');
+    const secs = String(totalSec%60).padStart(2,'0');
+    return prefix + (days>0 ? `${days}T ${hours}:${mins}:${secs}` : `${hours}:${mins}:${secs}`);
+  }
+  return '';
+}
+// Aktualisiert alle gerade im DOM sichtbaren Widget-Elemente (Editor- UND Vollbild-
+// Präsentations-Ebene koennen gleichzeitig im DOM stehen) einmal pro Sekunde, OHNE die
+// ganze Folie neu aufzubauen (das wuerde z.B. eine gerade laufende Text-Bearbeitung an
+// anderer Stelle stoeren). Der DOM-Knoten traegt dazu nur die Element-ID - der eigentliche
+// Zustand (Format, Zieldatum, ...) kommt bei jedem Tick frisch aus S.slides, damit
+// Aenderungen im Inspector sofort wirken.
+function tickWidgets() {
+  const divs = document.querySelectorAll('.widget-el[data-widget-id]');
+  if (!divs.length) return;
+  const allEls = S.slides.flatMap(s => s.elements);
+  divs.forEach(div => {
+    const el = allEls.find(e => e.id === div.getAttribute('data-widget-id'));
+    if (el) div.textContent = formatWidgetText(el);
+  });
+}
+setInterval(tickWidgets, 1000);
+
 // Nur Google-Fonts-Katalogeintraege (haben eine `url`) werden per @import geladen - eigene,
 // per Drag & Drop hinzugefuegte Schriftarten (haben stattdessen `dataUrl`) sind bereits
 // direkt per FontFace-API in document.fonts registriert, siehe App.handleFontFiles().
@@ -1181,7 +1246,7 @@ function defaultSlide(num=1) {
     duration:6,
     template: null,
     beamEnabled: true, // Spotlight an/aus - pro Folie (siehe App.setBeamEnabled())
-    transitionMode: 'slide-h', // Uebergang BEIM HINEINWECHSELN in diese Folie - 'slide-h'|'slide-v'|'fade'|'none'
+    transitionMode: 'slide-v', // Uebergang BEIM HINEINWECHSELN in diese Folie - 'slide-h'|'slide-v'|'fade'|'none'
     transitionSpeed: 500, // ms
     elements:[
       {id:'el-'+Date.now(), type:'text', content:'EYECANDY STUDIO', fontFamily:'Inter, sans-serif', fontSize:56, color:'#ffffff', textAlign:'center', fontWeight:'800', x:5, y:30, width:90},
@@ -1210,6 +1275,14 @@ const S = {
   selectedWaypointIdx: -1,
   isPlaying: false,
   autoplayTimer: null,
+  // Spotlight-/Glitter-Animation im EDITOR (nicht in der Vollbild-Präsentation, die laeuft
+  // immer normal): steht standardmaessig still, um beim Bearbeiten nicht abzulenken - der
+  // Play-Knopf (App.toggleAutoplay()) spielt einmal eine kurze Runde ab und haelt danach
+  // wieder an, ein Doppelklick auf denselben Knopf (App.startAutoplayLoop()) laesst es
+  // stattdessen dauerhaft weiterlaufen (die alte, immer-an-Variante).
+  editorAnimPlaying: false,
+  editorAnimLoop: false,
+  editorAnimStopTimer: null,
   activeTab: 'slides',
   addingWaypoint: false,
   installedFonts: [],
@@ -1489,6 +1562,11 @@ function selectElAndShowTab(el, wrapper) {
   App.renderInspector();
   App.renderLayersList();
 }
+// Eigene, zeitbasierte Doppelklick-Erkennung fuer Folienelemente (siehe Kommentar am
+// wrapper-Klick-Handler in renderSlideContent()) - robuster als sich auf das native
+// 'dblclick'-Event zu verlassen.
+const _clickTrack = { id:null, time:0 };
+const DBLCLICK_WINDOW_MS = 450;
 function renderSlideContent(slide, container, isEditor, stageEl) {
   container.innerHTML = '';
   stageEl = stageEl || container.parentElement;
@@ -1557,6 +1635,20 @@ function renderSlideContent(slide, container, isEditor, stageEl) {
       wrapper.appendChild(qrBox);
       renderQrToCanvas(qrCanvas, el.content, el);
 
+    } else if (el.type==='clock' || el.type==='date' || el.type==='countdown') {
+      const div=document.createElement('div');
+      div.className='widget-el';
+      div.setAttribute('data-widget-id', el.id);
+      div.style.fontFamily = el.fontFamily||'Inter, sans-serif';
+      div.style.fontSize   = `${el.fontSize||40}px`;
+      div.style.color      = el.color||'#ffffff';
+      div.style.textAlign  = el.textAlign||'center';
+      div.style.fontWeight = el.fontWeight||'700';
+      div.style.lineHeight = '1.3';
+      div.style.whiteSpace = 'pre-line';
+      div.textContent = formatWidgetText(el);
+      wrapper.appendChild(div);
+
     } else if (el.type==='template') {
       wrapper.innerHTML += renderTemplateElement(el, isEditor);
       if (isEditor) attachTemplateEditing(wrapper, slide, el);
@@ -1572,9 +1664,28 @@ function renderSlideContent(slide, container, isEditor, stageEl) {
       // schwierig. Auswahl daher nur als leichte Klassen-/Inspector-Aktualisierung, ohne die
       // Folie selbst anzufassen (spiegelt das Abwaehlen weiter unten in stage's eigenem
       // click-Handler, das genauso leichtgewichtig ist).
+      //
+      // Doppelklick-Erkennung bewusst NICHT (nur) ueber das native 'dblclick'-Event, sondern
+      // zusaetzlich per eigener Zeitmessung auf 'click' (siehe _clickTrack unten): der Browser
+      // feuert 'dblclick' nur, wenn beide Klicks nah GENUG beieinander UND fast exakt am
+      // selben Punkt liegen - bei einer echten Maus (Handzittern zwischen den beiden Klicks,
+      // anders als ein exaktes Test-Skript) reisst das die Erkennung leicht ab, obwohl die
+      // Klicks fuer den Menschen eindeutig ein Doppelklick waren. Die eigene, grosszuegigere
+      // Zeit-basierte Erkennung hier greift dann als verlaesslicher Ersatz.
       wrapper.addEventListener('click', evt => {
         evt.stopPropagation();
-        if (S.addingWaypoint || _elDrag.moved) return;
+        if (S.addingWaypoint) return;
+        if (_elDrag.movedFar) { _clickTrack.id=null; return; } // echter Drag, kein Klick
+        const now=Date.now();
+        const isSoftDblClick = _clickTrack.id===el.id && (now-_clickTrack.time)<DBLCLICK_WINDOW_MS;
+        _clickTrack.id=el.id; _clickTrack.time=now;
+        if (isSoftDblClick) {
+          _clickTrack.time=0; // verbraucht - ein dritter schneller Klick zaehlt nicht nochmal als Doppelklick
+          selectElAndShowTab(el, wrapper);
+          const textDiv=wrapper.querySelector('.inline-txt');
+          if (el.type==='text' && textDiv) { textDiv.contentEditable='true'; textDiv.focus(); }
+          return;
+        }
         if (S.selectedElementId === el.id) return;
         document.querySelectorAll('.slide-el.selected-el').forEach(w => w.classList.remove('selected-el'));
         wrapper.classList.add('selected-el');
@@ -1614,17 +1725,27 @@ function attachTemplateEditing(wrapper, slide, el) {
 // Schwellwert verhindert ausserdem, dass ein normaler (Doppel-)Klick durch minimales
 // Zittern der Maus schon als Drag gewertet und die Position leicht verschoben wird -
 // genau das machte praezises Klicken/Doppelklicken in Textfelder bisher so unzuverlaessig.
-const _elDrag = { active:false, moved:false, el:null, data:null, startX:0, startY:0, startLeft:0, startTop:0 };
+const _elDrag = { active:false, moved:false, movedFar:false, el:null, data:null, startX:0, startY:0, startLeft:0, startTop:0 };
 const EL_DRAG_THRESHOLD = 4;
+// Deutlich groesserer zweiter Schwellwert NUR fuer die Frage "war das ein echter, absicht-
+// licher Drag" (siehe wrapper-Klick-Handler unten) - bei einem echten Doppelklick zittert
+// eine echte Maus (anders als ein Test-Bot mit exakt gleichen Koordinaten) zwischen den
+// beiden Klicks naturgemaess ein paar Pixel, was frueher schon bei EL_DRAG_THRESHOLD (4px)
+// die Selektion/den Doppelklick unterdrueckt hat. Das leichte Wackeln bewegt das Element
+// dabei zwar minimal mit (harmlos/kaum sichtbar), blockiert aber die eigentliche Absicht
+// (Auswaehlen/Editieren) nicht mehr.
+const EL_CLICK_SUPPRESS_THRESHOLD = 10;
 function _elDragMove(e) {
   if (!_elDrag.active) return;
   const dx0=e.clientX-_elDrag.startX, dy0=e.clientY-_elDrag.startY;
+  const dist=Math.hypot(dx0,dy0);
   if (!_elDrag.moved) {
-    if (Math.hypot(dx0,dy0) < EL_DRAG_THRESHOLD) return;
+    if (dist < EL_DRAG_THRESHOLD) return;
     _elDrag.moved=true;
     document.body.style.userSelect='none';
     document.body.style.cursor='move';
   }
+  if (dist >= EL_CLICK_SUPPRESS_THRESHOLD) _elDrag.movedFar=true;
   const stage=document.getElementById('presentation-stage');
   const stageRect=stage.getBoundingClientRect();
   const dx=dx0/stageRect.width*100, dy=dy0/stageRect.height*100;
@@ -1649,7 +1770,7 @@ window.addEventListener('mouseup', _elDragUp);
 function makeDraggable(el, data) {
   el.addEventListener('mousedown', e => {
     if (e.target.closest('[contenteditable="true"]')) return;
-    _elDrag.active=true; _elDrag.moved=false;
+    _elDrag.active=true; _elDrag.moved=false; _elDrag.movedFar=false;
     _elDrag.el=el; _elDrag.data=data;
     _elDrag.startX=e.clientX; _elDrag.startY=e.clientY;
     _elDrag.startLeft=data.x; _elDrag.startTop=data.y;
@@ -1809,6 +1930,9 @@ const SPOT_GLOW_PEAK_ALPHA = 0.5;
 // Kante - ein reiner 2-Stopp-Verlauf wirkt trotz "Weichzeichnung" oft wie ein sichtbarer
 // Ring, weil der Alpha-Wert dazwischen linear statt sanft ausklingt.
 const SPOT_EDGE_STEPS = 10;
+// Dauer einer einmaligen Play-Vorschau im Editor (siehe App.toggleAutoplay()), bevor
+// Spotlight/Glitter/Folienwechsel automatisch wieder anhalten.
+const EDITOR_PREVIEW_MS = 8000;
 
 function drawSpotlight(ctx, pos, beam) {
   ctx.clearRect(0,0,ctx.canvas.width,ctx.canvas.height);
@@ -1930,12 +2054,18 @@ function startEditorCanvasLoop() {
   });
 
   let lastT=0;
+  // Solange S.editorAnimPlaying false ist (Standard, siehe App.toggleAutoplay()), wird
+  // tickBeam() gar nicht erst aufgerufen - so bleibt _lastPos unveraendert UND keines der
+  // Beam-Pattern (auch die winkelbasierten wie figure8/sine/bounce, die nicht ueber dt
+  // laufen) driftet im Hintergrund weiter. drawGlitter() bekommt in dem Fall speed:0
+  // uebergeben, damit auch die Partikel stillstehen, aber trotzdem sichtbar bleiben.
+  let _lastPos=tickBeam(S.beam, 0, spotCanvas.width, spotCanvas.height);
   function loop(t) {
     const dt=(t-lastT)/1000; lastT=t;
-    const pos=tickBeam(S.beam, dt, spotCanvas.width, spotCanvas.height);
+    if (S.editorAnimPlaying) _lastPos=tickBeam(S.beam, dt, spotCanvas.width, spotCanvas.height);
     const activeSlide=S.slides[S.activeSlideIndex];
-    drawSpotlight(spotCtx, pos, {...S.beam, enabled: !activeSlide || activeSlide.beamEnabled!==false});
-    drawGlitter(glitCtx, _editorParticles, S.glitter);
+    drawSpotlight(spotCtx, _lastPos, {...S.beam, enabled: !activeSlide || activeSlide.beamEnabled!==false});
+    drawGlitter(glitCtx, _editorParticles, S.editorAnimPlaying ? S.glitter : {...S.glitter, speed:0});
     requestAnimationFrame(loop);
   }
   requestAnimationFrame(loop);
@@ -2461,7 +2591,7 @@ const App = {
     const slide=S.slides[S.activeSlideIndex];
     const container=document.getElementById('slide-content');
     if (useTransition) {
-      transitionElements(container, slide, S.isEditor, slide.transitionMode || 'slide-h', slide.transitionSpeed);
+      transitionElements(container, slide, S.isEditor, slide.transitionMode || 'slide-v', slide.transitionSpeed);
     } else {
       container.innerHTML='';
       renderSlideContent(slide, container, S.isEditor);
@@ -2477,7 +2607,7 @@ const App = {
     const glassToggle=document.getElementById('template-glass-toggle');
     if (slide && glassToggle) glassToggle.checked = slide.template_glass !== false;
     const transitionSelect=document.getElementById('transition-mode-select');
-    if (slide && transitionSelect) transitionSelect.value = slide.transitionMode || 'slide-h';
+    if (slide && transitionSelect) transitionSelect.value = slide.transitionMode || 'slide-v';
     const transitionSpeedInput=document.getElementById('transition-speed-input');
     const transitionSpeedVal=document.getElementById('transition-speed-val');
     if (slide && transitionSpeedInput) {
@@ -2751,19 +2881,52 @@ const App = {
     renderThumbs();
   },
 
-  // ─── AUTOPLAY ───
+  // ─── AUTOPLAY (Play-Knopf im Editor) ───
+  // Einzelklick: spielt Spotlight/Glitter-Animation UND Folienwechsel fuer eine kurze,
+  // einmalige Runde ab (EDITOR_PREVIEW_MS) und haelt danach automatisch wieder an - der
+  // Editor bleibt so standardmaessig ruhig/undablenkend (siehe editorAnimPlaying oben in S),
+  // laesst sich aber per Knopfdruck kurz "vorschauen". Klick waehrend des Abspielens
+  // (einmalig oder Dauerschleife) haelt sofort an. Doppelklick startet stattdessen
+  // startAutoplayLoop() unten - eine Dauerschleife ohne automatisches Anhalten.
   toggleAutoplay() {
-    S.isPlaying=!S.isPlaying;
-    document.getElementById('play-text').textContent=S.isPlaying?'Pause':'Auto';
-    document.getElementById('play-icon').setAttribute('data-lucide',S.isPlaying?'pause':'play');
+    if (S.isPlaying) { this._stopEditorPlay(); return; }
+    this._startEditorPlay(false);
+  },
+
+  startAutoplayLoop() {
+    this._startEditorPlay(true);
+  },
+
+  _startEditorPlay(loop) {
+    S.isPlaying=true;
+    S.editorAnimPlaying=true;
+    S.editorAnimLoop=loop;
+    document.getElementById('play-text').textContent='Pause';
+    document.getElementById('play-icon').setAttribute('data-lucide','pause');
     lucide.createIcons();
-    if (S.isPlaying) this._startAutoplayTimer();
-    else clearTimeout(S.autoplayTimer);
+    this._startAutoplayTimer();
+    clearTimeout(S.editorAnimStopTimer);
+    if (!loop) {
+      S.editorAnimStopTimer=setTimeout(()=>this._stopEditorPlay(), EDITOR_PREVIEW_MS);
+    }
+  },
+
+  _stopEditorPlay() {
+    S.isPlaying=false;
+    S.editorAnimPlaying=false;
+    S.editorAnimLoop=false;
+    clearTimeout(S.autoplayTimer);
+    clearTimeout(S.editorAnimStopTimer);
+    document.getElementById('play-text').textContent='Play';
+    document.getElementById('play-icon').setAttribute('data-lucide','play');
+    lucide.createIcons();
   },
 
   _startAutoplayTimer() {
     clearTimeout(S.autoplayTimer);
-    if (!S.isPlaying) return;
+    // Bei nur einer Folie gaebe es nichts zum Weiterschalten - siehe gleiche Absicherung
+    // bei App._presStartAutoplay() fuer die Vollbild-Präsentation.
+    if (!S.isPlaying || S.slides.length<=1) return;
     const dur=(S.slides[S.activeSlideIndex]?.duration||6)*1000;
     S.autoplayTimer=setTimeout(()=>{ this.nextSlide(); this._startAutoplayTimer(); },dur);
   },
@@ -2822,6 +2985,44 @@ const App = {
       const ratio = contrastRatio(el.fgColor, bg);
       warn.style.display = ratio < 3 ? 'block' : 'none';
     }
+  },
+
+  // ─── WIDGETS (Uhr/Datum/Countdown) ───
+  // Aktualisieren sich selbst per Sekunden-Timer (siehe tickWidgets()), muessen fuer die
+  // Anzeige selbst also nicht angefasst werden - nur bei einer echten Eigenschafts-
+  // aenderung (Farbe, Format, Ziel-Datum, ...) ruft der Inspector hier updateWidgetProp auf.
+  addClockElement() {
+    const slide=S.slides[S.activeSlideIndex];
+    const el={id:'el-'+Date.now(),type:'clock',fontFamily:'Inter, sans-serif',fontSize:56,color:'#ffffff',fontWeight:'700',textAlign:'center',format:'24h',showSeconds:true,x:25,y:40,width:50};
+    slide.elements.push(el);
+    S.selectedElementId=el.id;
+    this.render(); this.renderInspector();
+  },
+
+  addDateElement() {
+    const slide=S.slides[S.activeSlideIndex];
+    const el={id:'el-'+Date.now(),type:'date',fontFamily:'Inter, sans-serif',fontSize:30,color:'#ffffff',fontWeight:'600',textAlign:'center',format:'long',x:15,y:43,width:70};
+    slide.elements.push(el);
+    S.selectedElementId=el.id;
+    this.render(); this.renderInspector();
+  },
+
+  addCountdownElement() {
+    const slide=S.slides[S.activeSlideIndex];
+    const target=new Date(Date.now()+24*3600*1000);
+    target.setMinutes(target.getMinutes()-target.getTimezoneOffset()); // lokale Zeit statt UTC im datetime-local-Feld
+    const el={id:'el-'+Date.now(),type:'countdown',fontFamily:'Inter, sans-serif',fontSize:52,color:'#ffffff',fontWeight:'700',textAlign:'center',target:target.toISOString().slice(0,16),label:'',doneText:'🎉',x:15,y:38,width:70};
+    slide.elements.push(el);
+    S.selectedElementId=el.id;
+    this.render(); this.renderInspector();
+  },
+
+  updateWidgetProp(key, val) {
+    const slide=S.slides[S.activeSlideIndex];
+    const el=slide?.elements.find(e=>e.id===S.selectedElementId);
+    if (!el) return;
+    el[key]=val;
+    this.render();
   },
 
   handleImageUpload(evt) {
@@ -2909,6 +3110,9 @@ const App = {
       if (el.type==='text') { label=(el.content||'').replace(/\s+/g,' ').trim().slice(0,40) || '(leerer Text)'; }
       else if (el.type==='image') { icon='🖼️'; label='Bild'; }
       else if (el.type==='qr') { icon='▦'; label='QR: '+(el.content||'').slice(0,30); }
+      else if (el.type==='clock') { icon='🕒'; label='Uhr'; }
+      else if (el.type==='date') { icon='📅'; label='Datumsanzeige'; }
+      else if (el.type==='countdown') { icon='⏳'; label='Countdown'; }
       else if (el.type==='template') { icon='◧'; label='Vorlage: '+el.template; }
       const item=document.createElement('div');
       item.className='layer-item'+(S.selectedElementId===el.id?' selected-layer':'');
@@ -3043,6 +3247,74 @@ const App = {
           <p id="qr-contrast-warning" style="display:${qrRatio<3?'block':'none'};font-size:10px;color:#fca5a5;margin:8px 0 0;">⚠️ Kontrast zwischen Farbe und Hintergrund evtl. zu gering - der Code könnte schwer lesbar sein.</p>
           <button onclick="App.deleteSelectedEl()" class="btn-sm danger" style="width:100%;justify-content:center;margin-top:10px;">
             <i data-lucide="trash-2" style="width:11px;height:11px;"></i> QR-Code löschen
+          </button>
+        </div>`;
+    } else if (el.type==='clock') {
+      panel.innerHTML=`
+        <div class="ctrl-section">
+          <div class="ctrl-section-title">Uhr-Widget</div>
+          <label class="ctrl-label">Format</label>
+          <div style="display:flex;gap:5px;">
+            <button onclick="App.updateWidgetProp('format','24h')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${el.format==='24h'?'background:rgba(99,102,241,0.25);border-color:rgba(99,102,241,0.4);':''}">24h</button>
+            <button onclick="App.updateWidgetProp('format','12h')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${el.format==='12h'?'background:rgba(99,102,241,0.25);border-color:rgba(99,102,241,0.4);':''}">12h (AM/PM)</button>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;">
+            <label class="ctrl-label" style="margin:0;">Sekunden anzeigen</label>
+            <input type="checkbox" ${el.showSeconds?'checked':''} onchange="App.updateWidgetProp('showSeconds',this.checked)" style="accent-color:#6366f1;width:15px;height:15px;">
+          </div>
+          <label class="ctrl-label" style="margin-top:8px;">Ausrichtung</label>
+          <div style="display:flex;gap:5px;">
+            ${['left','center','right'].map(a=>`<button onclick="App.updateWidgetProp('textAlign','${a}')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${el.textAlign===a?'background:rgba(99,102,241,0.25);border-color:rgba(99,102,241,0.4);':''}">${a==='left'?'⟸':a==='center'?'≡':'⟹'}</button>`).join('')}
+          </div>
+          <label class="ctrl-label" style="margin-top:8px;">Farbe</label>
+          <input type="color" value="${el.color}" onchange="App.updateWidgetProp('color',this.value)" style="height:32px;">
+          <label class="ctrl-label" style="margin-top:8px;">Breite (%)</label>
+          <input type="range" min="10" max="100" value="${el.width}" oninput="App.updateElProp('width',parseInt(this.value))">
+          <button onclick="App.deleteSelectedEl()" class="btn-sm danger" style="width:100%;justify-content:center;margin-top:10px;">
+            <i data-lucide="trash-2" style="width:11px;height:11px;"></i> Uhr löschen
+          </button>
+        </div>`;
+    } else if (el.type==='date') {
+      panel.innerHTML=`
+        <div class="ctrl-section">
+          <div class="ctrl-section-title">Datums-Widget</div>
+          <label class="ctrl-label">Format</label>
+          <div style="display:flex;gap:5px;">
+            <button onclick="App.updateWidgetProp('format','long')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${el.format==='long'?'background:rgba(99,102,241,0.25);border-color:rgba(99,102,241,0.4);':''}">Lang</button>
+            <button onclick="App.updateWidgetProp('format','short')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${el.format==='short'?'background:rgba(99,102,241,0.25);border-color:rgba(99,102,241,0.4);':''}">Kurz</button>
+          </div>
+          <label class="ctrl-label" style="margin-top:8px;">Ausrichtung</label>
+          <div style="display:flex;gap:5px;">
+            ${['left','center','right'].map(a=>`<button onclick="App.updateWidgetProp('textAlign','${a}')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${el.textAlign===a?'background:rgba(99,102,241,0.25);border-color:rgba(99,102,241,0.4);':''}">${a==='left'?'⟸':a==='center'?'≡':'⟹'}</button>`).join('')}
+          </div>
+          <label class="ctrl-label" style="margin-top:8px;">Farbe</label>
+          <input type="color" value="${el.color}" onchange="App.updateWidgetProp('color',this.value)" style="height:32px;">
+          <label class="ctrl-label" style="margin-top:8px;">Breite (%)</label>
+          <input type="range" min="10" max="100" value="${el.width}" oninput="App.updateElProp('width',parseInt(this.value))">
+          <button onclick="App.deleteSelectedEl()" class="btn-sm danger" style="width:100%;justify-content:center;margin-top:10px;">
+            <i data-lucide="trash-2" style="width:11px;height:11px;"></i> Datumsanzeige löschen
+          </button>
+        </div>`;
+    } else if (el.type==='countdown') {
+      panel.innerHTML=`
+        <div class="ctrl-section">
+          <div class="ctrl-section-title">Countdown-Widget</div>
+          <label class="ctrl-label">Ziel-Datum/Uhrzeit</label>
+          <input type="datetime-local" value="${escapeHtmlEc(el.target)}" onchange="App.updateWidgetProp('target',this.value)" style="width:100%;padding:7px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;font-size:12px;">
+          <label class="ctrl-label" style="margin-top:8px;">Beschriftung (optional, über dem Countdown)</label>
+          <input type="text" value="${escapeHtmlEc(el.label)}" oninput="App.updateWidgetProp('label',this.value)" placeholder="z.B. Bis zum Event" style="width:100%;padding:7px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;font-size:12px;">
+          <label class="ctrl-label" style="margin-top:8px;">Text nach Ablauf</label>
+          <input type="text" value="${escapeHtmlEc(el.doneText)}" oninput="App.updateWidgetProp('doneText',this.value)" style="width:100%;padding:7px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;font-size:12px;">
+          <label class="ctrl-label" style="margin-top:8px;">Ausrichtung</label>
+          <div style="display:flex;gap:5px;">
+            ${['left','center','right'].map(a=>`<button onclick="App.updateWidgetProp('textAlign','${a}')" class="btn-sm" style="flex:1;justify-content:center;font-size:10px;${el.textAlign===a?'background:rgba(99,102,241,0.25);border-color:rgba(99,102,241,0.4);':''}">${a==='left'?'⟸':a==='center'?'≡':'⟹'}</button>`).join('')}
+          </div>
+          <label class="ctrl-label" style="margin-top:8px;">Farbe</label>
+          <input type="color" value="${el.color}" onchange="App.updateWidgetProp('color',this.value)" style="height:32px;">
+          <label class="ctrl-label" style="margin-top:8px;">Breite (%)</label>
+          <input type="range" min="10" max="100" value="${el.width}" oninput="App.updateElProp('width',parseInt(this.value))">
+          <button onclick="App.deleteSelectedEl()" class="btn-sm danger" style="width:100%;justify-content:center;margin-top:10px;">
+            <i data-lucide="trash-2" style="width:11px;height:11px;"></i> Countdown löschen
           </button>
         </div>`;
     } else if (el.type==='template') {
@@ -3219,7 +3491,7 @@ const App = {
 
     container.style.cssText='position:absolute;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;padding:5%;';
     if (useTransition) {
-      transitionElements(container, slide, false, slide.transitionMode || 'slide-h', slide.transitionSpeed);
+      transitionElements(container, slide, false, slide.transitionMode || 'slide-v', slide.transitionSpeed);
     } else {
       container.innerHTML='';
       renderSlideContent(slide, container, false);
@@ -3229,12 +3501,14 @@ const App = {
   },
 
   pressPrev() {
+    if (S.slides.length <= 1) return;
     clearTimeout(S.presAutoTimer);
     this._presShowSlide(S.presSlideIndex-1);
     this._presStartAutoplay();
   },
 
   pressNext() {
+    if (S.slides.length <= 1) return;
     clearTimeout(S.presAutoTimer);
     this._presShowSlide(S.presSlideIndex+1);
     this._presStartAutoplay();
@@ -3242,6 +3516,10 @@ const App = {
 
   _presStartAutoplay() {
     clearTimeout(S.presAutoTimer);
+    // Bei nur einer Folie gaebe es nichts zum Weiterschalten - (idx+1)%1 ist immer wieder
+    // dieselbe Folie, wuerde also staendig einen stoerenden Uebergang auf sich selbst
+    // abspielen. Einfach gar keinen Auto-Timer starten.
+    if (S.slides.length <= 1) return;
     const dur=(S.slides[S.presSlideIndex]?.duration||6)*1000;
     S.presAutoTimer=setTimeout(()=>{
       const next=(S.presSlideIndex+1)%S.slides.length;
@@ -3253,9 +3531,10 @@ const App = {
   // ─── MISC ───
   confirmReset() {
     if (confirm('Wirklich alle Folien und Einstellungen zurücksetzen?')) {
-      clearTimeout(S.autoplayTimer); clearTimeout(S.presAutoTimer);
+      this._stopEditorPlay();
+      clearTimeout(S.presAutoTimer);
       S.slides=[ defaultSlide(1) ];
-      S.activeSlideIndex=0; S.selectedElementId=null; S.isPlaying=false;
+      S.activeSlideIndex=0; S.selectedElementId=null;
       S.beam.waypoints=[{x:25,y:30,pause:2},{x:75,y:25,pause:2.5},{x:60,y:70,pause:2},{x:30,y:65,pause:3}];
       this.render();
     }
@@ -3365,6 +3644,7 @@ function renderSlideEls(cont, slide, stageEl){
     if(el.type==='text'){const d=document.createElement('div');d.style.fontFamily=el.fontFamily;d.style.fontSize=el.fontSize+'px';d.style.color=el.color;d.style.textAlign=el.textAlign;d.style.fontWeight=el.fontWeight||'400';d.style.lineHeight='1.3';d.innerText=el.content;w.appendChild(d);cont.appendChild(w);if(el.autoFit)autoFitQueue.push({div:d,wrapper:w,base:el.fontSize||28});return;}
     else if(el.type==='image'){const img=document.createElement('img');img.src=el.src;img.style.width='100%';img.style.borderRadius='12px';w.appendChild(img);}
     else if(el.type==='qr'){const qrBox=document.createElement('div');qrBox.style.width='100%';qrBox.style.aspectRatio='1/1';const qrCanvas=document.createElement('canvas');qrCanvas.style.width='100%';qrCanvas.style.height='100%';qrCanvas.style.display='block';qrCanvas.style.borderRadius='4px';qrBox.appendChild(qrCanvas);w.appendChild(qrBox);renderQrToCanvas(qrCanvas,el.content,el);}
+    else if(el.type==='clock'||el.type==='date'||el.type==='countdown'){const d=document.createElement('div');d.className='widget-el';d.setAttribute('data-widget-id',el.id);d.style.fontFamily=el.fontFamily||'Inter, sans-serif';d.style.fontSize=(el.fontSize||40)+'px';d.style.color=el.color||'#ffffff';d.style.textAlign=el.textAlign||'center';d.style.fontWeight=el.fontWeight||'700';d.style.lineHeight='1.3';d.style.whiteSpace='pre-line';d.textContent=formatWidgetText(el);w.appendChild(d);}
     else if(el.type==='template'){w.innerHTML=renderTmpl(el);}
     cont.appendChild(w);
   });
@@ -3374,7 +3654,7 @@ function renderSlideEls(cont, slide, stageEl){
 // Folie in ein temporaeres Overlay rendern, dann beide Ebenen gemeinsam verschieben
 // ("slide") oder die neue ueberblenden ("fade"), statt hart umzuschalten.
 function transitionEls(cont, slide, stageEl){
-  const mode=slide.transitionMode||'slide-h';
+  const mode=slide.transitionMode||'slide-v';
   const speed=Math.max(100, slide.transitionSpeed||500);
   if (mode==='none' || !cont.firstChild) { renderSlideEls(cont, slide, stageEl); return; }
   const parent=cont.parentElement;
@@ -3635,6 +3915,42 @@ function renderQrToCanvas(canvas,text,opts){
     else{ctx.fillRect(x,y,modulePx,modulePx);}
   }
 }
+
+function formatWidgetText(el){
+  const now=new Date();
+  if(el.type==='clock'){
+    const h24=now.getHours(),m=String(now.getMinutes()).padStart(2,'0'),s=String(now.getSeconds()).padStart(2,'0');
+    if(el.format==='12h'){const h12=((h24+11)%12)+1;return \`\${h12}:\${m}\${el.showSeconds?':'+s:''} \${h24<12?'AM':'PM'}\`;}
+    return \`\${String(h24).padStart(2,'0')}:\${m}\${el.showSeconds?':'+s:''}\`;
+  }
+  if(el.type==='date'){
+    return el.format==='short' ? now.toLocaleDateString('de-DE') : now.toLocaleDateString('de-DE',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
+  }
+  if(el.type==='countdown'){
+    const target=el.target?new Date(el.target):null;
+    if(!target||isNaN(target.getTime()))return '--:--:--';
+    const diffMs=target.getTime()-now.getTime();
+    const prefix=el.label?el.label+'\\n':'';
+    if(diffMs<=0)return prefix+(el.doneText||'00:00:00');
+    const totalSec=Math.floor(diffMs/1000);
+    const days=Math.floor(totalSec/86400);
+    const hours=String(Math.floor((totalSec%86400)/3600)).padStart(2,'0');
+    const mins=String(Math.floor((totalSec%3600)/60)).padStart(2,'0');
+    const secs=String(totalSec%60).padStart(2,'0');
+    return prefix+(days>0?\`\${days}T \${hours}:\${mins}:\${secs}\`:\`\${hours}:\${mins}:\${secs}\`);
+  }
+  return '';
+}
+function tickWidgets(){
+  const divs=document.querySelectorAll('.widget-el[data-widget-id]');
+  if(!divs.length)return;
+  const allEls=SLIDES.flatMap(s=>s.elements);
+  divs.forEach(div=>{
+    const el=allEls.find(e=>e.id===div.getAttribute('data-widget-id'));
+    if(el)div.textContent=formatWidgetText(el);
+  });
+}
+setInterval(tickWidgets,1000);
 
 const SPOT_GLOW_PEAK_ALPHA=0.5, SPOT_EDGE_STEPS=10;
 function drawSpot(ctx,pos,beam,w,h){

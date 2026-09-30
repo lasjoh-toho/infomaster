@@ -289,16 +289,42 @@ PHP, keine eigene Session) und wird nur per Link integriert:
   funktioniert dadurch zuverlässig. Das Verschieben von Elementen hat zusätzlich einen kleinen
   Bewegungs-Schwellwert bekommen, damit ein normaler Klick nicht schon als (minimaler) Drag
   gewertet wird.
-- **QR-Code-Element** - im Elemente-Tab lässt sich ein QR-Code als eigenes Folienelement
-  einfügen (Inhalt frei als Text/URL). Modulform eckig oder rund umschaltbar - die drei
-  Erkennungsmuster (Ecken) bleiben dabei immer solide Quadrate, damit Scanner sie zuverlässig
-  finden. Vorder- und Hintergrundfarbe frei wählbar, Hintergrund komplett abschaltbar; eine
-  Kontrast-Warnung erscheint automatisch, wenn Vorder-/Hintergrundfarbe zu ähnlich sind und der
-  Code dadurch schwer lesbar werden könnte. Der QR-Encoder (Byte-Modus/UTF-8, Version 1-10,
-  alle vier Fehlerkorrektur-Level, inkl. Reed-Solomon und Masken-Auswahl) ist komplett
-  selbst geschrieben, damit auch diese Funktion offline auf dem Pi ohne CDN funktioniert.
+- **Widgets** (eigener Bereich im Elemente-Tab, unterhalb von Text/Bild) - vier einfügbare
+  Mini-Elemente:
+  - **QR-Code** - Inhalt frei als Text/URL, Modulform eckig oder rund umschaltbar (die drei
+    Erkennungsmuster/Ecken bleiben dabei immer solide Quadrate, damit Scanner sie zuverlässig
+    finden), Vorder-/Hintergrundfarbe frei wählbar, Hintergrund komplett abschaltbar, mit
+    automatischer Kontrast-Warnung bei schwer lesbaren Farbkombinationen. Der QR-Encoder
+    (Byte-Modus/UTF-8, Version 1-10, alle vier Fehlerkorrektur-Level, inkl. Reed-Solomon und
+    Masken-Auswahl) ist komplett selbst geschrieben, damit auch diese Funktion offline auf
+    dem Pi ohne CDN funktioniert.
+  - **Uhr** - digitale Uhrzeit, 24h oder 12h (AM/PM), Sekunden optional, aktualisiert sich
+    selbst jede Sekunde.
+  - **Datumsanzeige** - heutiges Datum, lang ("Montag, 30. September 2026") oder kurz
+    ("30.09.2026").
+  - **Countdown** - zählt bis zu einem frei wählbaren Ziel-Datum/Uhrzeit herunter (Tage,
+    sobald mehr als 24h verbleiben, sonst hh:mm:ss), mit optionaler Beschriftung darüber und
+    frei wählbarem Text nach Ablauf.
+  
+  Alle drei Zeit-Widgets aktualisieren sich per Sekunden-Timer selbst nach - sowohl im Editor
+  als auch in der fertigen, exportierten Präsentation (kein erneutes Speichern/Neuladen nötig).
 - **Doppelklick wählt Element aus UND öffnet den passenden Tab** - ein Doppelklick auf ein
   Bild- oder Textelement auf der Folie wechselt automatisch in den Elemente-Tab und wählt das
   Element dort aus (vorher blieb die Auswahl "im Hintergrund" unsichtbar, wenn man sich gerade
   z.B. im Hintergrund- oder Spotlight-Tab befand). Bei Textelementen springt zusätzlich weiterhin
-  sofort der Editier-Modus zum Reintippen an.
+  sofort der Editier-Modus zum Reintippen an. Die Doppelklick-Erkennung verlässt sich dabei
+  nicht allein auf das native Browser-Ereignis (das bei minimalem Handzittern zwischen den
+  beiden Klicks nicht immer feuert), sondern zusätzlich auf eine eigene, grosszügigere
+  Zeitmessung - dadurch zuverlässiger bei echter Maus-/Trackpad-Bedienung.
+- **Editor-Vorschau steht standardmäßig still** - Spotlight-Bewegung, Glitter-Partikel und
+  automatischer Folienwechsel laufen beim Bearbeiten nicht mehr durchgehend im Hintergrund
+  (das lenkte beim Positionieren/Editieren von Elementen ab), sondern bleiben eingefroren, bis
+  der "Play"-Knopf in der Kopfzeile geklickt wird - der spielt dann einmal eine kurze
+  Vorschau-Runde ab und hält danach automatisch wieder an. Ein Doppelklick auf denselben Knopf
+  startet stattdessen eine Dauerschleife (die alte, immer-an-Variante). Die Vollbild-
+  Präsentation selbst ist davon nicht betroffen und animiert wie gewohnt durchgehend.
+- **Folienwechsel: Standard jetzt "Gleiten vertikal"** - neue Folien starten mit
+  `transitionMode: 'slide-v'` statt seitlich; ausserdem wird bei nur einer einzigen Folie kein
+  automatischer, sich staendig auf sich selbst wiederholender Uebergang mehr abgespielt (weder
+  im Editor-Auto-Play noch in der Vollbild-Präsentation) - vorher fuehrte das bei Ein-Folien-
+  Präsentationen zu einem staendig wiederkehrenden, stoerenden Flackern.
