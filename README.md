@@ -227,9 +227,19 @@ integriert:
 - **Eigene Schriftarten per Drag & Drop** - `.ttf`/`.otf`/`.woff`/`.woff2`-Dateien lassen
   sich im Fonts-Tab hineinziehen, werden per `FontFace`-API registriert und beim Export als
   `@font-face` mit eingebetteter Data-URL mitgeliefert (funktioniert offline auf dem Pi).
-- **Übergänge zwischen Folien** - Gleiten (beide Folien ziehen gemeinsam weiter, nahtlos
-  wie ein Filmstreifen), Überblenden oder harter Schnitt, einstellbar unter
-  Folien-Einstellungen; gilt im Editor, im Vollbild UND im HTML-Export.
+- **Übergänge zwischen Folien - pro Folie** - Gleiten (beide Folien ziehen gemeinsam
+  weiter, nahtlos wie ein Filmstreifen), Überblenden oder harter Schnitt, einstellbar unter
+  Folien-Einstellungen; gilt jeweils für den Übergang BEIM Hineinwechseln in die gerade
+  bearbeitete Folie (jede Folie kann also ihren eigenen Übergang haben), im Editor, im
+  Vollbild UND im HTML-Export.
+- **Spotlight ein/aus - pro Folie** - der Schalter "Spotlight aktivieren" im Spotlight-Tab
+  gilt für die gerade ausgewählte Folie (Muster/Größe/Farbe/Wegpunkte bleiben weiterhin
+  geteilt) - so lässt sich der Effekt gezielt nur auf einzelnen Folien einsetzen.
+- **Weicherer Spotlight-Rand** - sowohl das "Loch" in der Abdunkelung als auch der farbige
+  Lichtschein darüber laufen jetzt über mehrere, per Easing-Kurve (statt linear)
+  überblendete Zwischenstufen aus - vermeidet den sichtbaren harten Ring am Rand. Die
+  Lichtfarbe im Zentrum ist zusätzlich in der Deckkraft gedeckelt, damit die Mitte nicht
+  überstrahlt wirkt.
 - **Ebenen-Liste** - im Elemente-Tab zeigt eine Liste alle Elemente der aktuellen Folie in
   ihrer Stapelreihenfolge (oben = im Vordergrund) - anklicken wählt zum Bearbeiten aus
   (gerade bei großflächigen, überlappenden Vorlagen-Textfeldern zuverlässiger als auf der

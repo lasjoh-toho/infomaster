@@ -555,8 +555,8 @@
 
           <div class="ctrl-section">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-              <span class="ctrl-section-title" style="margin:0;">Spotlight aktivieren</span>
-              <input type="checkbox" id="beam-enabled" checked onchange="App.S.beam.enabled=this.checked" style="accent-color:#6366f1;width:16px;height:16px;">
+              <span class="ctrl-section-title" style="margin:0;">Spotlight aktivieren (für diese Folie)</span>
+              <input type="checkbox" id="beam-enabled" checked onchange="App.setBeamEnabled(this.checked)" style="accent-color:#6366f1;width:16px;height:16px;">
             </div>
 
             <label class="ctrl-label">Bewegungs-Muster</label>
@@ -817,6 +817,8 @@ function defaultSlide(num=1) {
     id:'slide-'+Date.now()+Math.random(),
     duration:6,
     template: null,
+    beamEnabled: true, // Spotlight an/aus - pro Folie (siehe App.setBeamEnabled())
+    transitionMode: 'slide', // Uebergang BEIM HINEINWECHSELN in diese Folie - 'slide'|'fade'|'none'
     elements:[
       {id:'el-'+Date.now(), type:'text', content:'EYECANDY STUDIO', fontFamily:'Inter, sans-serif', fontSize:56, color:'#ffffff', textAlign:'center', fontWeight:'800', x:5, y:30, width:90},
       {id:'el-'+(Date.now()+1), type:'text', content:'Drücke ESC für den Editor · Doppelklick zum Editieren', fontFamily:'Inter, sans-serif', fontSize:18, color:'#94a3b8', textAlign:'center', fontWeight:'400', x:5, y:55, width:90}
@@ -848,10 +850,14 @@ const S = {
   addingWaypoint: false,
   installedFonts: [],
   launchToken: null, // gueltig gesetzt, wenn die Seite mit ?token=... geoeffnet wurde - siehe setupSaveToServer()
-  transitionMode: 'slide', // 'slide' | 'fade' | 'none' - siehe transitionElements()
+  // transitionMode ist jetzt PRO FOLIE (slide.transitionMode, siehe defaultSlide()) statt
+  // hier global - beschreibt den Uebergang beim Hineinwechseln in die jeweilige Folie.
 
+  // "enabled" lebt NICHT mehr hier - ob der Spotlight leuchtet, wird pro Folie ueber
+  // slide.beamEnabled entschieden (siehe App.setBeamEnabled()); Muster/Groesse/Farbe etc.
+  // bleiben bewusst global/geteilt.
   beam:{
-    enabled:true, pattern:'waypoints',
+    pattern:'waypoints',
     size:340, blur:45, speed:2, color:'#ffffff', ambience:10,
     x:50, y:50,
     // Waypoint traversal state
@@ -1339,6 +1345,23 @@ function tickBeam(beam, dt, canvasW, canvasH) {
   return {x:canvasW/2, y:canvasH/2};
 }
 
+function hexToRgb(hex) {
+  let h=(hex||'#ffffff').replace('#','');
+  if (h.length===3) h=h.split('').map(c=>c+c).join('');
+  const n=parseInt(h,16)||0xffffff;
+  return { r:(n>>16)&255, g:(n>>8)&255, b:n&255 };
+}
+
+// Deckkraft der Lichtfarben-Ueberlagerung im Zentrum ist bewusst gedeckelt (statt der
+// vollen Farbe bei 100%) - sonst wirkt die Mitte des Spots "ueberstrahlt"/zu intensiv,
+// gerade in Kombination mit dem darunterliegenden, ohnehin schon vollstaendig aufgehellten
+// Lochbereich.
+const SPOT_GLOW_PEAK_ALPHA = 0.5;
+// Anzahl Zwischen-Stopps fuer eine weich (per smoothStep()) statt linear verlaufende
+// Kante - ein reiner 2-Stopp-Verlauf wirkt trotz "Weichzeichnung" oft wie ein sichtbarer
+// Ring, weil der Alpha-Wert dazwischen linear statt sanft ausklingt.
+const SPOT_EDGE_STEPS = 10;
+
 function drawSpotlight(ctx, pos, beam) {
   ctx.clearRect(0,0,ctx.canvas.width,ctx.canvas.height);
   if (!beam.enabled) return;
@@ -1348,18 +1371,32 @@ function drawSpotlight(ctx, pos, beam) {
   ctx.fillStyle=`rgba(0,0,0,${dark})`;
   ctx.fillRect(0,0,ctx.canvas.width,ctx.canvas.height);
 
+  // "Loch" in die Abdunkelung stanzen - weich auslaufend statt hart, Kernbereich bleibt
+  // dabei unveraendert voll ausgestanzt (Alpha 1 bis zum Beginn der Weichzeichnungs-Zone).
   ctx.save();
   ctx.globalCompositeOperation='destination-out';
-  const g=ctx.createRadialGradient(x,y,Math.max(0,r-beam.blur),x,y,r);
-  g.addColorStop(0,'rgba(0,0,0,1)'); g.addColorStop(1,'rgba(0,0,0,0)');
-  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+  const innerR=Math.max(0, r-beam.blur);
+  const holeGrad=ctx.createRadialGradient(x,y,innerR,x,y,r);
+  for (let i=0;i<=SPOT_EDGE_STEPS;i++) {
+    const t=i/SPOT_EDGE_STEPS;
+    holeGrad.addColorStop(t, `rgba(0,0,0,${1-smoothStep(t)})`);
+  }
+  ctx.fillStyle=holeGrad; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
   ctx.restore();
 
+  // Farbiger Glanz obendrauf - ebenfalls weich (smoothStep) statt linear auslaufend, mit
+  // gedeckelter Spitzen-Deckkraft (siehe SPOT_GLOW_PEAK_ALPHA) gegen ein "ueberstrahltes"
+  // Zentrum.
   ctx.save();
   ctx.globalCompositeOperation='screen';
-  const gg=ctx.createRadialGradient(x,y,0,x,y,r);
-  gg.addColorStop(0,beam.color); gg.addColorStop(1,'transparent');
-  ctx.fillStyle=gg; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+  const {r:cr,g:cg,b:cb}=hexToRgb(beam.color);
+  const glowGrad=ctx.createRadialGradient(x,y,0,x,y,r);
+  for (let i=0;i<=SPOT_EDGE_STEPS;i++) {
+    const t=i/SPOT_EDGE_STEPS;
+    const alpha=SPOT_GLOW_PEAK_ALPHA*(1-smoothStep(t));
+    glowGrad.addColorStop(t, `rgba(${cr},${cg},${cb},${alpha})`);
+  }
+  ctx.fillStyle=glowGrad; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
   ctx.restore();
 }
 
@@ -1444,7 +1481,8 @@ function startEditorCanvasLoop() {
   function loop(t) {
     const dt=(t-lastT)/1000; lastT=t;
     const pos=tickBeam(S.beam, dt, spotCanvas.width, spotCanvas.height);
-    drawSpotlight(spotCtx, pos, S.beam);
+    const activeSlide=S.slides[S.activeSlideIndex];
+    drawSpotlight(spotCtx, pos, {...S.beam, enabled: !activeSlide || activeSlide.beamEnabled!==false});
     drawGlitter(glitCtx, _editorParticles, S.glitter);
     requestAnimationFrame(loop);
   }
@@ -1477,7 +1515,8 @@ function startPresCanvasLoop() {
     if (!_presLoopId) return;
     const dt=(t-lastT)/1000; lastT=t;
     const pos=tickBeam(presBeam, dt, spotCanvas.width, spotCanvas.height);
-    drawSpotlight(spotCtx, pos, presBeam);
+    const curSlide=S.slides[S.presSlideIndex];
+    drawSpotlight(spotCtx, pos, {...presBeam, enabled: !curSlide || curSlide.beamEnabled!==false});
     drawGlitter(glitCtx, _presParticles, S.glitter);
     _presLoopId = requestAnimationFrame(loop);
   }
@@ -1843,7 +1882,7 @@ const App = {
     const slide=S.slides[S.activeSlideIndex];
     const container=document.getElementById('slide-content');
     if (useTransition) {
-      transitionElements(container, slide, S.isEditor, S.transitionMode);
+      transitionElements(container, slide, S.isEditor, slide.transitionMode || 'slide');
     } else {
       container.innerHTML='';
       renderSlideContent(slide, container, S.isEditor);
@@ -1858,11 +1897,24 @@ const App = {
     if (slide) document.getElementById('slide-duration-input').value=slide.duration;
     const glassToggle=document.getElementById('template-glass-toggle');
     if (slide && glassToggle) glassToggle.checked = slide.template_glass !== false;
+    const transitionSelect=document.getElementById('transition-mode-select');
+    if (slide && transitionSelect) transitionSelect.value = slide.transitionMode || 'slide';
+    const beamToggle=document.getElementById('beam-enabled');
+    if (slide && beamToggle) beamToggle.checked = slide.beamEnabled !== false;
     lucide.createIcons();
   },
 
+  // Uebergang gilt fuer das HINEINWECHSELN in die aktuell ausgewaehlte Folie - daher auf
+  // deren eigenem slide.transitionMode gespeichert, nicht global.
   setTransitionMode(mode) {
-    S.transitionMode = mode;
+    const slide=S.slides[S.activeSlideIndex];
+    if (slide) slide.transitionMode = mode;
+  },
+
+  // Spotlight an/aus gilt nur fuer die aktuell ausgewaehlte Folie.
+  setBeamEnabled(enabled) {
+    const slide=S.slides[S.activeSlideIndex];
+    if (slide) slide.beamEnabled = enabled;
   },
 
   applyBackground() {
@@ -2041,7 +2093,6 @@ const App = {
 
   // ─── BEAM SETTINGS ───
   updateBeamSettings() {
-    S.beam.enabled=document.getElementById('beam-enabled').checked;
     S.beam.pattern=document.getElementById('beam-pattern').value;
     S.beam.size=parseInt(document.getElementById('beam-size').value);
     S.beam.blur=parseInt(document.getElementById('beam-blur').value);
@@ -2521,7 +2572,7 @@ const App = {
 
     container.style.cssText='position:absolute;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;padding:5%;';
     if (useTransition) {
-      transitionElements(container, slide, false, S.transitionMode);
+      transitionElements(container, slide, false, slide.transitionMode || 'slide');
     } else {
       container.innerHTML='';
       renderSlideContent(slide, container, false);
@@ -2571,7 +2622,6 @@ const App = {
     // Inline all images as base64 (already base64 from FileReader)
     const stateSnapshot=JSON.parse(JSON.stringify(S.slides));
     const beamSnapshot=JSON.parse(JSON.stringify(S.beam));
-    const transitionSnapshot=S.transitionMode;
     const glitterSnapshot=JSON.parse(JSON.stringify(S.glitter));
     const fontsSnapshot=JSON.parse(JSON.stringify(S.installedFonts));
 
@@ -2609,7 +2659,6 @@ body{cursor:none;}body.nav-visible{cursor:default;}
 <script>
 const SLIDES=${JSON.stringify(stateSnapshot)};
 const BEAM=${JSON.stringify(beamSnapshot)};
-const TRANSITION=${JSON.stringify(transitionSnapshot)};
 const GLITTER=${JSON.stringify(glitterSnapshot)};
 let idx=0, particles=[], beamAngle=0, presLoopId;
 
@@ -2676,14 +2725,15 @@ function renderSlideEls(cont, slide, stageEl){
 // Folie in ein temporaeres Overlay rendern, dann beide Ebenen gemeinsam verschieben
 // ("slide") oder die neue ueberblenden ("fade"), statt hart umzuschalten.
 function transitionEls(cont, slide, stageEl){
-  if (TRANSITION==='none' || !cont.firstChild) { renderSlideEls(cont, slide, stageEl); return; }
+  const mode=slide.transitionMode||'slide';
+  if (mode==='none' || !cont.firstChild) { renderSlideEls(cont, slide, stageEl); return; }
   const parent=cont.parentElement;
   const temp=document.createElement('div');
   temp.style.cssText='position:absolute;inset:0;z-index:10;';
   parent.appendChild(temp);
   renderSlideEls(temp, slide, stageEl);
   function finish(){ cont.innerHTML=''; while(temp.firstChild) cont.appendChild(temp.firstChild); cont.style.transition='';cont.style.opacity='';cont.style.transform=''; temp.remove(); }
-  if (TRANSITION==='fade') {
+  if (mode==='fade') {
     temp.style.opacity='0'; temp.style.transition='opacity 0.6s ease'; cont.style.transition='opacity 0.6s ease';
     requestAnimationFrame(()=>{ temp.style.opacity='1'; cont.style.opacity='0'; });
     setTimeout(finish,620);
@@ -2721,13 +2771,34 @@ function tickB(dt){
   _bAngle+=0.003*_beam.speed;return{x:(0.5+Math.sin(_bAngle)*0.3)*window.innerWidth,y:(0.5+Math.sin(_bAngle*2)*0.22)*window.innerHeight};
 }
 
+function smoothStep(t){return t*t*(3-2*t);}
+function hexToRgb(hex){let h=(hex||'#ffffff').replace('#','');if(h.length===3)h=h.split('').map(c=>c+c).join('');const n=parseInt(h,16)||0xffffff;return{r:(n>>16)&255,g:(n>>8)&255,b:n&255};}
+const SPOT_GLOW_PEAK_ALPHA=0.5, SPOT_EDGE_STEPS=10;
+function drawSpot(ctx,pos,beam,w,h){
+  ctx.clearRect(0,0,w,h);
+  if(!beam.enabled)return;
+  const {x,y}=pos,r=beam.size/2,dark=1-(beam.ambience/100);
+  ctx.fillStyle=\`rgba(0,0,0,\${dark})\`;ctx.fillRect(0,0,w,h);
+  ctx.save();ctx.globalCompositeOperation='destination-out';
+  const innerR=Math.max(0,r-beam.blur);
+  const holeGrad=ctx.createRadialGradient(x,y,innerR,x,y,r);
+  for(let i=0;i<=SPOT_EDGE_STEPS;i++){const t=i/SPOT_EDGE_STEPS;holeGrad.addColorStop(t,\`rgba(0,0,0,\${1-smoothStep(t)})\`);}
+  ctx.fillStyle=holeGrad;ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill();ctx.restore();
+  ctx.save();ctx.globalCompositeOperation='screen';
+  const {r:cr,g:cg,b:cb}=hexToRgb(beam.color);
+  const glowGrad=ctx.createRadialGradient(x,y,0,x,y,r);
+  for(let i=0;i<=SPOT_EDGE_STEPS;i++){const t=i/SPOT_EDGE_STEPS;const alpha=SPOT_GLOW_PEAK_ALPHA*(1-smoothStep(t));glowGrad.addColorStop(t,\`rgba(\${cr},\${cg},\${cb},\${alpha})\`);}
+  ctx.fillStyle=glowGrad;ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill();ctx.restore();
+}
+
 let lastT=0;
 function loop(t){presLoopId=requestAnimationFrame(loop);const dt=(t-lastT)/1000;lastT=t;
   const sc=document.getElementById('pres-spotlight');const gc2=document.getElementById('pres-glitter');
   sc.width=window.innerWidth;sc.height=window.innerHeight;gc2.width=window.innerWidth;gc2.height=window.innerHeight;
   const ctx=sc.getContext('2d');const gctx=gc2.getContext('2d');
   const pos=tickB(dt);
-  if(_beam.enabled){ctx.clearRect(0,0,sc.width,sc.height);const dark=1-(_beam.ambience/100);ctx.fillStyle=\`rgba(0,0,0,\${dark})\`;ctx.fillRect(0,0,sc.width,sc.height);ctx.save();ctx.globalCompositeOperation='destination-out';const g=ctx.createRadialGradient(pos.x,pos.y,Math.max(0,_beam.size/2-_beam.blur),pos.x,pos.y,_beam.size/2);g.addColorStop(0,'rgba(0,0,0,1)');g.addColorStop(1,'rgba(0,0,0,0)');ctx.fillStyle=g;ctx.beginPath();ctx.arc(pos.x,pos.y,_beam.size/2,0,Math.PI*2);ctx.fill();ctx.restore();ctx.save();ctx.globalCompositeOperation='screen';const gg=ctx.createRadialGradient(pos.x,pos.y,0,pos.x,pos.y,_beam.size/2);gg.addColorStop(0,_beam.color);gg.addColorStop(1,'transparent');ctx.fillStyle=gg;ctx.beginPath();ctx.arc(pos.x,pos.y,_beam.size/2,0,Math.PI*2);ctx.fill();ctx.restore();}
+  const curSlide=SLIDES[idx];
+  drawSpot(ctx,pos,{..._beam, enabled: !curSlide || curSlide.beamEnabled!==false},sc.width,sc.height);
   if(GLITTER.enabled){gctx.clearRect(0,0,gc2.width,gc2.height);gctx.fillStyle=GLITTER.color;particles.forEach(p=>{if(GLITTER.speed>0){p.y+=p.speedY;p.alpha+=(Math.random()-0.5)*0.04;if(p.alpha<0.1)p.alpha=0.15;if(p.alpha>0.9)p.alpha=0.8;if(p.y<0)p.y=gc2.height;if(p.y>gc2.height)p.y=0;}gctx.globalAlpha=p.alpha;gctx.beginPath();gctx.arc(p.x,p.y,p.size,0,Math.PI*2);gctx.fill();});gctx.globalAlpha=1;}
 }
 function initP(){particles=[];for(let i=0;i<GLITTER.count;i++)particles.push({x:Math.random()*window.innerWidth,y:Math.random()*window.innerHeight,size:Math.random()*GLITTER.size+0.5,alpha:Math.random(),speedY:(Math.random()-0.5)*(GLITTER.speed*0.4)});}
