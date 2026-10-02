@@ -359,7 +359,7 @@
         <button class="tab-btn active" data-tab="slides" onclick="App.setTab('slides')">Folien</button>
         <button class="tab-btn" data-tab="elements" onclick="App.setTab('elements')">Elemente</button>
         <button class="tab-btn" data-tab="background" onclick="App.setTab('background')">Hintergrund</button>
-        <button class="tab-btn" data-tab="spotlight" onclick="App.setTab('spotlight')">Spotlight</button>
+        <button class="tab-btn" data-tab="effects" onclick="App.setTab('effects')">Effekte</button>
         <button class="tab-btn" data-tab="fonts" onclick="App.setTab('fonts')">Fonts</button>
       </div>
 
@@ -425,6 +425,15 @@
                 <i data-lucide="square" style="width:11px;height:11px;color:#64748b;"></i> Leer
               </button>
             </div>
+          </div>
+          <!-- Reine Praesentation (Export ohne Editor) zum Weiterbearbeiten laden -->
+          <div class="ctrl-section">
+            <div class="ctrl-section-title">Präsentation importieren</div>
+            <p style="font-size:10px;color:rgba(148,163,184,0.55);margin:-4px 0 8px;">Eine exportierte EyeCandy-Präsentation (.html, auch ohne Editor) laden und hier weiterbearbeiten - ersetzt die aktuelle Präsentation.</p>
+            <label class="btn-sm" style="width:100%;justify-content:center;cursor:pointer;box-sizing:border-box;">
+              <i data-lucide="upload" style="width:12px;height:12px;"></i> HTML-Datei wählen
+              <input type="file" accept=".html,.htm,text/html" style="display:none;" onchange="App.importPresentationFile(event)">
+            </label>
           </div>
         </div>
 
@@ -599,8 +608,22 @@
             </div>
           </div>
 
+          <!-- Global gradient apply -->
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:10px;margin-top:6px;">
+            <span style="font-size:10px;color:#94a3b8;">Auf alle Folien anwenden</span>
+            <input type="checkbox" id="check-global-gradient" style="accent-color:#6366f1;width:15px;height:15px;">
+          </div>
+        </div>
+
+        <!-- ===== TAB: EFFEKTE (Unter-Tabs Spotlight / Glitzer) ===== -->
+        <div class="tab-panel" id="tab-effects">
+          <div class="el-subtabs">
+            <button class="el-subtab active" data-sub="spotlight" onclick="App.setEffectsSubTab('spotlight')">Spotlight</button>
+            <button class="el-subtab" data-sub="glitter" onclick="App.setEffectsSubTab('glitter')">Glitzer</button>
+          </div>
+          <div class="el-subpanel" id="fx-sub-glitter">
           <!-- Glitter System -->
-          <details class="ctrl-section" style="margin-top:10px;" open>
+          <details class="ctrl-section" open>
             <summary style="display:flex;justify-content:space-between;align-items:center;">
               <span class="ctrl-section-title" style="margin:0;">✦ Glitzer & Partikel</span>
               <input type="checkbox" id="glitter-toggle" checked onchange="App.S.glitter.enabled = this.checked" onclick="event.stopPropagation()" style="accent-color:#6366f1;width:15px;height:15px;">
@@ -616,21 +639,13 @@
               <input type="color" id="particle-color" value="#cbd5e1" onchange="App.updateParticleSettings()">
             </div>
           </details>
-
-          <!-- Global gradient apply -->
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:10px;margin-top:6px;">
-            <span style="font-size:10px;color:#94a3b8;">Auf alle Folien anwenden</span>
-            <input type="checkbox" id="check-global-gradient" style="accent-color:#6366f1;width:15px;height:15px;">
           </div>
-        </div>
-
-        <!-- ===== TAB: SPOTLIGHT ===== -->
-        <div class="tab-panel" id="tab-spotlight">
+          <div class="el-subpanel active" id="fx-sub-spotlight">
 
           <div class="ctrl-section">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
               <span class="ctrl-section-title" style="margin:0;">Spotlight aktivieren (für diese Folie)</span>
-              <input type="checkbox" id="beam-enabled" checked onchange="App.setBeamEnabled(this.checked)" style="accent-color:#6366f1;width:16px;height:16px;">
+              <input type="checkbox" id="beam-enabled" onchange="App.setBeamEnabled(this.checked)" style="accent-color:#6366f1;width:16px;height:16px;">
             </div>
 
             <label class="ctrl-label">Bewegungs-Muster</label>
@@ -702,6 +717,7 @@
               ✦ Klicke auf die Folie, um einen Wegpunkt zu platzieren.
             </p>
           </div>
+          </div><!-- /fx-sub-spotlight -->
         </div>
 
         <!-- ===== TAB: FONTS ===== -->
@@ -729,11 +745,14 @@
 
       <!-- Sidebar Footer -->
       <div style="padding:10px;border-top:1px solid var(--border);flex-shrink:0;display:flex;gap:6px;">
-        <button onclick="App.exportHTML()" class="btn-sm success" style="flex:1;justify-content:center;padding:9px;" title="Als Datei herunterladen">
-          <i data-lucide="download" style="width:14px;height:14px;"></i> Herunterladen
+        <button onclick="App.exportHTML()" class="btn-sm success" style="flex:1;justify-content:center;padding:9px 6px;" title="Reine Präsentation (ohne Editor) als HTML-Datei herunterladen - Schriften sind eingebettet">
+          <i data-lucide="download" style="width:14px;height:14px;"></i> Präsentation
         </button>
-        <button id="save-server-btn" onclick="App.saveToServer()" class="btn-sm accent" style="flex:1;justify-content:center;padding:9px;display:none;" title="Im selben Ordner wie Bento-Pronto-Präsentationen auf dem Infomaster-Server speichern">
-          <i data-lucide="server" style="width:14px;height:14px;"></i> Im Infomaster speichern
+        <button onclick="App.exportEditorHTML()" class="btn-sm success" style="flex:1;justify-content:center;padding:9px 6px;" title="Präsentation MIT Editor herunterladen - die Datei öffnet sich direkt im EyeCandy Studio zum Weiterbearbeiten">
+          <i data-lucide="file-pen-line" style="width:14px;height:14px;"></i> Mit Editor
+        </button>
+        <button id="save-server-btn" onclick="App.saveToServer()" class="btn-sm accent" style="flex:1;justify-content:center;padding:9px 6px;display:none;" title="Im selben Ordner wie Bento-Pronto-Präsentationen auf dem Infomaster-Server speichern">
+          <i data-lucide="server" style="width:14px;height:14px;"></i> Infomaster
         </button>
       </div>
     </aside>
@@ -814,6 +833,9 @@ function googleFontFamilyParam(name) {
   return FONT_FAMILY_PARAM_OVERRIDES[name] || name.trim().replace(/\s+/g, '+');
 }
 // Wird die Schrift (Familienname) von irgendeinem Element irgendeiner Folie verwendet?
+function isSpotlightTabOpen() {
+  return S.activeTab === 'effects' && (S.effectsSubTab || 'spotlight') === 'spotlight';
+}
 function selectedFontElement() {
   const slide = S.slides[S.activeSlideIndex];
   const el = slide?.elements.find(e => e.id === S.selectedElementId);
@@ -831,6 +853,48 @@ function reinstallUsedCatalogFonts() {
     if (fontIsUsed(f.family) && !S.installedFonts.some(x => x.family === f.family)) S.installedFonts.push(f);
   });
   syncGoogleFontImports();
+}
+// Backt Google-Schriften fest in den Export ein: holt das Google-Fonts-CSS, laedt die
+// Schriftdateien (nur lateinische Zeichensaetze - latin/latin-ext) und ersetzt deren URLs durch
+// data:-URLs. So funktionieren die Schriften auch ohne Internet (z.B. Pi im Lokal-Modus).
+// Gibt { css, failed } zurueck; nicht einbettbare Schriften werden per <link> verwiesen.
+const LATIN_RANGE_RE = /U\+0000-00FF|U\+0100-02(?:4F|BA|AF)|U\+0100-017F/i;
+function blobToDataUrl(blob) {
+  return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(blob); });
+}
+// Ein Wiederholungsversuch bei Netzwerk-Aussetzern (z.B. einzelne Schriftdatei bricht ab).
+async function fetchRetry(url) {
+  try { const r = await fetch(url); if (r.ok) return r; } catch (e) {}
+  await new Promise(res => setTimeout(res, 400));
+  return fetch(url);
+}
+async function embedGoogleFonts(fonts) {
+  const parts = [], failed = [];
+  for (const f of fonts) {
+    try {
+      const resp = await fetchRetry(f.url);
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const css = await resp.text();
+      const blocks = css.match(/@font-face\s*{[^}]*}/g) || [];
+      let keep = blocks.filter(b => { const ur = (b.match(/unicode-range:\s*([^;]+);/) || [])[1]; return !ur || LATIN_RANGE_RE.test(ur); });
+      if (!keep.length) keep = blocks;
+      if (!keep.length) throw new Error('kein @font-face');
+      const fontParts = []; // erst uebernehmen, wenn ALLE Dateien dieser Schrift geladen sind
+      for (const blk of keep) {
+        const m = blk.match(/url\((['"]?)([^)'"]+)\1\)(\s*format\((['"]?)(\w+)\4\))?/);
+        if (!m) continue;
+        const fr = await fetchRetry(m[2]);
+        if (!fr.ok) throw new Error('HTTP ' + fr.status);
+        const dataUrl = await blobToDataUrl(await fr.blob());
+        fontParts.push(blk.replace(m[0], `url(${dataUrl})` + (m[5] ? ` format('${m[5]}')` : '')));
+      }
+      parts.push(...fontParts);
+    } catch (e) {
+      console.warn('Schrift nicht eingebettet:', f.name, e);
+      failed.push(f);
+    }
+  }
+  return { css: parts.join('\n'), failed };
 }
 function googleFontUrl(name) {
   return 'https://fonts.googleapis.com/css2?family=' + googleFontFamilyParam(name) + '&display=swap';
@@ -1507,7 +1571,7 @@ function defaultSlide(num=1) {
     id:'slide-'+Date.now()+Math.random(),
     duration:6,
     template: null,
-    beamEnabled: true, // Spotlight an/aus - pro Folie (siehe App.setBeamEnabled())
+    beamEnabled: false, // Spotlight an/aus - pro Folie (siehe App.setBeamEnabled()), standardmaessig aus
     transitionMode: 'slide-v', // Uebergang BEIM HINEINWECHSELN in diese Folie - 'slide-h'|'slide-v'|'fade'|'none'
     transitionSpeed: 500, // ms
     elements:[
@@ -1529,6 +1593,73 @@ function defaultSlide(num=1) {
 // ═══════════════════════════════════════════════════════════════
 //  GLOBAL STATE
 // ═══════════════════════════════════════════════════════════════
+function downloadTextFile(text, filename) {
+  const url=URL.createObjectURL(new Blob([text],{type:'text/html'}));
+  const a=document.createElement('a');
+  a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 2000);
+}
+function safeFileBase(title) {
+  return (String(title||'praesentation').trim().replace(/[^\wäöüÄÖÜß-]+/g,'_').replace(/^_+|_+$/g,'') || 'praesentation');
+}
+// ─── PRAESENTATION LADEN (Übersicht, Import, Editor-Datei) ───
+// Liest eine exportierte Praesentation aus HTML: entweder den eingebetteten Editor-Zustand
+// ("Präsentation mit Editor", #eyecandy-embedded-state) oder die "const SLIDES=...;"-
+// Zeilen einer reinen Praesentation. Bewusst per JSON.parse statt eval/new Function - eine
+// fremde Datei darf hier keinen Code ausfuehren (die Zeilen sind JSON.stringify-Ausgaben).
+function parsePresentationHtml(html) {
+  // Eingebetteter Zustand steht immer im <head> (der Editor-Quelltext enthaelt das Tag weiter
+  // unten nur als Vorlage-Text).
+  const headEnd = html.indexOf('</head>');
+  const st = (headEnd > 0 ? html.slice(0, headEnd) : html).match(/<script[^>]*id=["']eyecandy-embedded-state["'][^>]*>([\s\S]*?)<\/script>/);
+  if (st) {
+    const state = JSON.parse(st[1]);
+    if (!Array.isArray(state.slides) || !state.slides.length) throw new Error('Keine Folien in dieser Datei gefunden.');
+    return state;
+  }
+  const constJson = name => { const m = html.match(new RegExp('^const ' + name + '=(.+);$', 'm')); return m ? JSON.parse(m[1]) : undefined; };
+  const slides = constJson('SLIDES');
+  if (!Array.isArray(slides) || !slides.length) throw new Error('Keine EyeCandy-Folien in dieser Datei gefunden.');
+  const metaMatch = html.match(/<script[^>]*id=["']eyecandy-meta["'][^>]*>([\s\S]*?)<\/script>/);
+  let meta = {};
+  if (metaMatch) { try { meta = JSON.parse(metaMatch[1]); } catch (e) {} }
+  // Eigene (per Drag&Drop hinzugefuegte) Schriften stehen im Export als kompakte
+  // @font-face-Regel mit data:-URL - als bearbeitbare Schriften zurueckholen.
+  const fonts = [];
+  html.replace(/@font-face\{font-family:'([^']+)';src:url\((data:[^)]+)\);\}/g, (all, family, dataUrl) => {
+    fonts.push({ name: family, family, dataUrl, isCustom: true });
+    return all;
+  });
+  return { slides, beam: constJson('BEAM'), glitter: constJson('GLITTER'), title: meta.title, orientation: meta.orientation, fonts };
+}
+// Uebernimmt einen geladenen Zustand in den Editor.
+function applyLoadedPresentation(state, opts) {
+  S.slides = state.slides;
+  if (state.beam) S.beam = state.beam;
+  if (state.glitter) S.glitter = state.glitter;
+  S.activeSlideIndex = 0;
+  S.selectedElementId = null;
+  S.widgetDraft = null;
+  if (state.title) S.title = state.title;
+  else if (opts && opts.fallbackTitle) S.title = opts.fallbackTitle;
+  S.currentFilename = (opts && opts.filename) || null;
+  if (state.orientation === 'portrait' || state.orientation === 'landscape') S.orientation = state.orientation;
+  (state.fonts || []).forEach(f => {
+    if (S.installedFonts.some(x => x.family === f.family)) return;
+    S.installedFonts.push(f);
+    if (f.dataUrl && window.FontFace) {
+      try { const ff = new FontFace(f.family, `url(${f.dataUrl})`); ff.load().then(x => document.fonts.add(x)).catch(() => {}); } catch (e) {}
+    }
+  });
+  reinstallUsedCatalogFonts();
+  App.renderInstalledFonts();
+  App.applyOrientation();
+  App.render();
+  App.renderInspector();
+  renderWaypointsList();
+  if (!S.isEditor) App.toggleEditor();
+}
+
 const S = {
   isEditor: false,
   activeSlideIndex: 0,
@@ -2438,7 +2569,7 @@ function startEditorCanvasLoop() {
     // Die Abdunkelung/der Lichtkreis verdeckt sonst die Folie beim Bearbeiten auf anderen
     // Tabs (Text positionieren etc.) - nur sichtbar, waehrend der Spotlight-Tab selbst offen
     // ist, wo man ohnehin genau daran arbeitet.
-    drawSpotlight(spotCtx, _lastPos, {...S.beam, enabled: S.activeTab==='spotlight' && (!activeSlide || activeSlide.beamEnabled!==false)});
+    drawSpotlight(spotCtx, _lastPos, {...S.beam, enabled: isSpotlightTabOpen() && (!activeSlide || activeSlide.beamEnabled!==false)});
     drawGlitter(glitCtx, _editorParticles, S.editorAnimPlaying ? S.glitter : {...S.glitter, speed:0});
     requestAnimationFrame(loop);
   }
@@ -2891,7 +3022,7 @@ function renderWaypointMarkers() {
   const overlay=document.getElementById('waypoints-overlay');
   if (!overlay) return;
   overlay.innerHTML='';
-  const showMarkers = S.isEditor && S.activeTab==='spotlight' && S.beam.pattern==='waypoints';
+  const showMarkers = S.isEditor && isSpotlightTabOpen() && S.beam.pattern==='waypoints';
   if (!showMarkers) return;
 
   S.beam.waypoints.forEach((wp,i)=>{
@@ -2937,6 +3068,13 @@ const App = {
     // UND ohne file=/new=-Parameter zunaechst die Übersicht zeigen, statt direkt eine neue,
     // leere Praesentation zu starten - siehe App.showGallery(). "new=1" (vom "Neu"-Knopf
     // dort) und "file=<name>" (Karte angeklickt) ueberspringen die Übersicht entsprechend.
+    // "Präsentation mit Editor"-Datei: direkt mit der eingebetteten Praesentation im Editor starten.
+    const embedded=document.getElementById('eyecandy-embedded-state');
+    if (embedded) {
+      try { applyLoadedPresentation(parsePresentationHtml(document.documentElement.outerHTML)); return; }
+      catch (e) { console.warn('Eingebettete Praesentation nicht lesbar:', e); }
+    }
+
     const params=new URLSearchParams(location.search);
     const fileParam=params.get('file');
     const isNew=params.get('new')==='1';
@@ -2988,11 +3126,11 @@ const App = {
     document.querySelectorAll('.tab-panel').forEach(p => {
       p.classList.toggle('active', p.id==='tab-'+name);
     });
-    if (name==='spotlight') {
+    if (name==='effects') {
       const wpMode = S.beam.pattern==='waypoints';
       document.getElementById('waypoints-panel').style.display=wpMode?'block':'none';
     }
-    if (name==='fonts') this.renderFontCatalog();
+    if (name==='fonts') { this.renderFontCatalog(); this.renderInstalledFonts(); }
     if (name==='background') {
       this.syncBgControls();
     }
@@ -3035,6 +3173,7 @@ const App = {
       if (transitionSpeedVal) transitionSpeedVal.textContent=speed;
     }
     const beamToggle=document.getElementById('beam-enabled');
+    // undefined = aeltere Datei von vor dem Standard "aus" - dort war der Spotlight an
     if (slide && beamToggle) beamToggle.checked = slide.beamEnabled !== false;
     lucide.createIcons();
   },
@@ -3420,8 +3559,17 @@ const App = {
   setElementsSubTab(name) {
     if (!name) return;
     S.elementsSubTab=name;
-    document.querySelectorAll('.el-subtab').forEach(b => b.classList.toggle('active', b.dataset.sub===name));
-    document.querySelectorAll('.el-subpanel').forEach(p => p.classList.toggle('active', p.id==='el-sub-'+name));
+    document.querySelectorAll('#tab-elements .el-subtab').forEach(b => b.classList.toggle('active', b.dataset.sub===name));
+    document.querySelectorAll('#tab-elements .el-subpanel').forEach(p => p.classList.toggle('active', p.id==='el-sub-'+name));
+  },
+
+  // Effekte-Tab: Spotlight / Glitzer. Der Spotlight (Abdunkelung + Wegpunkt-Marker) wird im
+  // Editor nur gezeichnet, solange sein Unter-Tab offen ist (siehe isSpotlightTabOpen()).
+  setEffectsSubTab(name) {
+    S.effectsSubTab=name;
+    document.querySelectorAll('#tab-effects .el-subtab').forEach(b => b.classList.toggle('active', b.dataset.sub===name));
+    document.querySelectorAll('#tab-effects .el-subpanel').forEach(p => p.classList.toggle('active', p.id==='fx-sub-'+name));
+    renderWaypointMarkers();
   },
 
   // Drehung ohne komplettes Neu-Rendern (fluessiger Regler), nur Transform am Element.
@@ -3919,11 +4067,25 @@ const App = {
       list.innerHTML=`<p style="font-size:10px;color:rgba(148,163,184,0.5);font-style:italic;">Noch keine Fonts geladen.</p>`;
       return;
     }
-    list.innerHTML=S.installedFonts.map(f=>`
+    // Klick auf den Schrift-Knopf wendet die Schrift auf das ausgewaehlte Textfeld/Widget an.
+    const target=selectedFontElement();
+    const cur=target ? String(target.fontFamily||'').split(',')[0].replace(/["']/g,'').trim() : '';
+    list.innerHTML=(target?'':`<p style="font-size:10px;color:rgba(148,163,184,0.5);margin:0 0 6px;">Erst ein Textfeld auswählen - dann wendet ein Klick auf die Schrift sie darauf an.</p>`)+S.installedFonts.map((f,i)=>`
       <div class="font-catalog-item">
-        <span style="font-size:11px;font-family:'${f.family}',sans-serif;color:#e2e8f0;">${f.name}${f.isCustom?' <span style="color:#6366f1;font-size:9px;">· eigene</span>':''}</span>
-        <button onclick="App.removeFont('${f.family}')" class="btn-sm danger" style="font-size:9px;padding:3px 8px;">× Remove</button>
+        <button type="button" data-inst-idx="${i}" class="btn-sm" style="flex:1;justify-content:flex-start;font-size:14px;font-family:'${f.family}',sans-serif;${cur===f.family?'background:rgba(99,102,241,0.25);border-color:rgba(99,102,241,0.4);':''}" title="${target?'Auf das ausgewählte Element anwenden':'Zuerst ein Textfeld auswählen'}">${escapeHtmlEc(f.name)}${f.isCustom?' <span style="color:#6366f1;font-size:9px;font-family:Inter,sans-serif;">· eigene</span>':''}</button>
+        <button type="button" data-inst-del="${i}" class="btn-sm danger" style="font-size:9px;padding:3px 8px;" title="Schrift entfernen">×</button>
       </div>`).join('');
+    list.querySelectorAll('[data-inst-idx]').forEach(b=>b.addEventListener('click', ()=>{
+      const f=S.installedFonts[+b.dataset.instIdx];
+      if (!f) return;
+      if (!selectedFontElement()) { b.animate([{transform:'translateX(-3px)'},{transform:'translateX(3px)'},{transform:'none'}],{duration:200}); return; }
+      this.installFont(f);
+      this.renderInstalledFonts();
+    }));
+    list.querySelectorAll('[data-inst-del]').forEach(b=>b.addEventListener('click', ()=>{
+      const f=S.installedFonts[+b.dataset.instDel];
+      if (f) this.removeFont(f.family);
+    }));
   },
 
   // ─── EDITOR TOGGLE ───
@@ -4050,7 +4212,16 @@ const App = {
   // Baut das exportierte, eigenstaendige Praesentations-HTML als String - genutzt sowohl
   // vom Download-Knopf (exportHTML()) als auch vom "Im Infomaster speichern"-Knopf
   // (saveToServer()), damit beide Wege exakt denselben Stand exportieren.
-  buildExportedDoc() {
+  // Mit eingebetteten Schriften (siehe embedGoogleFonts()) - fuer Speichern und Herunterladen.
+  async buildExportedDocWithFonts() {
+    const used=S.installedFonts.filter(f=>f.url && fontIsUsed(f.family));
+    const emb=await embedGoogleFonts(used);
+    return this.buildExportedDoc({ embeddedFontCss: emb.css, linkFonts: emb.failed });
+  },
+
+  // opts.embeddedFontCss: fertige @font-face-Regeln mit data:-URLs; opts.linkFonts: Google-
+  // Schriften, die stattdessen per <link> geladen werden (Standard: alle verwendeten).
+  buildExportedDoc(opts={}) {
     // Inline all images as base64 (already base64 from FileReader)
     const stateSnapshot=JSON.parse(JSON.stringify(S.slides));
     const beamSnapshot=JSON.parse(JSON.stringify(S.beam));
@@ -4058,6 +4229,7 @@ const App = {
     // Nur Schriften mitspeichern, die auf irgendeiner Folie tatsaechlich verwendet werden
     // (spart unnoetige @import/@font-face-Eintraege bzw. eingebettete Schriftdateien).
     const fontsSnapshot=JSON.parse(JSON.stringify(S.installedFonts.filter(f=>fontIsUsed(f.family))));
+    const linkFonts=opts.linkFonts || fontsSnapshot.filter(f=>f.url);
 
     const exportedDoc=`<!DOCTYPE html>
 <html lang="de">
@@ -4068,12 +4240,13 @@ const App = {
 <meta name="description" content="Exportierte EyeCandy Studio Präsentation">
 <script id="eyecandy-meta" type="application/json">${JSON.stringify({title: S.title, slideCount: stateSnapshot.length, orientation: S.orientation}).replace(/</g,'\\u003c')}<\/script>
 <script src="https://cdn.tailwindcss.com"><\/script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap">
+${linkFonts.map(f=>`<link rel="stylesheet" href="${f.url}">`).join('\n')}
 <style>
+${opts.embeddedFontCss||''}
+${fontsSnapshot.filter(f=>f.dataUrl).map(f=>`@font-face{font-family:'${f.family}';src:url(${f.dataUrl});}`).join('\n')}
 *,*::before,*::after{box-sizing:border-box;}
 html,body{height:100%;margin:0;overflow:hidden;font-family:'Inter',sans-serif;background:#030712;color:#f1f5f9;}
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
-${fontsSnapshot.filter(f=>f.url).map(f=>`@import url('${f.url}');`).join('\n')}
-${fontsSnapshot.filter(f=>f.dataUrl).map(f=>`@font-face{font-family:'${f.family}';src:url(${f.dataUrl});}`).join('\n')}
 .glass-card{background:rgba(15,23,42,0.55);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.15);box-shadow:0 20px 50px rgba(0,0,0,0.4);border-radius:16px;padding:32px;}
 canvas{pointer-events:none;position:absolute;inset:0;width:100%;height:100%;}
 #pres-spotlight{z-index:25;}#pres-glitter{z-index:15;}
@@ -4537,13 +4710,55 @@ window.addEventListener('keydown',e=>{
     return exportedDoc;
   },
 
-  exportHTML() {
-    const exportedDoc=this.buildExportedDoc();
-    const blob=new Blob([exportedDoc],{type:'text/html'});
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement('a');
-    a.href=url; a.download='eyecandy-presentation.html'; a.click();
-    URL.revokeObjectURL(url);
+  // Reine Praesentation (ohne Editor), Schriften eingebettet.
+  async exportHTML() {
+    const exportedDoc=await this.buildExportedDocWithFonts();
+    downloadTextFile(exportedDoc, safeFileBase(S.title)+'.html');
+  },
+
+  // Praesentation MIT Editor: eine Kopie dieses Editors, in die der aktuelle Zustand (Folien,
+  // Spotlight, Glitzer, Titel, Ausrichtung, verwendete Schriften) als JSON eingebettet ist -
+  // beim Oeffnen startet sie direkt im Editor mit genau dieser Praesentation. Verwendete
+  // Google-Schriften sind zusaetzlich eingebacken (funktioniert offline).
+  async exportEditorHTML() {
+    let src='';
+    if (/^https?:$/.test(location.protocol)) {
+      try { const r=await fetch(location.pathname, { cache:'no-store' }); if (r.ok) src=await r.text(); } catch (e) {}
+    }
+    if (!src || !/id=["']editor-sidebar["']/.test(src)) src=window.EC_EDITOR_SOURCE_AT_LOAD||'';
+    if (!src) { alert('❌ Editor-Quelltext nicht verfügbar.'); return; }
+    // Fruehere Einbettungen (Export eines Exports) entfernen - NUR im <head> suchen: der
+    // Quelltext unten im Hauptskript enthaelt dieselben Tags als Vorlage (siehe "inject").
+    const headEnd0=src.indexOf('</head>');
+    if (headEnd0>0) {
+      src=src.slice(0,headEnd0)
+        .replace(/<script[^>]*id=["']eyecandy-embedded-state["'][^>]*>[\s\S]*?<\/script>\s*/g,'')
+        .replace(/<style[^>]*id=["']eyecandy-embedded-fonts["'][^>]*>[\s\S]*?<\/style>\s*/g,'')
+        + src.slice(headEnd0);
+    }
+    const usedFonts=S.installedFonts.filter(f=>fontIsUsed(f.family));
+    const emb=await embedGoogleFonts(usedFonts.filter(f=>f.url));
+    const state={ slides:S.slides, beam:S.beam, glitter:S.glitter, title:S.title, orientation:S.orientation, fonts:usedFonts };
+    const inject=`<style id="eyecandy-embedded-fonts">\n${emb.css}\n</style>\n<script id="eyecandy-embedded-state" type="application/json">${JSON.stringify(state).replace(/</g,'\\u003c')}<\/script>\n`;
+    const headEnd=src.indexOf('</head>');
+    if (headEnd<0) { alert('❌ Editor-Quelltext unvollständig.'); return; }
+    downloadTextFile(src.slice(0,headEnd)+inject+src.slice(headEnd), safeFileBase(S.title)+'-editor.html');
+  },
+
+  // Import einer exportierten Praesentation (Folien-Tab) - reine Praesentation oder Editor-Datei.
+  importPresentationFile(evt) {
+    const file=evt.target.files && evt.target.files[0];
+    evt.target.value='';
+    if (!file) return;
+    const r=new FileReader();
+    r.onload=()=>{
+      let state;
+      try { state=parsePresentationHtml(String(r.result)); }
+      catch (e) { alert('❌ Import fehlgeschlagen:\n'+e.message); return; }
+      if (!confirm('Aktuelle Präsentation durch „'+(state.title||file.name)+'" ('+state.slides.length+' Folie'+(state.slides.length===1?'':'n')+') ersetzen?')) return;
+      applyLoadedPresentation(state, { fallbackTitle: file.name.replace(/\.html?$/i,'') });
+    };
+    r.readAsText(file);
   },
 
   // ─── ÜBERSICHT ("EDITOR" MIT GÜLTIGEM TOKEN, OHNE file=/new=) ───
@@ -4694,34 +4909,9 @@ window.addEventListener('keydown',e=>{
     fetch(item.url, { cache: 'no-store' })
       .then(r=>{ if (!r.ok) throw new Error('HTTP '+r.status); return r.text(); })
       .then(html=>{
-        function extractConst(name) {
-          const m=html.match(new RegExp('^const '+name+'=(.+);$','m'));
-          if (!m) return undefined;
-          return new Function('return ('+m[1]+');')();
-        }
-        const slides=extractConst('SLIDES');
-        const beam=extractConst('BEAM');
-        const glitter=extractConst('GLITTER');
-        if (!slides || !Array.isArray(slides) || slides.length===0) throw new Error('Keine Folien in dieser Datei gefunden.');
-        const metaMatch=html.match(/<script[^>]*id=["']eyecandy-meta["'][^>]*>([\s\S]*?)<\/script>/);
-        let meta={};
-        if (metaMatch) { try { meta=JSON.parse(metaMatch[1]); } catch(e) {} }
-
-        S.slides=slides;
-        reinstallUsedCatalogFonts();
-        if (beam) S.beam=beam;
-        if (glitter) S.glitter=glitter;
-        S.activeSlideIndex=0;
-        S.selectedElementId=null;
-        S.title=meta.title||item.title;
-        S.currentFilename=item.filename;
-        if (meta.orientation==='portrait'||meta.orientation==='landscape') S.orientation=meta.orientation;
-
+        const state=parsePresentationHtml(html);
         if (overlay) overlay.remove();
-        this.applyOrientation();
-        this.render();
-        renderWaypointsList();
-        if (!S.isEditor) this.toggleEditor();
+        applyLoadedPresentation(state, { filename: item.filename, fallbackTitle: item.title });
       })
       .catch(err=>{
         if (overlay) overlay.remove();
@@ -4750,9 +4940,10 @@ window.addEventListener('keydown',e=>{
   _doSaveToServer(asNew) {
     const btn=document.getElementById('save-server-btn');
     const origHtml=btn.innerHTML;
-    btn.disabled=true; btn.innerHTML='… speichert';
+    btn.disabled=true; btn.innerHTML='… Schriften einbetten';
 
-    const exportedDoc=this.buildExportedDoc();
+    this.buildExportedDocWithFonts().then(exportedDoc=>{
+    btn.innerHTML='… speichert';
     const blob=new Blob([exportedDoc],{type:'text/html'});
     const fd=new FormData();
     fd.append('bento_save_html', blob, 'eyecandy.html');
@@ -4765,7 +4956,8 @@ window.addEventListener('keydown',e=>{
     // statt bei jedem Speichern eine neue anzulegen (siehe bento.php: "eyecandy_file"-Feld).
     if (S.currentFilename && !asNew) fd.append('eyecandy_file', S.currentFilename);
 
-    fetch('bento.php', { method:'POST', body: fd })
+    return fetch('bento.php', { method:'POST', body: fd });
+    })
       .then(r=>r.json().catch(()=>{ throw new Error('Antwort war kein gueltiges JSON - bitte erneut über den Link im Infomaster-Dashboard öffnen (Login evtl. abgelaufen).'); }))
       .then(data=>{
         if (!data.ok) throw new Error(data.error||'Unbekannter Fehler beim Speichern.');
@@ -4824,6 +5016,13 @@ window.addEventListener('keydown', e => {
 window.addEventListener('load', () => {
   App.init();
 });
+</script>
+<script>
+// Unveraenderter Quelltext dieses Editors - laeuft NACH dem Hauptskript (damit es mit im
+// Quelltext steht), aber vor dem load-Event, also bevor App.init() das DOM umbaut. Grundlage
+// fuer "Präsentation mit Editor", falls der Editor als lokale Datei laeuft (file://) und sich
+// selbst nicht per fetch() nachladen kann.
+window.EC_EDITOR_SOURCE_AT_LOAD = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
 </script>
 </body>
 </html>
