@@ -271,6 +271,22 @@ PHP, keine eigene Session) und wird nur per Link integriert:
 - **Automatische Schriftgrößen-Skalierung** - ein Schalter pro Textelement verkleinert die
   Schrift automatisch, bis sie in die Breite des Kastens und die verbleibende Höhe bis zum
   Folienrand passt (die eingestellte Größe wirkt dann als Maximum).
+- **Schriften fest eingebacken** - beim Speichern im Infomaster und beim Herunterladen werden
+  die verwendeten Google-Schriften (nur lateinische Zeichensätze) als data:-URLs direkt in die
+  Datei eingebettet; die Präsentation zeigt sie dadurch auch ohne Internet (z.B. Pi im
+  Lokal-Modus). Vorher standen die Schriften als `@import` hinter anderen CSS-Regeln - Browser
+  ignorieren das, die Schriften fehlten in der Präsentation. Lässt sich eine Schrift nicht
+  laden, wird sie ersatzweise per `<link>` eingebunden.
+- **Zwei Downloads** - "⬇ Präsentation" (reine Präsentation) und "Mit Editor" (eine Kopie von
+  EyeCandy Studio mit eingebetteter Präsentation - öffnet sich direkt im Editor zum
+  Weiterbearbeiten, Schriften ebenfalls eingebacken). Im Folien-Tab lässt sich unter
+  "Präsentation importieren" eine exportierte Präsentation (auch ohne Editor) wieder laden;
+  gelesen wird dabei nur JSON, aus der Datei wird kein Code ausgeführt.
+- **Effekte-Tab** - der frühere Spotlight-Tab heißt "Effekte" und hat die Unter-Tabs
+  "Spotlight" und "Glitzer" (der Glitzer kam aus dem Hintergrund-Tab). Der Spotlight ist für
+  neue Folien standardmäßig aus; ältere gespeicherte Folien behalten ihren Zustand.
+- **Geladene Schriften anwenden** - unter "Eingebundene Fonts" wendet ein Klick auf die Schrift
+  sie auf das ausgewählte Textfeld/Widget an (aktive Schrift ist hervorgehoben, × entfernt).
 - **Schriften-Katalog (Fonts-Tab)** - 16 thematische Kategorien (Deko, Effekt, Fremdländisch,
   Fraktur, Handschrift, Horror, Improvisiert, Monospaced, Schmal, Party, Gut lesbar, Schlagzeile,
   Sci-Fi, Sortfield, Stencil, Websafe) mit gut 200 Google Fonts. Gepflegt wird die Liste in
