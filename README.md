@@ -118,15 +118,27 @@ so lässt sich ein Ordner zügig durchsehen; aufgeklappte Ordner bleiben dabei a
 ## Mehrere Monitore an einem Pi
 
 Wayland-Compositors (labwc, Standard bei Raspberry Pi OS Bookworm) lassen einen Client
-NICHT selbst bestimmen, auf welchem Ausgang sein Fenster erscheint - ohne Gegenmaßnahme
-landen dadurch mehrere gleichzeitig gestartete Kiosk-Fenster oft alle auf demselben
-Monitor. `client.py` bewegt darum den Mauszeiger unmittelbar vor jedem Kiosk-Start per
-`wlrctl` auf den jeweiligen Ziel-Ausgang; der Installationsbefehl baut `wlrctl`
-best-effort aus dem Quellcode und setzt bei labwc einmalig additiv `policy=cursor` in
-`rc.xml` (vorhandene Konfiguration bleibt unangetastet). Fehlen `wlrctl` oder labwc, läuft
-alles wie bisher weiter, nur eben ohne gezielte Platzierung je Ausgang - ein Pi mit bereits
-laufendem Kiosk-Dienst muss dafür einmal den Installationsbefehl erneut ausführen und den
-Dienst danach neu starten.
+NICHT selbst bestimmen, auf welchem Ausgang sein Fenster erscheint. Der Client ordnet die
+Kiosk-Fenster deshalb in drei Stufen zu:
+
+1. **Eindeutige Kennung je Fenster** - jedes Kiosk-Fenster heißt `kiosk-<Ausgang>` (z.B.
+   `kiosk-HDMI-A-2`): als Wayland-app_id (Chromium `--class`, gestartet mit `--kiosk URL`
+   statt `--app=URL`, weil Chromium bei `--app` die app_id aus der URL ableitet) und als
+   Fenstertitel (`view.php` bzw. die lokale Ersatzansicht setzen ihn aus `?kiosk_out=`).
+2. **Feste Fensterregeln in labwc** - der Client pflegt in `~/.config/labwc/rc.xml` des
+   Desktop-Users einen eigenen, markierten Block (`infomaster-kiosk BEGIN/END`) mit Regeln
+   `kiosk-<Ausgang>` → `MoveToOutput <Ausgang>` und lädt labwc danach per `SIGHUP` neu. Der
+   Rest der Datei bleibt unverändert; der Block wird nur neu geschrieben, wenn sich die
+   angeschlossenen Ausgänge ändern.
+3. **Nacheinander statt gleichzeitig** - das nächste Fenster startet erst, wenn das vorige
+   wirklich existiert (`wlrctl toplevel find`, ohne wlrctl feste 6 s Wartezeit). Vorher wanderte
+   der Mauszeiger (Cursor-Verfahren, `policy=cursor`) teils schon zum nächsten Ausgang, bevor
+   Chromium sein erstes Fenster gezeigt hatte - beide landeten dann auf demselben Monitor.
+
+Hauptmonitor (mit Taskleiste) und erweiterter Bildschirm werden dabei über ihren
+Anschlussnamen unterschieden (`HDMI-A-1`/`HDMI-A-2`, siehe `wlr-randr`) - genau so ordnet auch
+das Dashboard die Monitore den Pi-Ausgängen zu. Das Cursor-Verfahren (`wlrctl`, labwc
+`policy=cursor`) bleibt als zusätzliche Absicherung, z.B. für andere Compositors.
 
 ## AJAX & visuelles Feedback
 

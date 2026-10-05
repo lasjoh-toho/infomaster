@@ -784,6 +784,109 @@ def warp_cursor_to_output(out, env):
         log(f"   [WARNUNG] Mauszeiger konnte nicht auf {out} bewegt werden ({e}) - "
             f"Kiosk-Fenster landet moeglicherweise auf dem falschen Ausgang.")
 
+# ============================================================================
+# FESTE ZUORDNUNG FENSTER -> AUSGANG (labwc): Das Cursor-Verfahren oben allein war nicht
+# zuverlaessig - Chromium braucht auf dem Pi oft mehrere Sekunden, bis sein Fenster wirklich
+# erscheint; war der Zeiger bis dahin schon zum NAECHSTEN Ausgang weitergewandert, landeten
+# beide Fenster auf demselben Monitor. Deshalb zusaetzlich:
+#  1. jedes Kiosk-Fenster traegt eine eindeutige Kennung "kiosk-<Ausgang>" - als Wayland-
+#     app_id (Chromium --class) UND als Fenstertitel (view.php / lokale Ersatzansicht setzen
+#     <title> aus dem URL-Parameter kiosk_out),
+#  2. der Client pflegt in labwc's rc.xml einen eigenen, markierten Block mit Fensterregeln
+#     "kiosk-<Ausgang>" -> MoveToOutput <Ausgang> und laesst labwc die Konfiguration neu
+#     laden (SIGHUP) - die Zuordnung haengt damit nicht mehr vom Mauszeiger ab,
+#  3. das naechste Fenster wird erst gestartet, wenn das vorige tatsaechlich existiert
+#     (wait_for_kiosk_window), damit auch das Cursor-Verfahren nicht mehr ins Rennen geraet.
+# Hauptmonitor (mit Taskleiste) und erweiterter Bildschirm werden dabei schlicht ueber ihren
+# Anschlussnamen (HDMI-A-1/HDMI-A-2, siehe wlr-randr) unterschieden - genau so ordnet auch
+# das Dashboard Monitore den Pi-Ausgaengen zu.
+# ============================================================================
+
+LABWC_BLOCK_BEGIN = "<!-- infomaster-kiosk BEGIN (automatisch verwaltet, nicht von Hand aendern) -->"
+LABWC_BLOCK_END = "<!-- infomaster-kiosk END -->"
+_labwc_rules_signature = None
+
+def kiosk_window_tag(out):
+    return "kiosk-" + re.sub(r"[^a-zA-Z0-9_-]", "_", out)
+
+def with_kiosk_tag(url, out):
+    # Haengt kiosk_out=<Ausgang> an die Kiosk-URL - die Seite setzt daraus ihren Fenstertitel.
+    sep = "&" if "?" in url else "?"
+    return f"{url}{sep}kiosk_out={urllib.parse.quote(re.sub(r'[^a-zA-Z0-9_-]', '_', out))}"
+
+def labwc_running():
+    try:
+        return subprocess.run(["pgrep", "-x", "labwc"], capture_output=True, timeout=3).returncode == 0
+    except Exception:
+        return False
+
+def ensure_labwc_window_rules(user, outputs):
+    # Schreibt/aktualisiert den eigenen Block in ~/.config/labwc/rc.xml des Desktop-Users
+    # (Rest der Datei bleibt unangetastet) und laesst labwc per SIGHUP neu laden - nur wenn
+    # sich die Regeln tatsaechlich geaendert haben.
+    global _labwc_rules_signature
+    if not outputs or not labwc_running():
+        return
+    signature = (user, tuple(sorted(outputs)))
+    if signature == _labwc_rules_signature:
+        return
+    path = f"/home/{user}/.config/labwc/rc.xml"
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        content = open(path, encoding="utf-8").read() if os.path.exists(path) else '<?xml version="1.0"?>\n<labwc_config>\n</labwc_config>\n'
+        # alten eigenen Block entfernen
+        content = re.sub(re.escape(LABWC_BLOCK_BEGIN) + r".*?" + re.escape(LABWC_BLOCK_END) + r"\n?", "", content, flags=re.S)
+        if "</labwc_config>" not in content:
+            log(f"   [WARNUNG] {path} hat ein unerwartetes Format - Fensterregeln fuer die Monitor-Zuordnung nicht eingetragen.")
+            _labwc_rules_signature = signature
+            return
+        rules = []
+        for out in sorted(outputs):
+            tag = kiosk_window_tag(out)
+            for attr in (f'identifier="{tag}"', f'title="{tag}*"'):
+                rules.append(f'    <windowRule {attr}>\n      <action name="MoveToOutput" output="{out}"/>\n    </windowRule>')
+        block = LABWC_BLOCK_BEGIN + "\n"
+        if "<placement>" not in content:
+            block += "  <placement>\n    <policy>cursor</policy>\n  </placement>\n"
+        block += "  <windowRules>\n" + "\n".join(rules) + "\n  </windowRules>\n" + LABWC_BLOCK_END + "\n"
+        new_content = content.replace("</labwc_config>", block + "</labwc_config>", 1)
+        old_content = open(path, encoding="utf-8").read() if os.path.exists(path) else ""
+        if new_content != old_content:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            try:
+                shutil.chown(path, user=user)
+                shutil.chown(os.path.dirname(path), user=user)
+            except Exception:
+                pass
+            subprocess.run(["pkill", "-HUP", "-x", "labwc"], capture_output=True, timeout=3)
+            log(f"   [OK] labwc-Fensterregeln fuer {sorted(outputs)} eingetragen und labwc neu geladen.")
+        _labwc_rules_signature = signature
+    except Exception as e:
+        log(f"   [WARNUNG] labwc-Fensterregeln konnten nicht geschrieben werden ({e}) - Platzierung nur per Mauszeiger.")
+        _labwc_rules_signature = signature
+
+def wait_for_kiosk_window(out, env, timeout=20):
+    # Wartet, bis das Kiosk-Fenster dieses Ausgangs wirklich existiert (per wlrctl, sucht nach
+    # app_id ODER Titel) - erst dann darf der Mauszeiger fuer das naechste Fenster weiter.
+    # Ohne wlrctl: feste Wartezeit als grobe Absicherung.
+    tag = kiosk_window_tag(out)
+    if not find_wlrctl_binary():
+        time.sleep(6)
+        return False
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        for match in (f"app_id:{tag}", f"title:{tag}"):
+            try:
+                r = subprocess.run(["wlrctl", "toplevel", "find", match], env=env, capture_output=True, text=True, timeout=3)
+                if r.returncode == 0:
+                    return True
+            except Exception:
+                pass
+        time.sleep(0.5)
+    log(f"   [WARNUNG] Kiosk-Fenster fuer {out} nach {timeout}s nicht gefunden - naechster Monitor startet trotzdem.")
+    return False
+
 def load_cached_config():
     try:
         with open(CACHE_FILE) as f:
@@ -1025,7 +1128,12 @@ class _FallbackHTTPHandler(http.server.BaseHTTPRequestHandler):
                     self.end_headers()
                     self.wfile.write(body)
                     return
-                body = build_fallback_html(screen_id, screen_def).encode("utf-8")
+                html_text = build_fallback_html(screen_id, screen_def)
+                kiosk_out = re.sub(r"[^a-zA-Z0-9_-]", "_", (qs.get("kiosk_out") or [""])[0])
+                if kiosk_out:
+                    # Fenstertitel = Kennung fuer die labwc-Fensterregeln (siehe ensure_labwc_window_rules)
+                    html_text = re.sub(r"<title>.*?</title>", f"<title>kiosk-{kiosk_out}</title>", html_text, count=1)
+                body = html_text.encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Content-Length", str(len(body)))
@@ -1346,7 +1454,8 @@ def apply_output_state(out, cfg, env, user, runtime_dir, active_processes, last_
                 # ununterscheidbar, was etwaige eigene Fensterregeln (z.B. in labwc's rc.xml)
                 # unmoeglich machen wuerde. Wird aktuell primaer fuer das Cursor-Warp-Verfahren
                 # (warp_cursor_to_output) gebraucht, schadet aber auch sonst nicht.
-                window_class = "kiosk-" + re.sub(r"[^a-zA-Z0-9_-]", "_", out)
+                window_class = kiosk_window_tag(out)
+                launch_url = with_kiosk_tag(url, out)
 
                 inner_cmd = (
                     f"XDG_RUNTIME_DIR={runtime_dir} WAYLAND_DISPLAY={env['WAYLAND_DISPLAY']} "
@@ -1369,7 +1478,10 @@ def apply_output_state(out, cfg, env, user, runtime_dir, active_processes, last_
                     # sonst hinter --disable-infobars trotzdem beim naechsten Start aufpoppen kann.
                     f"--hide-crash-restore-bubble --disable-session-crashed-bubble "
                     f"--remote-debugging-port={debug_port} --remote-debugging-address=127.0.0.1 "
-                    f"--user-data-dir={profile_dir} --app='{url}'"
+                    # Bewusst "--kiosk URL" statt "--app=URL": bei --app leitet Chromium die
+                    # Wayland-app_id aus der URL ab und ignoriert --class - fuer die labwc-
+                    # Fensterregeln (ensure_labwc_window_rules) muss sie aber "kiosk-<Ausgang>" sein.
+                    f"--user-data-dir={profile_dir} '{launch_url}'"
                 )
                 cmd = ["su", "-", user, "-c", inner_cmd]
                 # Explizites Arbeitsverzeichnis statt des von su/systemd geerbten: "su -l" setzt
@@ -1464,6 +1576,10 @@ def apply_output_state(out, cfg, env, user, runtime_dir, active_processes, last_
                         log(f"   [OK] Chromium laeuft stabil und reagiert auf {out} (PID: {proc.pid}, Versuch {attempt}/{MAX_LAUNCH_ATTEMPTS}).")
                         _last_error_sig.pop(f"chromium:{out}", None)
                         note_output_success(out, consecutive_output_failures)
+                        # Erst weitermachen, wenn das Fenster wirklich da ist - sonst wandert der
+                        # Mauszeiger schon zum naechsten Ausgang, bevor dieses Fenster platziert ist.
+                        if wait_for_kiosk_window(out, env):
+                            log(f"   [OK] Kiosk-Fenster '{window_class}' ist erschienen.")
                 break
         elif mode not in ("off", "desktop") and not url:
             log(f"   [HINWEIS] Modus {mode} aktiv, aber keine URL vom Master erhalten.")
@@ -1679,6 +1795,8 @@ while True:
         user = get_desktop_user(runtime_dir)
         outputs_detected = detect_outputs(env)
         output_details = detect_output_details(env)
+        # Feste Fenster->Ausgang-Regeln in labwc (nur bei Aenderung der Outputs neu geschrieben)
+        ensure_labwc_window_rules(user, outputs_detected)
 
         # Nur loggen, wenn sich die erkannten Outputs seit dem letzten Zyklus
         # geaendert haben - sonst wuerde das jede 5s identisch wiederholt werden.
