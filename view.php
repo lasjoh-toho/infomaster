@@ -106,7 +106,13 @@ $ncUrlB = ($s && ($s['typeB'] ?? '') === 'nextcloud') ? ($s['contentB'] ?? '') :
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Monitor View - <?php echo $id; ?></title>
+    <?php
+    // Auf dem Pi oeffnet der Kiosk-Client diese Seite mit ?kiosk_out=<Ausgang> - der Titel
+    // "kiosk-<Ausgang>" ist dann die Kennung, an der labwc's Fensterregeln das Fenster dem
+    // richtigen Monitor zuordnen (siehe ensure_labwc_window_rules() im Client).
+    $kioskOut = preg_replace('/[^a-zA-Z0-9_-]/', '_', (string)($_GET['kiosk_out'] ?? ''));
+    ?>
+    <title><?php echo $kioskOut !== '' ? 'kiosk-' . $kioskOut : 'Monitor View - ' . htmlspecialchars($id); ?></title>
     <style>
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
 
