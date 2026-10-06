@@ -103,9 +103,10 @@ $ncUrlA = ($s && $s['type'] === 'nextcloud') ? ($s['content'] ?? '') : '';
 $ncUrlB = ($s && ($s['typeB'] ?? '') === 'nextcloud') ? ($s['contentB'] ?? '') : '';
 ?>
 <!DOCTYPE html>
-<html lang="de">
+<html lang="de" translate="no">
 <head>
     <meta charset="UTF-8">
+    <meta name="google" content="notranslate">
     <?php
     // Auf dem Pi oeffnet der Kiosk-Client diese Seite mit ?kiosk_out=<Ausgang> - der Titel
     // "kiosk-<Ausgang>" ist dann die Kennung, an der labwc's Fensterregeln das Fenster dem
