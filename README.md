@@ -283,6 +283,19 @@ PHP, keine eigene Session) und wird nur per Link integriert:
 - **Automatische Schriftgrößen-Skalierung** - ein Schalter pro Textelement verkleinert die
   Schrift automatisch, bis sie in die Breite des Kastens und die verbleibende Höhe bis zum
   Folienrand passt (die eingestellte Größe wirkt dann als Maximum).
+- **Schnipsel-Text (Effekte → ✂️ Schnipsel-Text)** - der Schnipseleditor als eigene
+  Elementart: jeder Buchstabe ein Zeitungsschnipsel mit eigenem Hintergrund, Farbe, Schrift
+  (Courier Prime, Impact, Montserrat, Oswald, Playfair Display, Special Elite), Drehung und
+  Versatz. Umbruch innerhalb der Elementbreite (Größen-Griffe), Ausrichtung horizontal und
+  vertikal, Größe, Laufweite, Wort- und Zeilenabstand, Rotationsvarianz, "Mischen",
+  Farb-Presets (Zeitung, S/W, Neon-Text, Neon-BG, Bunt, Mix), eigene 4-Farben-Palette und
+  "Markierte überschreiben". Einzelne Schnipsel lassen sich auf der Folie anklicken, mit
+  Shift/Strg mehrfach wählen, per Kasten (Mix/Rahmen) oder Doppelklick (ganzes Wort) auswählen
+  und frei verschieben; das ganze Element verschiebt man am Griff oben. Optional
+  "Strudel-Einflug": in der Präsentation fliegen die Schnipsel beim Folienstart herein.
+- **Dither (Effekte → ▦ Dither)** - 1-Bit/n-Stufen-Raster (SVG-Filter aus dem
+  Schnipseleditor) für das ausgewählte Element oder den Hintergrund der aktuellen Folie, mit
+  Rauschen, Farb-Stufen (2-8) und optional "Farben behalten".
 - **Schriften fest eingebacken** - beim Speichern im Infomaster und beim Herunterladen werden
   die verwendeten Google-Schriften (nur lateinische Zeichensätze) als data:-URLs direkt in die
   Datei eingebettet; die Präsentation zeigt sie dadurch auch ohne Internet (z.B. Pi im

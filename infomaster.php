@@ -1079,7 +1079,7 @@ def build_fallback_html(screen_id, screen_def):
     second_pane = f'<div class="pane">{pane_b_html}</div>' if split != "none" else ""
 
     return f"""<!DOCTYPE html>
-<html lang="de"><head><meta charset="UTF-8"><title>Offline-Fallback {screen_id}</title>
+<html lang="de" translate="no"><head><meta charset="UTF-8"><meta name="google" content="notranslate"><title>Offline-Fallback {screen_id}</title>
 <style>
 body, html {{ margin:0; padding:0; width:100%; height:100%; overflow:hidden; position:fixed; background:#000; }}
 #main-container {{ display:flex; overflow:hidden; position:absolute; }}
@@ -1095,14 +1095,8 @@ body.orient-90 #main-container, body.orient-270 #main-container {{
 }}
 body.orient-90 #main-container {{ transform:rotate(90deg); }}
 body.orient-270 #main-container {{ transform:rotate(270deg); }}
-.offline-badge {{
-    position:fixed; bottom:10px; right:10px; z-index:9999;
-    background:rgba(239,68,68,0.85); color:#fff; font-family:sans-serif;
-    font-size:11px; padding:4px 10px; border-radius:4px;
-}}
 </style></head>
 <body class="orient-{orient}">
-<div class="offline-badge">Offline-Fallback</div>
 <div id="main-container" class="{split_class}">
     <div class="pane">{pane_a_html}</div>
     {second_pane}
@@ -1477,6 +1471,9 @@ def apply_output_state(out, cfg, env, user, runtime_dir, active_processes, last_
                     # Anfrage, die nach einem harten Kill (z.B. terminate() beim Umschalten)
                     # sonst hinter --disable-infobars trotzdem beim naechsten Start aufpoppen kann.
                     f"--hide-crash-restore-bubble --disable-session-crashed-bubble "
+                    # Keine "Seite uebersetzen?"-Leiste/-Blase auf den Monitoren (die Seiten sind
+                    # zusaetzlich als notranslate markiert, siehe view.php / build_fallback_html).
+                    f"--disable-features=Translate,TranslateUI --disable-translate "
                     f"--remote-debugging-port={debug_port} --remote-debugging-address=127.0.0.1 "
                     # Bewusst "--kiosk URL" statt "--app=URL": bei --app leitet Chromium die
                     # Wayland-app_id aus der URL ab und ignoriert --class - fuer die labwc-
