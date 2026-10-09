@@ -174,6 +174,9 @@
     .el-subtab.active { background: rgba(99,102,241,0.18); color: #a5b4fc; border-color: rgba(99,102,241,0.3); font-weight: 600; }
     .el-subtab:not(.active):hover { background: rgba(255,255,255,0.05); color: #e2e8f0; }
     .el-subpanel { display: none; margin-bottom: 12px; }
+    .snip-row { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+    .snip-row .btn-sm { flex: 1; justify-content: center; font-size: 10px; padding: 5px 4px; }
+    .snip-row .btn-sm.on { background: rgba(99,102,241,0.25); border-color: rgba(99,102,241,0.45); color: #c7d2fe; }
     .el-subpanel.active { display: block; }
 
     /* Glass card template styles */
@@ -718,6 +721,17 @@
             </p>
           </div>
           </div><!-- /fx-sub-spotlight -->
+
+          <!-- Schnipsel-Text (aus dem Schnipseleditor) - wirkt auf das ausgewaehlte Schnipsel-Element -->
+          <details class="ctrl-section" id="acc-snippet" style="margin-top:12px;">
+            <summary style="cursor:pointer;"><span class="ctrl-section-title" style="margin:0;">✂️ Schnipsel-Text</span></summary>
+            <div id="snip-panel" style="padding-top:10px;"></div>
+          </details>
+          <!-- Dither (1-Bit/n-Stufen) fuer das ausgewaehlte Element oder den Folienhintergrund -->
+          <details class="ctrl-section" id="acc-dither">
+            <summary style="cursor:pointer;"><span class="ctrl-section-title" style="margin:0;">▦ Dither</span></summary>
+            <div id="dither-panel" style="padding-top:10px;"></div>
+          </details>
         </div>
 
         <!-- ===== TAB: FONTS ===== -->
@@ -828,7 +842,14 @@ const FONT_CATEGORY_LABELS = {
 const WEBSAFE_FONTS = ['Courier New','Arial Narrow','Century Gothic','Georgia','Times New Roman','Palatino','Arial','Helvetica','Verdana','Impact','Trebuchet MS'];
 // Schriften ohne normale (400) Stärke brauchen im Link die vorhandene Stärke, sonst antwortet
 // Google mit HTTP 400.
-const FONT_FAMILY_PARAM_OVERRIDES = { 'UnifrakturCook': 'UnifrakturCook:wght@700' };
+const FONT_FAMILY_PARAM_OVERRIDES = {
+  'UnifrakturCook': 'UnifrakturCook:wght@700',
+  // Schnipsel-Schriften (Schnipsel-Text) - normal UND fett laden
+  'Courier Prime': 'Courier+Prime:wght@400;700',
+  'Montserrat': 'Montserrat:wght@400;700',
+  'Oswald': 'Oswald:wght@400;700',
+  'Playfair Display': 'Playfair+Display:wght@400;700',
+};
 function googleFontFamilyParam(name) {
   return FONT_FAMILY_PARAM_OVERRIDES[name] || name.trim().replace(/\s+/g, '+');
 }
@@ -839,12 +860,14 @@ function isSpotlightTabOpen() {
 function selectedFontElement() {
   const slide = S.slides[S.activeSlideIndex];
   const el = slide?.elements.find(e => e.id === S.selectedElementId);
-  return el && (el.type === 'text' || el.type === 'clock' || el.type === 'date' || el.type === 'countdown') ? el : null;
+  return el && (el.type === 'text' || el.type === 'clock' || el.type === 'date' || el.type === 'countdown' || el.type === 'snippet') ? el : null;
 }
 function fontIsUsed(family) {
   const fam = String(family).replace(/["']/g,'').trim().toLowerCase();
-  return S.slides.some(sl => sl.elements.some(el => el.fontFamily &&
-    String(el.fontFamily).split(',')[0].replace(/["']/g,'').trim().toLowerCase() === fam));
+  const norm = f => String(f).split(',')[0].replace(/["']/g,'').trim().toLowerCase();
+  return S.slides.some(sl => sl.elements.some(el =>
+    (el.fontFamily && norm(el.fontFamily) === fam) ||
+    (el.type === 'snippet' && (el.chars || []).some(c => c.font && norm(c.font) === fam))));
 }
 // Nach dem Oeffnen einer gespeicherten Praesentation: verwendete Katalog-Schriften wieder
 // einbinden (die Datei enthaelt sie nur als fertiges CSS, nicht als Editor-Zustand).
@@ -1425,6 +1448,125 @@ function widgetFieldsHtml(type, data, fn) {
   }
   return '';
 }
+// ─── DITHER (1-Bit/n-Stufen-Raster, aus dem Schnipseleditor) ───
+// SVG-Filter: Graustufen (optional Farbe behalten) + Rauschen per hard-light, dann auf
+// wenige Stufen quantisiert. Ein Filter pro Einstellungs-Kombination, bei Bedarf in das
+// jeweilige Dokument eingefuegt (Editor UND Export - die Funktionen werden in den Export
+// kopiert und duerfen daher nichts ausserhalb von sich selbst benutzen).
+function ditherFilterId(cfg) {
+  const steps = Math.max(2, Math.min(8, parseInt(cfg.steps) || 2));
+  const noise = Math.round((parseFloat(cfg.noise) || 1.5) * 10);
+  return 'ec-dither-' + steps + '-' + noise + (cfg.color ? '-c' : '-g');
+}
+function ensureDitherFilter(cfg) {
+  const id = ditherFilterId(cfg);
+  if (document.getElementById(id)) return id;
+  let defs = document.getElementById('ec-dither-defs');
+  if (!defs) {
+    defs = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    defs.id = 'ec-dither-defs';
+    defs.setAttribute('width', '0'); defs.setAttribute('height', '0');
+    defs.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden;';
+    document.body.appendChild(defs);
+  }
+  const steps = Math.max(2, Math.min(8, parseInt(cfg.steps) || 2));
+  const noise = Math.max(0.1, Math.min(5, parseFloat(cfg.noise) || 1.5));
+  const table = Array.from({ length: steps }, (_, i) => (i / (steps - 1)).toFixed(3)).join(' ');
+  const gray = cfg.color ? '' : '<feColorMatrix type="matrix" values="0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0 0 0 1 0" in="SourceGraphic" result="base"/>';
+  const f = document.createElementNS('http://www.w3.org/2000/svg', 'filter');
+  f.id = id;
+  f.setAttribute('x', '-5%'); f.setAttribute('y', '-5%'); f.setAttribute('width', '110%'); f.setAttribute('height', '110%');
+  f.setAttribute('color-interpolation-filters', 'sRGB');
+  f.innerHTML = gray +
+    '<feTurbulence type="fractalNoise" baseFrequency="' + noise + '" numOctaves="2" result="noise"/>' +
+    '<feColorMatrix type="matrix" values="1 0 0 0 0  1 0 0 0 0  1 0 0 0 0  0 0 0 0.5 0" in="noise" result="coloredNoise"/>' +
+    '<feBlend mode="hard-light" in="' + (cfg.color ? 'SourceGraphic' : 'base') + '" in2="coloredNoise" result="blend"/>' +
+    '<feComponentTransfer in="blend"><feFuncR type="discrete" tableValues="' + table + '"/><feFuncG type="discrete" tableValues="' + table + '"/><feFuncB type="discrete" tableValues="' + table + '"/></feComponentTransfer>' +
+    '<feComposite in2="SourceGraphic" operator="in"/>';
+  defs.appendChild(f);
+  return id;
+}
+function ditherFilterCss(cfg) {
+  if (!cfg || !cfg.on) return '';
+  return 'url(#' + ensureDitherFilter(cfg) + ') contrast(150%) brightness(1.2)';
+}
+
+// ─── SCHNIPSEL-TEXT (Zeitungsschnipsel, aus dem Schnipseleditor) ───
+// Jeder Buchstabe ist ein eigener "Schnipsel" mit Hintergrund, Farbe, Schrift, Drehung und
+// Versatz (dx/dy). Umbruch innerhalb der Elementbreite: Woerter bleiben zusammen (nowrap),
+// Leerzeichen = Wortabstand, Zeilenumbruch = neue Zeile. Optional "Strudel-Einflug" in der
+// Praesentation (CSS-Animation je Schnipsel).
+function ensureSnipStyle() {
+  if (document.getElementById('ec-snip-style')) return;
+  const st = document.createElement('style');
+  st.id = 'ec-snip-style';
+  st.textContent =
+    '.ec-snip-box{display:flex;flex-wrap:wrap;width:100%;}' +
+    '.ec-snip-word{display:inline-flex;white-space:nowrap;}' +
+    '.ec-snip-ch{display:inline-block;padding:1px 3px;line-height:1;white-space:pre;box-shadow:1px 2px 4px rgba(0,0,0,0.5);' +
+      'transform:translate(var(--tx,0px),var(--ty,0px)) rotate(var(--tr,0deg));transform-origin:center center;}' +
+    '.ec-snip-ch.ec-snip-sel{box-shadow:0 0 0 3px #ff00aa,0 4px 15px rgba(255,0,170,0.6)!important;position:relative;z-index:5;}' +
+    '.ec-snip-swirl .ec-snip-ch{animation:ecSnipIn var(--dur,2.8s) cubic-bezier(.2,.75,.25,1) var(--delay,0s) both;}' +
+    '@keyframes ecSnipIn{from{transform:translate(calc(var(--tx,0px) + var(--fx,600px)),calc(var(--ty,0px) + var(--fy,-400px))) rotate(calc(var(--tr,0deg) + 720deg)) scale(0);opacity:0;}' +
+      '60%{opacity:1;}to{transform:translate(var(--tx,0px),var(--ty,0px)) rotate(var(--tr,0deg)) scale(1);opacity:1;}}';
+  document.head.appendChild(st);
+}
+function renderSnippetBox(el, isEditor) {
+  ensureSnipStyle();
+  const box = document.createElement('div');
+  box.className = 'ec-snip-box';
+  const ja = { left: 'flex-start', center: 'center', right: 'flex-end', justify: 'space-between' };
+  const va = { top: 'flex-start', center: 'center', bottom: 'flex-end' };
+  box.style.justifyContent = ja[el.align] || 'flex-start';
+  box.style.alignItems = va[el.valign] || 'center';
+  box.style.rowGap = (el.lineSpacing != null ? el.lineSpacing : 10) + 'px';
+  const scale = (el.scale || 100) / 100;
+  const ls = el.letterSpacing || 0;
+  const ws = el.wordSpacing != null ? el.wordSpacing : 20;
+  const swirl = !isEditor && el.swirl;
+  if (swirl) box.classList.add('ec-snip-swirl');
+  let word = null;
+  const chars = el.chars || [];
+  chars.forEach((c, i) => {
+    if (c.c === '\n') {
+      word = null;
+      const br = document.createElement('div');
+      br.style.cssText = 'flex-basis:100%;height:0;';
+      box.appendChild(br);
+      return;
+    }
+    if (c.c === ' ') {
+      word = null;
+      const sp = document.createElement('span');
+      sp.style.cssText = 'display:inline-block;width:' + ws + 'px;';
+      box.appendChild(sp);
+      return;
+    }
+    if (!word) { word = document.createElement('span'); word.className = 'ec-snip-word'; box.appendChild(word); }
+    const ch = document.createElement('span');
+    ch.className = 'ec-snip-ch';
+    ch.dataset.i = i;
+    ch.textContent = c.c;
+    ch.style.fontFamily = "'" + (c.font || 'Courier Prime') + "', sans-serif";
+    ch.style.fontWeight = c.weight || '400';
+    ch.style.fontSize = ((c.size || 28) * scale) + 'px';
+    ch.style.background = c.bg || '#fff';
+    ch.style.color = c.color || '#000';
+    ch.style.marginRight = ls + 'px';
+    ch.style.setProperty('--tx', ((c.dx || 0) * scale) + 'px');
+    ch.style.setProperty('--ty', ((c.dy || 0) * scale) + 'px');
+    ch.style.setProperty('--tr', (c.rot || 0) + 'deg');
+    if (swirl) {
+      const a = Math.random() * Math.PI * 2, r = 600 + Math.random() * 500;
+      ch.style.setProperty('--fx', Math.round(Math.cos(a) * r) + 'px');
+      ch.style.setProperty('--fy', Math.round(Math.sin(a) * r) + 'px');
+      ch.style.setProperty('--delay', (Math.random() * 1.5).toFixed(2) + 's');
+    }
+    word.appendChild(ch);
+  });
+  return box;
+}
+
 // ─── DREHUNG & UEBERLAGERUNG (pro Element, Editor + Vollbild + Export) ───
 // "Invertieren" und "Grain Extract" gibt es nicht als CSS-mix-blend-mode - sie werden aus
 // Filter + vorhandenem Modus zusammengesetzt:
@@ -1448,9 +1590,12 @@ function applyElFx(wrapper, el) {
   else if (el.blend === 'invert') { blend = 'difference'; filter = 'brightness(0) invert(1)'; }
   else if (el.blend === 'grain-extract') { blend = 'hard-light'; filter = 'invert(1)'; }
   wrapper.style.mixBlendMode = blend;
+  // Dither (el.dither, siehe ditherFilterCss()) wird vor dem Ueberlagerungs-Filter angewendet.
+  const dith = (el.dither && el.dither.on) ? ditherFilterCss(el.dither) : '';
+  const allFilters = [dith, filter].filter(Boolean).join(' ');
   Array.from(wrapper.children).forEach(c => {
     if (c.classList.contains('drag-handle') || c.classList.contains('rotate-handle') || c.classList.contains('resize-handle')) return;
-    c.style.filter = filter;
+    c.style.filter = allFilters;
   });
 }
 // Repraesentative Hintergrundfarbe einer Folie (fuer "◐ Kontrast": Schwarz/Weiss je nachdem,
@@ -1679,6 +1824,11 @@ const S = {
   // Noch nicht auf der Folie erzeugtes Widget, gerade im Elemente-Tab konfiguriert (siehe
   // App.startWidgetDraft()) - erst App.commitWidgetDraft() legt es tatsaechlich als Element an.
   widgetDraft: null,
+  // Schnipsel-Text: ausgewaehlte Schnipsel (Indizes in el.chars) des ausgewaehlten Elements,
+  // Auswahl-Werkzeug ('mix'|'single'|'word'|'marquee') und eigene Palette.
+  snipSel: new Set(),
+  snipTool: 'mix',
+  snipPalette: ['#ef4444','#eab308','#3b82f6','#ec4899'],
   activeTab: 'slides',
   addingWaypoint: false,
   installedFonts: [],
@@ -1808,6 +1958,33 @@ function buildCSSGradient(slide) {
 }
 
 // ─── APPLY BG TO STAGE ───
+// Dither des Folienhintergrunds (slide.bgDither): eigene Hintergrund-Ebene unter den
+// Elementen (der Filter darf nicht auf die ganze Buehne wirken, sonst wuerden auch alle
+// Elemente gedithert) - bzw. direkt auf dem Grainy-Canvas.
+function syncBgDither(stage, slide, grainyCanvas) {
+  const cfg = slide && slide.bgDither;
+  let layer = stage.querySelector(':scope > .ec-bg-dither');
+  if (!cfg || !cfg.on) {
+    if (layer) layer.remove();
+    if (grainyCanvas) grainyCanvas.style.filter = '';
+    return;
+  }
+  const css = ditherFilterCss(cfg);
+  if (grainyCanvas && slide.background.type === 'grainy') {
+    if (layer) layer.remove();
+    grainyCanvas.style.filter = css;
+    return;
+  }
+  if (!layer) {
+    layer = document.createElement('div');
+    layer.className = 'ec-bg-dither';
+    layer.style.cssText = 'position:absolute;inset:0;z-index:0;pointer-events:none;';
+    stage.prepend(layer);
+  }
+  layer.style.background = stage.style.background;
+  layer.style.filter = css;
+}
+
 function applyBgToStage(stage, slide, grainyCanvas) {
   const bg = slide.background;
   if (!bg) return;
@@ -1959,6 +2136,7 @@ function selectElAndShowTab(el, wrapper) {
   S.widgetDraft = null; // ein gerade konfigurierter, noch nicht erzeugter Entwurf wird verworfen
   App.setTab('elements');
   App.setElementsSubTab(elSubTabFor(el));
+  if (el.type==='snippet') App.openEffectsAccordion('acc-snippet');
   App.renderInspector();
   App.renderLayersList();
 }
@@ -2050,6 +2228,13 @@ function renderSlideContent(slide, container, isEditor, stageEl) {
     } else if (el.type==='template') {
       wrapper.innerHTML += renderTemplateElement(el, isEditor);
       if (isEditor) attachTemplateEditing(wrapper, slide, el);
+    } else if (el.type==='snippet') {
+      const box=renderSnippetBox(el, isEditor);
+      wrapper.appendChild(box);
+      if (isEditor) {
+        if (S.selectedElementId===el.id) markSnipSelection(box);
+        attachSnippetEditing(box, el);
+      }
     }
 
     // Drag to reposition in editor
@@ -2199,7 +2384,7 @@ function makeResizable(handle, wrapper, data, dir) {
     Object.assign(_elResize, {
       active:true, wrapper, data, dir, stageW:stageRect.width,
       startX:e.clientX, startY:e.clientY,
-      startW:data.width||80, startLeft:data.x||0, startFont:data.fontSize||28,
+      startW:data.width||80, startLeft:data.x||0, startFont:data.fontSize||28, startScale:data.scale||100,
       rot:(parseFloat(data.rotation)||0)*Math.PI/180,
     });
     document.body.style.userSelect='none';
@@ -2229,6 +2414,9 @@ window.addEventListener('mousemove', e => {
   r.wrapper.style.width=d.width+'%';
   r.wrapper.style.left=(d.x||0)+'%';
   const scalesFont = r.dir.length===2 && (d.type==='text'||d.type==='clock'||d.type==='date'||d.type==='countdown');
+  if (r.dir.length===2 && d.type==='snippet') {
+    d.scale=Math.max(20, Math.round(r.startScale*d.width/r.startW));
+  }
   if (scalesFont) {
     d.fontSize=Math.max(6, Math.round(r.startFont*d.width/r.startW));
     const txt=r.wrapper.querySelector('.inline-txt, .widget-el');
@@ -2277,6 +2465,147 @@ window.addEventListener('mouseup', () => {
   _elRot.active=false;
   _elRot.endedAt=Date.now(); // der gleich folgende "click" auf die Buehne soll nicht abwaehlen
   document.body.style.cursor='';
+});
+
+// ─── SCHNIPSEL-TEXT: Stile + Bearbeitung im Editor ───
+const SNIP_FONTS = ['Courier Prime', 'Impact', 'Montserrat', 'Oswald', 'Playfair Display', 'Special Elite'];
+const SNIP_PRESETS = {
+  newspaper: { bgs: ['#ffffff','#f5f5f5','#eef2f3','#fdfbf7','#e8e8e8','#fdf6e3','#f5eccb','#d4d4d4','#e0e0e0'], text: '#000' },
+  bw: { bgs: ['#000000','#ffffff'], text: 'auto' },
+  neon: { bgs: ['#111113'], text: ['#ff00ff','#00ffff','#00ff00','#ffff00','#ff00aa'] },
+  neonBg: { bgs: ['#39ff14','#ff00ff','#00ffff','#ffff00','#ff3300'], text: '#000000' },
+  bunt: { bgs: ['#ef4444','#f97316','#eab308','#22c55e','#3b82f6','#a855f7','#ec4899','#14b8a6'], text: '#fff' },
+  gradients: [
+    { bg: 'linear-gradient(45deg, #ff9a9e 0%, #fecfef 100%)', text: '#000' },
+    { bg: 'linear-gradient(120deg, #a1c4fd 0%, #c2e9fb 100%)', text: '#000' },
+    { bg: 'linear-gradient(120deg, #d4fc79 0%, #96e6a1 100%)', text: '#000' },
+    { bg: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', text: '#fff' }
+  ]
+};
+const SNIP_PRESET_LABELS = { newspaper:'Zeitung', bw:'S/W', neon:'Neon-Text', neonBg:'Neon-BG', bunt:'Bunt', mix:'Mix' };
+const _rnd = (a, b) => Math.random() * (b - a) + a;
+const _pick = arr => arr[Math.floor(Math.random() * arr.length)];
+function snipColors(preset) {
+  const P = SNIP_PRESETS[preset] || SNIP_PRESETS.newspaper;
+  let bg, color;
+  if (preset === 'mix') {
+    const r = Math.random();
+    if (r < 0.6) { bg = _pick(SNIP_PRESETS.newspaper.bgs); color = SNIP_PRESETS.newspaper.text; }
+    else if (r < 0.8) { bg = _pick(SNIP_PRESETS.bunt.bgs); color = SNIP_PRESETS.bunt.text; }
+    else { const g = _pick(SNIP_PRESETS.gradients); bg = g.bg; color = g.text; }
+  } else if (preset === 'bw') {
+    bg = _pick(P.bgs); color = bg === '#000000' ? '#ffffff' : '#000000';
+  } else {
+    bg = _pick(P.bgs); color = Array.isArray(P.text) ? _pick(P.text) : P.text;
+    if (preset === 'bunt' && (bg === '#eab308' || bg === '#22c55e')) color = '#000';
+  }
+  return { bg, color };
+}
+function newSnipChar(c, rotVar) {
+  const col = snipColors('mix');
+  return { c, bg: col.bg, color: col.color, font: _pick(SNIP_FONTS), weight: Math.random() > 0.5 ? '700' : '400',
+           size: Math.round(_rnd(24, 32)), rot: Math.round(_rnd(-rotVar, rotVar) * 10) / 10, dx: 0, dy: 0 };
+}
+function snipText(el) { return (el.chars || []).map(c => c.c).join(''); }
+function snipTargets(el) {
+  // Auswahl - oder alle Buchstaben, wenn nichts ausgewaehlt ist (wie im Schnipseleditor)
+  const idx = (el.chars || []).map((c, i) => i).filter(i => el.chars[i].c !== ' ' && el.chars[i].c !== '\n');
+  if (S.selectedElementId === el.id && S.snipSel.size) return idx.filter(i => S.snipSel.has(i));
+  return idx;
+}
+function ensureSnipFonts() {
+  SNIP_FONTS.forEach(name => {
+    if (WEBSAFE_FONTS.includes(name) || S.installedFonts.some(f => f.family === name)) return;
+    S.installedFonts.push({ name, family: name, url: googleFontUrl(name) });
+  });
+  syncGoogleFontImports();
+}
+function markSnipSelection(box) {
+  box.querySelectorAll('.ec-snip-ch').forEach(ch => ch.classList.toggle('ec-snip-sel', S.snipSel.has(+ch.dataset.i)));
+}
+function selectSnipWord(el, i) {
+  const isSep = k => !el.chars[k] || el.chars[k].c === ' ' || el.chars[k].c === '\n';
+  if (isSep(i)) return;
+  let l = i; while (l >= 0 && !isSep(l)) { S.snipSel.add(l); l--; }
+  let r = i + 1; while (r < el.chars.length && !isSep(r)) { S.snipSel.add(r); r++; }
+}
+const _snipDrag = { active:false, moved:false, el:null, box:null, startX:0, startY:0, init:null, toggleOff:null };
+const _snipMarq = { active:false, el:null, box:null, x0:0, y0:0, div:null, additive:false };
+// Klick/Ziehen auf einzelne Schnipsel - nur wenn das Element bereits ausgewaehlt ist (der
+// erste Klick waehlt wie ueblich das ganze Element aus). Zum Verschieben des ganzen Elements
+// dann den Griff oben am Rahmen benutzen.
+function attachSnippetEditing(box, el) {
+  box.addEventListener('mousedown', e => {
+    if (S.selectedElementId !== el.id || e.button !== 0) return;
+    const chEl = e.target.closest('.ec-snip-ch');
+    const multi = e.shiftKey || e.ctrlKey || e.metaKey;
+    if (chEl && S.snipTool !== 'marquee') {
+      e.stopPropagation(); e.preventDefault();
+      const i = +chEl.dataset.i;
+      _snipDrag.toggleOff = null;
+      if (S.snipTool === 'word') { if (!multi) S.snipSel.clear(); selectSnipWord(el, i); }
+      else if (!S.snipSel.has(i)) { if (!multi) S.snipSel.clear(); S.snipSel.add(i); }
+      else if (e.ctrlKey || e.metaKey) _snipDrag.toggleOff = i;
+      markSnipSelection(box);
+      Object.assign(_snipDrag, { active:true, moved:false, el, box, startX:e.clientX, startY:e.clientY,
+        init: new Map([...S.snipSel].map(k => [k, { dx: el.chars[k].dx || 0, dy: el.chars[k].dy || 0 }])) });
+      return;
+    }
+    if (S.snipTool === 'single') return; // leere Flaeche: normales Verschieben des Elements
+    // Rahmen-Auswahl aufziehen (Mix- und Rahmen-Werkzeug)
+    e.stopPropagation(); e.preventDefault();
+    if (!multi) { S.snipSel.clear(); markSnipSelection(box); }
+    const div = document.createElement('div');
+    div.style.cssText = 'position:fixed;border:1px dashed #6366f1;background:rgba(99,102,241,0.15);z-index:9999;pointer-events:none;left:'+e.clientX+'px;top:'+e.clientY+'px;width:0;height:0;';
+    document.body.appendChild(div);
+    Object.assign(_snipMarq, { active:true, el, box, x0:e.clientX, y0:e.clientY, div });
+  });
+  box.addEventListener('dblclick', e => {
+    if (S.selectedElementId !== el.id || S.snipTool === 'marquee') return;
+    const chEl = e.target.closest('.ec-snip-ch');
+    if (!chEl) return;
+    e.stopPropagation();
+    selectSnipWord(el, +chEl.dataset.i);
+    markSnipSelection(box);
+    App.renderSnippetPanel();
+  });
+}
+window.addEventListener('mousemove', e => {
+  if (_snipDrag.active) {
+    const dxs = e.clientX - _snipDrag.startX, dys = e.clientY - _snipDrag.startY;
+    if (!_snipDrag.moved && Math.hypot(dxs, dys) < 3) return;
+    _snipDrag.moved = true;
+    const el = _snipDrag.el, sc = (el.scale || 100) / 100;
+    _snipDrag.init.forEach((v, k) => {
+      const c = el.chars[k]; if (!c) return;
+      c.dx = Math.round(v.dx + dxs / sc); c.dy = Math.round(v.dy + dys / sc);
+      const chEl = _snipDrag.box.querySelector('.ec-snip-ch[data-i="' + k + '"]');
+      if (chEl) { chEl.style.setProperty('--tx', (c.dx * sc) + 'px'); chEl.style.setProperty('--ty', (c.dy * sc) + 'px'); }
+    });
+  } else if (_snipMarq.active) {
+    const x = Math.min(_snipMarq.x0, e.clientX), y = Math.min(_snipMarq.y0, e.clientY);
+    Object.assign(_snipMarq.div.style, { left: x + 'px', top: y + 'px', width: Math.abs(e.clientX - _snipMarq.x0) + 'px', height: Math.abs(e.clientY - _snipMarq.y0) + 'px' });
+  }
+});
+window.addEventListener('mouseup', () => {
+  if (_snipDrag.active) {
+    _snipDrag.active = false;
+    if (!_snipDrag.moved && _snipDrag.toggleOff != null) { S.snipSel.delete(_snipDrag.toggleOff); markSnipSelection(_snipDrag.box); }
+    S._suppressStageClickUntil = Date.now() + 300;
+    App.renderSnippetPanel();
+  }
+  if (_snipMarq.active) {
+    _snipMarq.active = false;
+    const m = _snipMarq.div.getBoundingClientRect();
+    _snipMarq.div.remove();
+    _snipMarq.box.querySelectorAll('.ec-snip-ch').forEach(ch => {
+      const r = ch.getBoundingClientRect();
+      if (m.left < r.right && m.right > r.left && m.top < r.bottom && m.bottom > r.top) S.snipSel.add(+ch.dataset.i);
+    });
+    markSnipSelection(_snipMarq.box);
+    S._suppressStageClickUntil = Date.now() + 300;
+    App.renderSnippetPanel();
+  }
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -2547,7 +2876,7 @@ function startEditorCanvasLoop() {
       renderWaypointMarkers();
       S.addingWaypoint=false;
       document.getElementById('wp-click-hint').style.display='none';
-    } else if (!evt.target.closest('.slide-el') && S.isEditor && Date.now()-_elRot.endedAt > 300 && Date.now()-_elResize.endedAt > 300) {
+    } else if (!evt.target.closest('.slide-el') && S.isEditor && Date.now()-_elRot.endedAt > 300 && Date.now()-_elResize.endedAt > 300 && Date.now() > (S._suppressStageClickUntil||0)) {
       S.selectedElementId=null;
       App.renderInspector();
       const els=document.querySelectorAll('.slide-el');
@@ -3127,6 +3456,8 @@ const App = {
       p.classList.toggle('active', p.id==='tab-'+name);
     });
     if (name==='effects') {
+      this.renderSnippetPanel();
+      this.renderDitherPanel();
       const wpMode = S.beam.pattern==='waypoints';
       document.getElementById('waypoints-panel').style.display=wpMode?'block':'none';
     }
@@ -3257,6 +3588,7 @@ const App = {
     }
 
     if (type!=='grainy') applyBgToStage(stage, slide, null);
+    syncBgDither(stage, slide, gc);
 
     // Global gradient - nur bei echter Bedienung, nie beim blossen Neuzeichnen
     if (fromControls && document.getElementById('check-global-gradient').checked) {
@@ -3736,6 +4068,7 @@ const App = {
       else if (el.type==='date') { icon='📅'; label='Datumsanzeige'; }
       else if (el.type==='countdown') { icon='⏳'; label='Countdown'; }
       else if (el.type==='template') { icon='◧'; label='Vorlage: '+el.template; }
+      else if (el.type==='snippet') { icon='✂️'; label='Schnipsel: '+(snipText(el).replace(/\s+/g,' ').trim().slice(0,30)||'(leer)'); }
       const item=document.createElement('div');
       item.className='layer-item'+(S.selectedElementId===el.id?' selected-layer':'');
       item.draggable=true;
@@ -3750,6 +4083,7 @@ const App = {
         S.widgetDraft=null;
         App.setTab('elements');
         App.setElementsSubTab(elSubTabFor(el));
+        if (el.type==='snippet') App.openEffectsAccordion('acc-snippet');
         this.render();
         this.renderInspector();
       });
@@ -3819,6 +4153,184 @@ const App = {
     this.render();
   },
 
+  openEffectsAccordion(id) {
+    this.setTab('effects');
+    const d=document.getElementById(id);
+    if (d) { d.open=true; d.scrollIntoView({block:'nearest'}); }
+  },
+
+  // ─── SCHNIPSEL-TEXT ───
+  _snipEl() {
+    const slide=S.slides[S.activeSlideIndex];
+    const el=slide?.elements.find(e=>e.id===S.selectedElementId);
+    return el && el.type==='snippet' ? el : null;
+  },
+  addSnippetElement(text) {
+    const slide=S.slides[S.activeSlideIndex];
+    const t=(text||'').trim() ? text : 'ZEITUNGS\nSCHNIPSEL';
+    const rotVar=10;
+    const el={ id:'el-'+Date.now(), type:'snippet', x:15, y:30, width:70, chars:[...t].map(c=>newSnipChar(c, rotVar)),
+      letterSpacing:0, wordSpacing:20, lineSpacing:10, rotVar, align:'center', valign:'center', scale:100, swirl:false };
+    slide.elements.push(el);
+    ensureSnipFonts();
+    S.selectedElementId=el.id; S.snipSel=new Set(); S.widgetDraft=null;
+    this.render(); this.renderInspector();
+  },
+  snipSetText(text) {
+    const el=this._snipEl(); if (!el) return;
+    // Wie im Schnipseleditor: gleiche Buchstaben an gleicher Stelle behalten ihren Stil
+    const old=el.chars||[];
+    el.chars=[...text].map((c,i)=> (old[i] && old[i].c===c) ? old[i] : newSnipChar(c, el.rotVar||10));
+    S.snipSel=new Set([...S.snipSel].filter(i=>i<el.chars.length));
+    this.render(); this.renderLayersList();
+  },
+  snipSet(key, val, rerenderPanel=false) {
+    const el=this._snipEl(); if (!el) return;
+    el[key]=val;
+    this.render();
+    if (rerenderPanel) this.renderSnippetPanel();
+  },
+  snipTool(name) { S.snipTool=name; this.renderSnippetPanel(); },
+  snipShuffle() {
+    const el=this._snipEl(); if (!el) return;
+    snipTargets(el).forEach(i=>{ const n=newSnipChar(el.chars[i].c, el.rotVar||10); n.dx=el.chars[i].dx; n.dy=el.chars[i].dy; el.chars[i]=n; });
+    ensureSnipFonts(); this.render();
+  },
+  snipPreset(name) {
+    const el=this._snipEl(); if (!el) return;
+    snipTargets(el).forEach(i=>{ const c=snipColors(name); el.chars[i].bg=c.bg; el.chars[i].color=c.color; });
+    this.render();
+  },
+  snipApplyPalette() {
+    const el=this._snipEl(); if (!el) return;
+    snipTargets(el).forEach(i=>{
+      const bg=_pick(S.snipPalette); const {r,g,b}=hexToRgb(bg);
+      el.chars[i].bg=bg; el.chars[i].color=((r*299+g*587+b*114)/1000)>=128 ? '#000000' : '#ffffff';
+    });
+    this.render();
+  },
+  snipOverride(key, val) {
+    const el=this._snipEl(); if (!el || !S.snipSel.size) return;
+    S.snipSel.forEach(i=>{ if (el.chars[i]) el.chars[i][key]=val; });
+    this.render();
+  },
+  snipSelectAll(on) {
+    const el=this._snipEl(); if (!el) return;
+    S.snipSel = on ? new Set(snipTargets({...el, id:null})) : new Set();
+    this.render(); this.renderSnippetPanel();
+  },
+  snipResetPositions() {
+    const el=this._snipEl(); if (!el) return;
+    snipTargets(el).forEach(i=>{ el.chars[i].dx=0; el.chars[i].dy=0; });
+    this.render();
+  },
+  renderSnippetPanel() {
+    const panel=document.getElementById('snip-panel'); if (!panel) return;
+    const el=this._snipEl();
+    if (!el) {
+      panel.innerHTML=`
+        <p style="font-size:10px;color:rgba(148,163,184,0.6);margin:0 0 6px;">Text aus einzelnen Zeitungsschnipseln - jeder Buchstabe mit eigener Farbe, Schrift und Drehung. Ein Schnipsel-Element auf der Folie auswählen, um es hier zu bearbeiten.</p>
+        <textarea id="snip-new-text" style="height:54px;resize:vertical;font-size:11px;">ZEITUNGS\nSCHNIPSEL</textarea>
+        <button onclick="App.addSnippetElement(document.getElementById('snip-new-text').value)" class="btn-sm accent" style="width:100%;justify-content:center;margin-top:6px;">✂️ Als Schnipsel-Text einfügen</button>`;
+      return;
+    }
+    const on=(cond)=>cond?' on':'';
+    const lbl=(t,id,v,u)=>`<label class="ctrl-label" style="margin-top:8px;">${t}: <span id="${id}">${v}</span>${u}</label>`;
+    const slider=(key,min,max,step,u,valId)=>`<input type="range" min="${min}" max="${max}" step="${step}" value="${el[key]}" oninput="document.getElementById('${valId}').textContent=this.value; App.snipSet('${key}', parseFloat(this.value))">`;
+    const n=S.snipSel.size;
+    panel.innerHTML=`
+      <label class="ctrl-label">Text</label>
+      <textarea oninput="App.snipSetText(this.value)" style="height:54px;resize:vertical;font-size:11px;">${escapeHtmlEc(snipText(el))}</textarea>
+      <div class="snip-row">
+        ${[['mix','Mix','Klick = einzeln, Kasten aufziehen = mehrere, Doppelklick = Wort'],['single','Einzeln','Nur einzelne Schnipsel'],['word','Wort','Klick wählt das ganze Wort'],['marquee','Rahmen','Immer Kasten aufziehen']].map(([k,t,h])=>`<button class="btn-sm${on(S.snipTool===k)}" title="${h}" onclick="App.snipTool('${k}')">${t}</button>`).join('')}
+      </div>
+      <div class="snip-row">
+        <button class="btn-sm" onclick="App.snipShuffle()" title="Schrift, Farbe und Drehung neu mischen (Auswahl oder alle)">🔀 Mischen</button>
+        <button class="btn-sm" onclick="App.snipSelectAll(true)" title="Alle Schnipsel markieren">☑ Alle</button>
+        <button class="btn-sm" onclick="App.snipSelectAll(false)" title="Auswahl aufheben">✕ Keine</button>
+        <button class="btn-sm" onclick="App.snipResetPositions()" title="Verschobene Schnipsel zurück an ihren Platz (Auswahl oder alle)">↺ Plätze</button>
+      </div>
+      <p style="font-size:10px;color:rgba(148,163,184,0.6);margin:6px 0 0;">${n?n+' Schnipsel markiert - ziehen verschiebt sie, Shift/Strg-Klick erweitert die Auswahl.':'Auf der Folie Schnipsel anklicken oder einen Kasten aufziehen; ohne Auswahl wirken die Knöpfe auf alle. Das ganze Element am Griff oben verschieben.'}</p>
+
+      <div class="ctrl-section-title" style="margin:12px 0 4px;">Layout & Umbruch</div>
+      <div class="snip-row">
+        ${[['left','◀'],['center','⬛'],['right','▶'],['justify','≡']].map(([k,t])=>`<button class="btn-sm${on(el.align===k)}" onclick="App.snipSet('align','${k}',true)">${t}</button>`).join('')}
+        ${[['top','⤒'],['center','↕'],['bottom','⤓']].map(([k,t])=>`<button class="btn-sm${on(el.valign===k)}" title="Vertikal in der Zeile" onclick="App.snipSet('valign','${k}',true)">${t}</button>`).join('')}
+      </div>
+      ${lbl('Größe','snip-v-scale',el.scale,' %')}${slider('scale',40,300,5,'%','snip-v-scale')}
+      <p style="font-size:10px;color:rgba(148,163,184,0.55);margin:2px 0 0;">Umbruch-Breite = Breite des Elements (Griffe am Rahmen).</p>
+
+      <div class="ctrl-section-title" style="margin:12px 0 4px;">Abstände & Varianz</div>
+      ${lbl('Laufweite','snip-v-ls',el.letterSpacing,' px')}${slider('letterSpacing',-15,30,1,'px','snip-v-ls')}
+      ${lbl('Wortabstand','snip-v-ws',el.wordSpacing,' px')}${slider('wordSpacing',5,80,1,'px','snip-v-ws')}
+      ${lbl('Zeilenabstand','snip-v-lh',el.lineSpacing,' px')}${slider('lineSpacing',0,100,1,'px','snip-v-lh')}
+      <label class="ctrl-label" style="margin-top:8px;">Rotationsvarianz (für Mischen): <span id="snip-v-rv">${el.rotVar}</span>°</label>
+      <input type="range" min="0" max="45" step="1" value="${el.rotVar}" oninput="document.getElementById('snip-v-rv').textContent=this.value; App._snipEl().rotVar=parseInt(this.value)">
+
+      <div class="ctrl-section-title" style="margin:12px 0 4px;">Farb-Presets</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;">
+        ${Object.entries(SNIP_PRESET_LABELS).map(([k,t])=>`<button class="btn-sm" style="justify-content:center;font-size:10px;" onclick="App.snipPreset('${k}')">${t}</button>`).join('')}
+      </div>
+      <label class="ctrl-label" style="margin-top:8px;">Eigene Palette (Hintergründe)</label>
+      <div style="display:flex;gap:4px;align-items:center;">
+        ${S.snipPalette.map((c,i)=>`<input type="color" value="${c}" oninput="App.S.snipPalette[${i}]=this.value" style="width:30px;height:26px;padding:1px;">`).join('')}
+        <button class="btn-sm" style="flex:1;justify-content:center;font-size:10px;" onclick="App.snipApplyPalette()">Anwenden</button>
+      </div>
+      <label class="ctrl-label" style="margin-top:8px;">Markierte überschreiben</label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;${n?'':'opacity:0.4;pointer-events:none;'}">
+        <label style="font-size:10px;color:#94a3b8;">Hintergrund<input type="color" value="#ffffff" oninput="App.snipOverride('bg',this.value)" style="height:26px;"></label>
+        <label style="font-size:10px;color:#94a3b8;">Textfarbe<input type="color" value="#000000" oninput="App.snipOverride('color',this.value)" style="height:26px;"></label>
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;">
+        <label class="ctrl-label" style="margin:0;" title="In der Präsentation fliegen die Schnipsel beim Folienstart im Strudel herein">🌀 Strudel-Einflug in der Präsentation</label>
+        <input type="checkbox" ${el.swirl?'checked':''} onchange="App.snipSet('swirl', this.checked)" style="accent-color:#6366f1;width:15px;height:15px;">
+      </div>`;
+  },
+
+  // ─── DITHER ───
+  setDither(target, key, val, rerenderPanel=false) {
+    const slide=S.slides[S.activeSlideIndex]; if (!slide) return;
+    let obj;
+    if (target==='bg') { slide.bgDither=slide.bgDither||{on:false,noise:1.5,steps:2,color:false}; obj=slide.bgDither; }
+    else {
+      const el=slide.elements.find(e=>e.id===S.selectedElementId); if (!el) return;
+      el.dither=el.dither||{on:false,noise:1.5,steps:2,color:false}; obj=el.dither;
+    }
+    obj[key]=val;
+    if (target==='bg') this.applyBackground(false); else this.render();
+    if (rerenderPanel) this.renderDitherPanel();
+  },
+  renderDitherPanel() {
+    const panel=document.getElementById('dither-panel'); if (!panel) return;
+    const slide=S.slides[S.activeSlideIndex];
+    const el=slide?.elements.find(e=>e.id===S.selectedElementId);
+    const block=(title,target,cfg,disabled)=>{
+      cfg=cfg||{on:false,noise:1.5,steps:2,color:false};
+      const id=target+'-dith';
+      return `
+      <div style="${disabled?'opacity:0.45;pointer-events:none;':''}margin-bottom:10px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <span class="ctrl-label" style="margin:0;">${title}</span>
+          <input type="checkbox" ${cfg.on?'checked':''} onchange="App.setDither('${target}','on',this.checked,true)" style="accent-color:#6366f1;width:15px;height:15px;">
+        </div>
+        <div style="${cfg.on?'':'display:none;'}">
+          <label class="ctrl-label" style="margin-top:6px;">Rauschen: <span id="${id}-n">${cfg.noise}</span></label>
+          <input type="range" min="0.1" max="5" step="0.1" value="${cfg.noise}" oninput="document.getElementById('${id}-n').textContent=this.value; App.setDither('${target}','noise',parseFloat(this.value))">
+          <label class="ctrl-label" style="margin-top:6px;">Farb-Stufen: <span id="${id}-s">${cfg.steps}</span></label>
+          <input type="range" min="2" max="8" step="1" value="${cfg.steps}" oninput="document.getElementById('${id}-s').textContent=this.value; App.setDither('${target}','steps',parseInt(this.value))">
+          <label style="display:flex;align-items:center;gap:6px;font-size:10px;color:#94a3b8;margin-top:6px;cursor:pointer;">
+            <input type="checkbox" ${cfg.color?'checked':''} onchange="App.setDither('${target}','color',this.checked)" style="accent-color:#6366f1;width:13px;height:13px;"> Farben behalten (statt Graustufen)
+          </label>
+        </div>
+      </div>`;
+    };
+    panel.innerHTML =
+      block(el ? 'Ausgewähltes Element' : 'Ausgewähltes Element (keins ausgewählt)', 'el', el && el.dither, !el) +
+      block('Hintergrund dieser Folie', 'bg', slide && slide.bgDither, !slide) +
+      `<p style="font-size:10px;color:rgba(148,163,184,0.55);margin:0;">1-Bit-Raster wie auf alten Druckern/Monitoren - wirkt im Editor, in der Präsentation und im Export.</p>`;
+  },
+
   renderInspector() {
     const panel=document.getElementById('element-inspector');
     const widgetPanel=document.getElementById('widget-inspector');
@@ -3826,6 +4338,10 @@ const App = {
     const el=slide?.elements.find(e=>e.id===S.selectedElementId);
     const WIDGET_TYPES=['qr','clock','date','countdown'];
     const isWidget = el && WIDGET_TYPES.includes(el.type);
+    // Schnipsel-Auswahl gilt nur fuer das Element, in dem sie entstanden ist
+    if (S._snipSelFor !== S.selectedElementId) { S.snipSel=new Set(); S._snipSelFor=S.selectedElementId; }
+    this.renderSnippetPanel();
+    this.renderDitherPanel();
 
     // Widget-Bereich (im Elemente-Tab): entweder ein bestehendes, ausgewaehltes Widget
     // bearbeiten, oder - falls gerade eines konfiguriert wird (S.widgetDraft) - das Entwurfsformular
@@ -3954,7 +4470,18 @@ const App = {
           </button>
         </div>`;
     }
-    if (el.type==='text' || el.type==='image' || el.type==='template') panel.insertAdjacentHTML('beforeend', fxControlsHtml(el));
+    if (el.type==='snippet') {
+      panel.innerHTML=`
+        <div class="ctrl-section">
+          <div class="ctrl-section-title">Schnipsel-Text</div>
+          <p style="font-size:10px;color:rgba(148,163,184,0.6);margin:0 0 8px;">Text, Schnipsel-Farben, Abstände und Strudel-Einflug: unter <b>Effekte → ✂️ Schnipsel-Text</b>.</p>
+          <button onclick="App.openEffectsAccordion('acc-snippet')" class="btn-sm accent" style="width:100%;justify-content:center;">✂️ Schnipsel bearbeiten</button>
+          <button onclick="App.deleteSelectedEl()" class="btn-sm danger" style="width:100%;justify-content:center;margin-top:8px;">
+            <i data-lucide="trash-2" style="width:11px;height:11px;"></i> Element löschen
+          </button>
+        </div>`;
+    }
+    if (el.type==='text' || el.type==='image' || el.type==='template' || el.type==='snippet') panel.insertAdjacentHTML('beforeend', fxControlsHtml(el));
     lucide.createIcons();
   },
 
@@ -4022,7 +4549,11 @@ const App = {
       this.renderInstalledFonts();
     }
     const el=selectedFontElement();
-    if (el) {
+    if (el && el.type==='snippet') {
+      // Schnipsel: markierte Schnipsel (oder alle) bekommen die Schrift
+      snipTargets(el).forEach(i=>{ el.chars[i].font=f.family; });
+      this.render();
+    } else if (el) {
       el.fontFamily = f.family + ',sans-serif';
       this.render();
     }
@@ -4156,6 +4687,7 @@ const App = {
     } else {
       applyBgToStage(stageEl, slide, null);
     }
+    syncBgDither(stageEl, slide, gc2);
 
     container.style.cssText='position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:5%;'; // ohne z-index, siehe #slide-content
     if (useTransition) {
@@ -4316,6 +4848,11 @@ function fitTextToBox(div,wrapper,stageEl,base){
   const maxH=Math.max(20,sr.bottom-wr.top-4);let g=0;
   while(size>floor&&g<80&&(div.scrollWidth>wrapper.clientWidth+1||div.scrollHeight>maxH)){size--;div.style.fontSize=size+'px';g++;}
 }
+${ditherFilterId.toString()}
+${ensureDitherFilter.toString()}
+${ditherFilterCss.toString()}
+${ensureSnipStyle.toString()}
+${renderSnippetBox.toString()}
 ${applyElFx.toString()}
 function renderSlideEls(cont, slide, stageEl){
   cont.innerHTML='';
@@ -4328,6 +4865,7 @@ function renderSlideEls(cont, slide, stageEl){
     else if(el.type==='qr'){const qrBox=document.createElement('div');qrBox.style.width='100%';qrBox.style.aspectRatio='1/1';const qrCanvas=document.createElement('canvas');qrCanvas.style.width='100%';qrCanvas.style.height='100%';qrCanvas.style.display='block';qrCanvas.style.borderRadius='4px';qrBox.appendChild(qrCanvas);w.appendChild(qrBox);renderQrToCanvas(qrCanvas,el.content,el);}
     else if(el.type==='clock'||el.type==='date'||el.type==='countdown'){const d=document.createElement('div');d.className='widget-el';d.setAttribute('data-widget-id',el.id);d.style.fontFamily=el.fontFamily||'Inter, sans-serif';d.style.fontSize=(el.fontSize||40)+'px';d.style.color=el.color||'#ffffff';d.style.textAlign=el.textAlign||'center';d.style.fontWeight=el.fontWeight||'700';d.style.lineHeight='1.3';d.style.whiteSpace='pre-line';d.style.fontStyle=el.fontStyle||'normal';d.style.letterSpacing=(el.letterSpacing||0)+'em';d.textContent=formatWidgetText(el);w.appendChild(d);}
     else if(el.type==='template'){w.innerHTML=renderTmpl(el);}
+    else if(el.type==='snippet'){w.appendChild(renderSnippetBox(el,false));}
     applyElFx(w,el);
     cont.appendChild(w);
   });
@@ -4368,6 +4906,8 @@ function showSlide(i, useTransition){
     else if(slide.background.type==='image'&&slide.background.image) bg.style.background=\`url(\${slide.background.image}) center/cover no-repeat\`;
     else bg.style.background=slide.background.solidColor||'#090d16';
   }
+  const dith=(slide.bgDither&&slide.bgDither.on)?ditherFilterCss(slide.bgDither):'';
+  bg.style.filter=dith; gc.style.filter=dith;
   if (useTransition) transitionEls(cont, slide, stageEl); else renderSlideEls(cont, slide, stageEl);
   document.title=\`Folie \${idx+1}/\${SLIDES.length} — EyeCandy\`;
 }
