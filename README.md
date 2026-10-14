@@ -115,6 +115,15 @@ großer Vorschau (Bild, PDF oder Video), Blättern per ‹ › bzw. Pfeiltasten 
 Nach jeder Aktion öffnet sich das Modal automatisch mit der nächsten Datei desselben Ordners,
 so lässt sich ein Ordner zügig durchsehen; aufgeklappte Ordner bleiben dabei aufgeklappt.
 
+## Aufwachen mit Neustart
+
+Manche Pis/Monitore wachen nach der Standby-Phase (Zeitplan bzw. Ferien) nicht zuverlässig auf -
+die Bildschirme bleiben schwarz. Dafür gibt es in jeder Pi-Box des Dashboards hinter "🔁 Neustart"
+eine Checkbox ⏰ (Tooltip "Aufwachen mit Neustart"): ist sie gesetzt, startet der Pi beim Wechsel
+des Zeitplans von AUS auf AN komplett neu, statt nur die Ausgänge wieder einzuschalten. Der zuletzt
+bekannte Zustand liegt auf dem Pi in `/home/pi/kiosk_system/last_global_off`; nur ein echter
+Wechsel AUS → AN löst den Neustart aus (keine Neustart-Schleife, kein Neustart beim Hochfahren).
+
 ## Mehrere Monitore an einem Pi
 
 Wayland-Compositors (labwc, Standard bei Raspberry Pi OS Bookworm) lassen einen Client

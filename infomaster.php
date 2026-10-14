@@ -349,6 +349,10 @@ REQUIRED_OUTPUT_COUNT = <?php echo (int)$requiredOutputs; ?>  # aus config.json,
 CACHE_FILE = "/home/pi/kiosk_system/last_config.json"
 FALLBACK_WAIT_SECONDS = 10
 MAINTENANCE_FLAG = "/home/pi/kiosk_system/maintenance_mode"
+# "Aufwachen mit Neustart" (Dashboard-Checkbox je Pi): letzter bekannter Zeitplan-Zustand
+# (global_off), ueberlebt einen Neustart - nur ein echter Wechsel AUS -> AN loest den
+# Neustart aus, nie der Start selbst (keine Neustart-Schleife).
+WAKE_STATE_FILE = "/home/pi/kiosk_system/last_global_off"
 ESC_TRIPLE_WINDOW = 2.0  # Sekunden zwischen 1. und 3. ESC-Druck
 
 # Vom Master zugewiesener Anzeigename: wird lokal gecacht, damit der Pi ihn auch dann noch
@@ -1581,6 +1585,32 @@ def apply_output_state(out, cfg, env, user, runtime_dir, active_processes, last_
         elif mode not in ("off", "desktop") and not url:
             log(f"   [HINWEIS] Modus {mode} aktiv, aber keine URL vom Master erhalten.")
 
+def handle_wake_reboot(payload):
+    # Manche Pis/Monitore wachen nach der Standby-Phase nicht zuverlaessig auf (Bildschirme
+    # bleiben schwarz) - fuer diese kann im Dashboard "Aufwachen mit Neustart" gesetzt werden:
+    # beim Wechsel des Zeitplans von AUS auf AN startet der Pi dann komplett neu, statt nur
+    # die Ausgaenge wieder einzuschalten.
+    cur = bool(payload.get("global_off"))
+    prev = None
+    try:
+        with open(WAKE_STATE_FILE) as f:
+            prev = f.read().strip() == "1"
+    except Exception:
+        pass
+    if prev != cur:
+        try:
+            with open(WAKE_STATE_FILE, "w") as f:
+                f.write("1" if cur else "0")
+        except Exception as e:
+            log(f"[WARNUNG] Zeitplan-Zustand fuer 'Aufwachen mit Neustart' nicht speicherbar ({e}).")
+    if prev is True and not cur and payload.get("wake_reboot"):
+        log("⏰ Zeitplan wechselt von AUS auf AN - 'Aufwachen mit Neustart' ist aktiv, Pi startet neu.")
+        try:
+            subprocess.run(["sync"])
+            subprocess.run(["reboot"])
+        except Exception as e:
+            log(f"[FEHLER] Neustart zum Aufwachen fehlgeschlagen: {e}")
+
 log("=== KIOSK CLIENT GESTARTET ===")
 
 # Zeigt beim Start, falls der letzte Start durch einen automatischen Selbst-Neustart
@@ -1859,6 +1889,7 @@ while True:
                 last_known_hash = payload.get("hash", "")
                 last_known_outputs_cfg = payload.get("outputs", {})
                 LOCAL_SCHEDULE_CHANGES = payload.get("schedule_changes", [])
+                handle_wake_reboot(payload)
                 _fallback_state["screens"] = extract_screens_map(last_known_outputs_cfg)
                 # Auch die Master-Antwort nur bei Aenderung vollstaendig loggen.
                 payload_str = json.dumps(payload, sort_keys=True)
@@ -2260,6 +2291,8 @@ if (isset($_GET['api']) && $_GET['api'] === 'ping') {
         // bleibt sie fuer den Pi eindeutig von einem echten Ausfall unterscheidbar.
         $fullBody = [
             'global_off' => $isGlobalOff,
+            // "Aufwachen mit Neustart" (Checkbox in der Pi-Box im Dashboard)
+            'wake_reboot' => !empty($clients[$clientId]['wake_reboot']),
             'outputs' => $responseOutputs,
             'name' => $clients[$clientId]['name'] ?? null,
             // Fuer den lokalen Fallback auf dem Pi: die naechsten AN/AUS-Zeitpunkte als
@@ -2624,6 +2657,14 @@ if (isset($_POST['del_user']) && !empty($_POST['del_username']) && ($_SESSION['a
     unset($users[$_POST['del_username']]);
     file_put_contents($usersFile, json_encode($users, JSON_PRETTY_PRINT));
     header("Location: infomaster.php#access-modal-reopen"); exit;
+}
+if (isset($_POST['toggle_wake_reboot']) && isset($clients[$_POST['toggle_wake_reboot']])) {
+    // Checkbox "Aufwachen mit Neustart" je Pi - per AJAX direkt gespeichert (siehe renderPiRow)
+    $wr = ($_POST['wake_reboot'] ?? '0') === '1';
+    $clients[$_POST['toggle_wake_reboot']]['wake_reboot'] = $wr;
+    file_put_contents($clientsFile, json_encode($clients, JSON_PRETTY_PRINT));
+    $_SESSION['im_flash'] = ['text' => $wr ? '⏰ Aufwachen mit Neustart aktiviert' : '⏰ Aufwachen mit Neustart deaktiviert', 'kind' => 'success'];
+    header("Location: infomaster.php"); exit;
 }
 if (isset($_POST['reboot_client']) && !empty($_POST['reboot_client']) && isset($clients[$_POST['reboot_client']])) {
     // Wird nicht sofort ausgefuehrt (der Master hat keinen direkten Weg zum Pi) - der Pi
@@ -3955,6 +3996,12 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
         echo '<button type="submit" style="width:auto; font-size:11px; padding:2px 10px; background:#1e293b; color:#a855f7; border:1px solid #a855f7;">🔁 Neustart</button>';
         echo '</form>';
     }
+    // "Aufwachen mit Neustart": ohne eigenes <form> (die Box sitzt im Formular der Pi-
+    // Zuordnung, Formulare duerfen nicht verschachtelt werden) - speichert per AJAX direkt.
+    $wakeReboot = !empty($data['wake_reboot']);
+    echo '<label title="Aufwachen mit Neustart" style="display:flex; align-items:center; gap:4px; font-size:11px; white-space:nowrap; color:' . ($wakeReboot ? '#a855f7' : '#64748b') . '; cursor:pointer; margin:0;">';
+    echo '<input type="checkbox" data-wake-client="' . htmlspecialchars($clientId, ENT_QUOTES) . '"' . ($wakeReboot ? ' checked' : '') . ' onchange="imToggleWakeReboot(this)" style="width:14px; height:14px; margin:0; accent-color:#a855f7; cursor:pointer;">⏰';
+    echo '</label>';
     echo '</div>';
     // Flexibles Grid: zeigt automatisch so viele Dropdowns wie Outputs gemeldet wurden (2 oder 4).
     echo '<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap:10px;">';
@@ -4002,7 +4049,7 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Infoscreens Master Hub</title>
+    <title>Infoscreens</title>
     <style id="im-dashboard-style">
         body { font-family: system-ui, sans-serif; background: #0b0b0b; color: #eee; margin: 0; padding-bottom: 50px; }
         .topbar { background: #1e1e1e; padding: 15px 25px; border-bottom: 3px solid #e91e63; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
@@ -4177,6 +4224,12 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
             });
             rows.forEach(row => panel.appendChild(row));
         }
+        function imToggleWakeReboot(cb) {
+            const fd = new FormData();
+            fd.append('toggle_wake_reboot', cb.getAttribute('data-wake-client'));
+            fd.append('wake_reboot', cb.checked ? '1' : '0');
+            if (window.imAjaxSubmit) window.imAjaxSubmit(fd, '✓ Gespeichert', 'success');
+        }
         function copyInstallCmd() {
             const cmdText = document.getElementById('cmdText').innerText;
             navigator.clipboard.writeText(cmdText).then(() => {
@@ -4201,9 +4254,10 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
 <?php endif; ?>
 
 <div class="topbar" id="imTopbar">
-    <h2 style="margin:0;">Infoscreens Master Hub</h2>
+    <h2 style="margin:0;">Infoscreens</h2>
     <div style="display:flex; gap:10px; align-items:center;">
-        <div id="topPdfDropZone" title="PDF oder Bild auf die Kopfzeile ziehen oder klicken zum Auswählen - danach im Dialog entscheiden, ob und wo gespeichert wird" style="display:flex; align-items:center; gap:6px; color:#94a3b8; text-decoration:none; font-weight:bold; padding:8px 15px; background:#111; border-radius:4px; border:1px dashed #334155; cursor:pointer; font-size:13px; transition:border-color .15s, background .15s;">
+        <span style="color:#94a3b8; font-weight:bold;">Inhalte hinzufügen:</span>
+        <div id="topPdfDropZone" title="PDF oder Bild auf die Kopfzeile ziehen oder klicken zum Auswählen - danach im Dialog entscheiden, ob und wo gespeichert wird" style="color:#94a3b8; text-decoration:none; font-weight:bold; padding:8px 15px; background:#111; border-radius:4px; border:1px dashed #334155; cursor:pointer; line-height:normal; transition:border-color .15s, background .15s;">
             📥 Datei hinzufügen
         </div>
         <input type="file" id="topPdfDropInput" accept="application/pdf,image/jpeg,image/png,image/gif,image/webp" multiple style="display:none;">
