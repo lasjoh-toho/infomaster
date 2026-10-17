@@ -458,7 +458,7 @@ def find_chromium_binary():
 POLL_INTERVAL_OK = 60
 BACKOFF_INTERVAL = 30
 BACKOFF_SHORT_TRIES = 3
-BACKOFF_INTERVAL_LONG = 600
+BACKOFF_INTERVAL_LONG = 120  # vorher 600 - nach einem Server-Update/-Ausfall tauchten die Pis bis zu 10 Min. als "Offline" auf
 consecutive_failures = 0
 
 def next_poll_interval():
@@ -1866,6 +1866,16 @@ while True:
                 log("🔀 Verbindung zum Master wiederhergestellt - kehre von lokalem Offline-Fallback zu Live-Betrieb zurueck.")
                 local_fallback_active = False
 
+            if payload.get("shutdown"):
+                # Vom Master ausgeloestes Ausschalten (Dashboard-Knopf ⏻). Danach ist der Pi
+                # aus der Ferne NICHT mehr erreichbar - er muss vor Ort wieder eingeschaltet
+                # werden (Strom aus/an), darauf weist auch der Dialog im Dashboard hin.
+                log("⏻ Ausschalten auf Anweisung des Masters angefordert.")
+                try:
+                    subprocess.run(["sync"])
+                    subprocess.run(["shutdown", "-h", "now"])
+                except Exception as e:
+                    log(f"[FEHLER] Ausschalten konnte nicht ausgefuehrt werden: {e}")
             if payload.get("reboot"):
                 # Vom Master ausgeloester Neustart - wird sofort ausgefuehrt, unabhaengig
                 # vom taeglichen Limit fuer den automatischen SELBST-ausgeloesten Neustart
@@ -2246,6 +2256,15 @@ if (isset($_GET['api']) && $_GET['api'] === 'ping') {
         if ($rebootNow) {
             unset($clients[$clientId]['reboot_requested']);
         }
+        // Ausschalten (⏻) genauso: einmalig ausliefern und sofort loeschen. shutdown_sent_at
+        // markiert den Pi danach im Dashboard als "ausgeschaltet" - bis er sich wieder meldet.
+        $shutdownNow = !empty($clients[$clientId]['shutdown_requested']);
+        if ($shutdownNow) {
+            unset($clients[$clientId]['shutdown_requested']);
+            $clients[$clientId]['shutdown_sent_at'] = time();
+        } else {
+            unset($clients[$clientId]['shutdown_sent_at']);
+        }
         if (empty($clients[$clientId]['name'])) {
             // Selbstheilend: falls der Pi sich noch an einen frueher zugewiesenen Namen
             // erinnert (lokal gecacht), z.B. weil clients.json auf dem Server verloren ging
@@ -2304,7 +2323,7 @@ if (isset($_GET['api']) && $_GET['api'] === 'ping') {
         $knownHash = $_POST['known_hash'] ?? '';
         // Ein ausstehender Neustart wird wie ein erzwungener Heartbeat behandelt - die
         // "unchanged"-Kurzantwort darf eine Neustart-Anweisung NIE stillschweigend verschlucken.
-        $isHeartbeat = !empty($_POST['heartbeat']) || $rebootNow;
+        $isHeartbeat = !empty($_POST['heartbeat']) || $rebootNow || $shutdownNow;
 
         if (!$isHeartbeat && $knownHash === $bodyHash) {
             echo json_encode(['unchanged' => true, 'hash' => $bodyHash]);
@@ -2312,6 +2331,9 @@ if (isset($_GET['api']) && $_GET['api'] === 'ping') {
             $fullBody['hash'] = $bodyHash;
             if ($rebootNow) {
                 $fullBody['reboot'] = true;
+            }
+            if ($shutdownNow) {
+                $fullBody['shutdown'] = true;
             }
             echo json_encode($fullBody);
         }
@@ -2664,6 +2686,13 @@ if (isset($_POST['toggle_wake_reboot']) && isset($clients[$_POST['toggle_wake_re
     $clients[$_POST['toggle_wake_reboot']]['wake_reboot'] = $wr;
     file_put_contents($clientsFile, json_encode($clients, JSON_PRETTY_PRINT));
     $_SESSION['im_flash'] = ['text' => $wr ? '⏰ Aufwachen mit Neustart aktiviert' : '⏰ Aufwachen mit Neustart deaktiviert', 'kind' => 'success'];
+    header("Location: infomaster.php"); exit;
+}
+if (!empty($_POST['shutdown_client']) && isset($clients[$_POST['shutdown_client']])) {
+    // Wie beim Neustart: der Pi holt sich die Anweisung beim naechsten Ping (bis zu 60s).
+    $clients[$_POST['shutdown_client']]['shutdown_requested'] = true;
+    file_put_contents($clientsFile, json_encode($clients, JSON_PRETTY_PRINT));
+    $_SESSION['im_flash'] = ['text' => '⏻ Ausschalten angefordert - wirkt beim nächsten Kontakt (bis zu 60s)', 'kind' => 'warn'];
     header("Location: infomaster.php"); exit;
 }
 if (isset($_POST['reboot_client']) && !empty($_POST['reboot_client']) && isset($clients[$_POST['reboot_client']])) {
@@ -3984,6 +4013,17 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
     echo '<input type="text" name="client_name[' . htmlspecialchars($clientId) . ']" value="' . htmlspecialchars($name) . '" style="width:auto; flex-grow:1; background:#020617; font-weight:bold; color:#fff;">';
     echo '<span style="font-size:11px; color:#64748b; white-space:nowrap;">IP: ' . htmlspecialchars($ip) . '</span>';
     echo '<span style="font-size:11px; font-weight:bold; white-space:nowrap; color:' . $statusColor . ';">' . $statusLabel . '</span>';
+    // Letzter Kontakt - damit sich "Offline" auch aus der Ferne einordnen laesst (kurz weg
+    // nach einem Server-Update vs. seit Tagen still).
+    $lastSeen = (int)($data['last_seen'] ?? 0);
+    if ($lastSeen > 0) {
+        $ago = max(0, time() - $lastSeen);
+        $agoTxt = $ago < 90 ? 'gerade eben' : ($ago < 5400 ? 'vor ' . round($ago / 60) . ' Min' : ($ago < 172800 ? 'vor ' . round($ago / 3600) . ' Std' : 'vor ' . round($ago / 86400) . ' Tagen'));
+        echo '<span style="font-size:11px; color:#64748b; white-space:nowrap;" title="Letzter Kontakt: ' . date('d.m.Y H:i:s', $lastSeen) . '">zuletzt ' . $agoTxt . '</span>';
+    }
+    if (!$isOnline && !empty($data['shutdown_sent_at'])) {
+        echo '<span style="font-size:11px; white-space:nowrap; color:#f87171;" title="Am ' . date('d.m.Y H:i', (int)$data['shutdown_sent_at']) . ' ausgeschaltet - muss vor Ort wieder eingeschaltet werden">⏻ ausgeschaltet</span>';
+    }
     $reportCount = count($errorReports[$clientId] ?? []);
     if ($reportCount > 0) {
         echo '<a href="?view_reports=' . urlencode($clientId) . '#reports" style="font-size:11px; white-space:nowrap; color:#f59e0b; text-decoration:none; border:1px solid #f59e0b; border-radius:4px; padding:2px 8px;">🚨 ' . $reportCount . ' Fehlerbericht' . ($reportCount > 1 ? 'e' : '') . '</a>';
@@ -3995,6 +4035,13 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
         echo '<input type="hidden" name="reboot_client" value="' . htmlspecialchars($clientId) . '">';
         echo '<button type="submit" style="width:auto; font-size:11px; padding:2px 10px; background:#1e293b; color:#a855f7; border:1px solid #a855f7;">🔁 Neustart</button>';
         echo '</form>';
+    }
+    // Ausschalten (⏻): ebenfalls ohne eigenes <form> (siehe Kommentar unten), Bestaetigung
+    // per Dialog mit dem Hinweis, dass der Pi danach vor Ort wieder eingeschaltet werden muss.
+    if (!empty($data['shutdown_requested'])) {
+        echo '<span style="font-size:11px; white-space:nowrap; color:#f87171; border:1px solid #f87171; border-radius:4px; padding:2px 8px;">⏻ Ausschalten ausstehend...</span>';
+    } else {
+        echo '<button type="button" data-shutdown-client="' . htmlspecialchars($clientId, ENT_QUOTES) . '" data-client-name="' . htmlspecialchars($name, ENT_QUOTES) . '" onclick="imShutdownClient(this)" title="Raspberry Pi ausschalten" style="width:auto; margin:0; font-size:11px; padding:2px 8px; background:#1e293b; color:#f87171; border:1px solid #f87171;">⏻</button>';
     }
     // "Aufwachen mit Neustart": ohne eigenes <form> (die Box sitzt im Formular der Pi-
     // Zuordnung, Formulare duerfen nicht verschachtelt werden) - speichert per AJAX direkt.
@@ -4224,6 +4271,13 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
             });
             rows.forEach(row => panel.appendChild(row));
         }
+        function imShutdownClient(btn) {
+            const name = btn.getAttribute('data-client-name') || 'Raspberry Pi';
+            if (!confirm(name + ' wirklich AUSSCHALTEN?\n\nWichtig: Der Pi lässt sich danach nicht aus der Ferne wieder starten - er muss vor Ort manuell eingeschaltet werden (Strom kurz trennen und wieder anschließen).\n\nWirkt beim nächsten Kontakt (bis zu 60s).')) return;
+            const fd = new FormData();
+            fd.append('shutdown_client', btn.getAttribute('data-shutdown-client'));
+            if (window.imAjaxSubmit) window.imAjaxSubmit(fd, '⏻ Ausschalten angefordert', 'warn');
+        }
         function imToggleWakeReboot(cb) {
             const fd = new FormData();
             fd.append('toggle_wake_reboot', cb.getAttribute('data-wake-client'));
@@ -4323,6 +4377,25 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
   }
 })();
 </script>
+
+<?php
+// Diagnose: kann der Server seine Daten-Dateien schreiben? Wenn nicht, melden sich die Pis
+// zwar, ihr Kontakt (last_seen) wird aber nicht gespeichert - sie erscheinen dauerhaft
+// "Offline", ohne dass irgendwo ein Fehler sichtbar waere (typisch nach dem Hochladen einer
+// neuen Version mit anderem Dateibesitzer/anderen Rechten).
+$imUnwritable = [];
+foreach ([$clientsFile, $configFile, $reportsFile, rtrim($uploadBase, '/')] as $imPath) {
+    $imOk = file_exists($imPath) ? is_writable($imPath) : is_writable(dirname(realpath('.') . '/' . $imPath) ?: '.');
+    if (!$imOk) $imUnwritable[] = $imPath;
+}
+if (!is_writable('.')) $imUnwritable[] = 'Programmordner (' . basename(realpath('.')) . ')';
+if (!empty($imUnwritable)):
+?>
+<div style="margin: -8px 25px 18px; padding: 12px 16px; background:#450a0a; border:1px solid #ef4444; border-radius:8px; color:#fecaca; font-size:13px;">
+    <strong>⚠️ Der Server kann nicht schreiben:</strong> <?php echo htmlspecialchars(implode(', ', $imUnwritable)); ?><br>
+    <span style="font-size:12px; color:#fca5a5;">Ohne Schreibrechte werden Kontakte der Pis nicht gespeichert (sie erscheinen „Offline“) und Änderungen gehen verloren. Bitte im Datei-Manager des Hosters dem Webserver Schreibrechte für diese Dateien/Ordner geben.</span>
+</div>
+<?php endif; ?>
 
 <!-- INHALTE & MONITORE -->
 <div style="padding: 0 25px 10px;">
