@@ -115,6 +115,31 @@ großer Vorschau (Bild, PDF oder Video), Blättern per ‹ › bzw. Pfeiltasten 
 Nach jeder Aktion öffnet sich das Modal automatisch mit der nächsten Datei desselben Ordners,
 so lässt sich ein Ordner zügig durchsehen; aufgeklappte Ordner bleiben dabei aufgeklappt.
 
+## Pi-Box im Dashboard: Neustart, Ausschalten, Diagnose
+
+- **🔁 Neustart** / **⏻ Ausschalten** - der Pi holt sich die Anweisung beim nächsten Kontakt (bis zu
+  60 s). Vor dem Ausschalten fragt ein Dialog nach und weist darauf hin, dass der Pi danach nicht aus
+  der Ferne wieder gestartet werden kann, sondern vor Ort manuell eingeschaltet werden muss (Strom kurz
+  trennen). Ein ausgeschalteter Pi ist in seiner Box als "⏻ ausgeschaltet" markiert, bis er sich
+  wieder meldet.
+- **"zuletzt …"** - Zeitpunkt des letzten Kontakts (Tooltip: genaue Uhrzeit), damit sich ein "Offline"
+  auch aus der Ferne einordnen lässt.
+- **Warnhinweis "Der Server kann nicht schreiben"** - erscheint oben im Dashboard, wenn `clients.json`,
+  `config.json`, `error_reports.json`, `media/` oder der Programmordner nicht beschreibbar sind. Dann
+  werden Kontakte der Pis nicht gespeichert und sie erscheinen dauerhaft "Offline" (typisch nach dem
+  Hochladen einer neuen Version mit anderem Dateibesitzer/anderen Rechten).
+- Ist der Server nicht erreichbar, fragt der Client nach drei schnellen Versuchen nur noch alle
+  **2 Minuten** nach (vorher 10) - nach einem Server-Update sind die Pis dadurch schnell wieder online.
+
+## Aufwachen mit Neustart
+
+Manche Pis/Monitore wachen nach der Standby-Phase (Zeitplan bzw. Ferien) nicht zuverlässig auf -
+die Bildschirme bleiben schwarz. Dafür gibt es in jeder Pi-Box des Dashboards hinter "🔁 Neustart"
+eine Checkbox ⏰ (Tooltip "Aufwachen mit Neustart"): ist sie gesetzt, startet der Pi beim Wechsel
+des Zeitplans von AUS auf AN komplett neu, statt nur die Ausgänge wieder einzuschalten. Der zuletzt
+bekannte Zustand liegt auf dem Pi in `/home/pi/kiosk_system/last_global_off`; nur ein echter
+Wechsel AUS → AN löst den Neustart aus (keine Neustart-Schleife, kein Neustart beim Hochfahren).
+
 ## Mehrere Monitore an einem Pi
 
 Wayland-Compositors (labwc, Standard bei Raspberry Pi OS Bookworm) lassen einen Client
