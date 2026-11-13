@@ -958,7 +958,7 @@ FALLBACK_SWITCH_THRESHOLD = 3  # so viele Fehlversuche in Folge, bevor "live"-Sc
 _fallback_state = {"screens": {}}
 
 MEDIA_CACHE_DIR = "/home/pi/kiosk_system/media_cache"
-MEDIA_SYNC_INTERVAL = 600  # Sekunden zwischen zwei Sync-Durchlaeufen
+MEDIA_SYNC_INTERVAL = 120  # Sekunden zwischen zwei Sync-Durchlaeufen (neue Bilder erscheinen spaetestens danach)
 _last_media_sync_time = 0
 
 def get_needed_media_folders():
@@ -1045,7 +1045,7 @@ def build_fallback_html(screen_id, screen_def):
             folder = str(type_)[len("folder:"):]
             local_dir = os.path.join(MEDIA_CACHE_DIR, folder)
             try:
-                files = sorted(f for f in os.listdir(local_dir) if not f.startswith("."))
+                files = sorted(f for f in os.listdir(local_dir) if not f.startswith(".") and not f.endswith(".part"))
             except Exception:
                 files = []
             if not files:
@@ -1054,21 +1054,34 @@ def build_fallback_html(screen_id, screen_def):
                         f'padding:20px;text-align:center;">Noch keine lokal gespiegelten '
                         f'Dateien fuer Ordner &quot;{safe_folder}&quot; verfuegbar.</div>')
             urls = [f"/media/{urllib.parse.quote(folder)}/{urllib.parse.quote(f)}" for f in files]
+            # Die Dateiliste wird vor jedem Wechsel frisch vom lokalen Server geholt (/list) -
+            # so kommen neu gespiegelte Bilder ohne Neustart in die Rotation. Bilder werden
+            # vorgeladen und erst dann ausgetauscht; eine nicht ladbare Datei wird
+            # uebersprungen statt als schwarze Flaeche stehen zu bleiben.
+            list_url = "/list?folder=" + urllib.parse.quote(folder)
             return (
                 f'<div class="pane-inner" id="{pane_uid}"></div>'
                 f'<script>(function(){{'
-                f'var files={json.dumps(urls)};var idx=0;'
+                f'var files={json.dumps(urls)};var idx=0;var tok=0;'
                 f'var el=document.getElementById("{pane_uid}");'
-                f'function show(){{'
-                f'var u=files[idx%files.length];idx++;'
+                f'function render(u,tries){{'
                 f'if(u.toLowerCase().endsWith(".pdf")){{'
-                f'el.innerHTML=\'<iframe src="\'+u+\'#toolbar=0&navpanes=0&scrollbar=0&view=FitW" '
-                f'style="width:100%;height:100%;border:none;"></iframe>\';'
-                f'}}else{{'
-                f'el.innerHTML=\'<img src="\'+u+\'" style="width:100%;height:100%;object-fit:contain;">\';'
+                f'el.innerHTML=\'<iframe src="\'+u+\'#toolbar=0&navpanes=0&scrollbar=0&view=Fit" '
+                f'style="width:100%;height:100%;border:none;"></iframe>\';return;'
                 f'}}'
+                f'var t=++tok;var img=new Image();'
+                f'img.style.cssText="width:100%;height:100%;object-fit:contain;display:block;";'
+                f'img.onload=function(){{if(t!==tok)return;el.innerHTML="";el.appendChild(img);}};'
+                f'img.onerror=function(){{if(t!==tok)return;if(tries+1<files.length){{render(files[idx++%files.length],tries+1);}}}};'
+                f'img.src=u;'
                 f'}}'
-                f'show();setInterval(show,{duration}*1000);'
+                f'function show(){{if(files.length)render(files[idx++%files.length],0);}}'
+                f'function tick(){{'
+                f'fetch({json.dumps(list_url)},{{cache:"no-store"}}).then(function(r){{return r.json();}})'
+                f'.then(function(l){{if(Array.isArray(l)&&l.length)files=l;}})'
+                f'.catch(function(){{}}).then(show);'
+                f'}}'
+                f'show();setInterval(tick,{duration}*1000);'
                 f'}})();</script>'
             )
         elif type_ == "nextcloud":
@@ -1134,6 +1147,27 @@ class _FallbackHTTPHandler(http.server.BaseHTTPRequestHandler):
                 body = html_text.encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            elif parsed.path == "/list":
+                # Aktuelle Dateiliste eines lokal gespiegelten Ordners (fuer die Rotation in
+                # build_fallback_html - neu gespiegelte Dateien ohne Seiten-Reload).
+                qs = urllib.parse.parse_qs(parsed.query)
+                folder = (qs.get("folder") or [""])[0]
+                files = []
+                if folder and ".." not in folder.split("/"):
+                    try:
+                        local_dir = os.path.join(MEDIA_CACHE_DIR, folder)
+                        files = [f"/media/{urllib.parse.quote(folder)}/{urllib.parse.quote(f)}"
+                                 for f in sorted(os.listdir(local_dir))
+                                 if not f.startswith(".") and not f.endswith(".part")]
+                    except Exception:
+                        files = []
+                body = json.dumps(files).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Cache-Control", "no-store")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
@@ -1906,6 +1940,7 @@ while True:
                 if payload_str != last_states.get("_last_payload"):
                     log(f"<- Antwort vom Master geaendert: {json.dumps(payload)}")
                     last_states["_last_payload"] = payload_str
+                    _last_media_sync_time = 0  # Konfiguration geaendert -> Medien sofort nachziehen
                     if payload.get("global_off"):
                         log("HINWEIS: Globaler Zeitplan/Ferien aktiv - alle Displays werden AUS geschaltet.")
                 data = last_known_outputs_cfg
@@ -4377,25 +4412,6 @@ function renderPiRow($clientId, $data, $isOnline, $config, $errorReports) {
   }
 })();
 </script>
-
-<?php
-// Diagnose: kann der Server seine Daten-Dateien schreiben? Wenn nicht, melden sich die Pis
-// zwar, ihr Kontakt (last_seen) wird aber nicht gespeichert - sie erscheinen dauerhaft
-// "Offline", ohne dass irgendwo ein Fehler sichtbar waere (typisch nach dem Hochladen einer
-// neuen Version mit anderem Dateibesitzer/anderen Rechten).
-$imUnwritable = [];
-foreach ([$clientsFile, $configFile, $reportsFile, rtrim($uploadBase, '/')] as $imPath) {
-    $imOk = file_exists($imPath) ? is_writable($imPath) : is_writable(dirname(realpath('.') . '/' . $imPath) ?: '.');
-    if (!$imOk) $imUnwritable[] = $imPath;
-}
-if (!is_writable('.')) $imUnwritable[] = 'Programmordner (' . basename(realpath('.')) . ')';
-if (!empty($imUnwritable)):
-?>
-<div style="margin: -8px 25px 18px; padding: 12px 16px; background:#450a0a; border:1px solid #ef4444; border-radius:8px; color:#fecaca; font-size:13px;">
-    <strong>⚠️ Der Server kann nicht schreiben:</strong> <?php echo htmlspecialchars(implode(', ', $imUnwritable)); ?><br>
-    <span style="font-size:12px; color:#fca5a5;">Ohne Schreibrechte werden Kontakte der Pis nicht gespeichert (sie erscheinen „Offline“) und Änderungen gehen verloren. Bitte im Datei-Manager des Hosters dem Webserver Schreibrechte für diese Dateien/Ordner geben.</span>
-</div>
-<?php endif; ?>
 
 <!-- INHALTE & MONITORE -->
 <div style="padding: 0 25px 10px;">

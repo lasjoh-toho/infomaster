@@ -42,6 +42,55 @@ function countPdfPages($path) {
     return 1; // Seitenzahl nicht ermittelbar - Modus faellt dann effektiv auf "eine Seite" zurueck
 }
 
+// Seitenverhaeltnisse (Hoehe/Breite, Drehung beruecksichtigt) aller Seiten einer PDF - damit
+// der Monitor ausrechnen kann, ob die PDF in "FitW"-Darstellung ueberhaupt hoeher als der
+// Bildschirm ist. Passt sie komplett drauf, wird nicht gescrollt; sonst wird genau um die
+// tatsaechliche Ueberhoehe gescrollt (statt um eine geschaetzte Strecke). Leeres Array, wenn
+// sich die Seitengroessen nicht ermitteln lassen - dann gilt das bisherige Verhalten.
+function pdfPageRatios($path) {
+    if (!is_file($path)) return [];
+    $ratios = [];
+    $disabled = array_map('trim', explode(',', (string)ini_get('disable_functions')));
+    if (function_exists('shell_exec') && !in_array('shell_exec', $disabled, true)
+        && trim((string)@shell_exec('command -v pdfinfo 2>/dev/null')) !== '') {
+        $out = (string)@shell_exec('pdfinfo -f 1 -l 300 ' . escapeshellarg($path) . ' 2>/dev/null');
+        $rot = [];
+        if (preg_match_all('/^Page\s+(\d+)\s+rot:\s*(\d+)/m', $out, $mr, PREG_SET_ORDER)) {
+            foreach ($mr as $m) $rot[(int)$m[1]] = (int)$m[2];
+        }
+        if (preg_match_all('/^Page\s+(\d+)\s+size:\s*([\d.]+)\s*x\s*([\d.]+)/m', $out, $ms, PREG_SET_ORDER)) {
+            foreach ($ms as $m) {
+                $w = (float)$m[2]; $h = (float)$m[3];
+                if ($w <= 0 || $h <= 0) continue;
+                if ((($rot[(int)$m[1]] ?? 0) % 180) === 90) { $t = $w; $w = $h; $h = $t; }
+                $ratios[] = round($h / $w, 4);
+            }
+        }
+        if ($ratios) return $ratios;
+    }
+    if (class_exists('Imagick')) {
+        try {
+            $im = new Imagick();
+            $im->pingImage($path);
+            foreach ($im as $page) {
+                $w = $page->getImageWidth(); $h = $page->getImageHeight();
+                if ($w > 0 && $h > 0) $ratios[] = round($h / $w, 4);
+            }
+            $im->clear();
+            if ($ratios) return $ratios;
+        } catch (Exception $e) { /* faellt auf das Auslesen der MediaBox zurueck */ }
+    }
+    // Letzter Ausweg ohne Hilfsprogramme: erste MediaBox in der Datei, fuer alle Seiten
+    // angenommen (die Seitenzahl kommt dann von countPdfPages()).
+    $raw = @file_get_contents($path, false, null, 0, 4 * 1024 * 1024);
+    if ($raw !== false && preg_match('/\/MediaBox\s*\[\s*(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s*\]/', $raw, $m)) {
+        $w = abs((float)$m[3] - (float)$m[1]); $h = abs((float)$m[4] - (float)$m[2]);
+        if (preg_match('/\/Rotate\s+(\d+)/', $raw, $mrot) && ((int)$mrot[1] % 180) === 90) { $t = $w; $w = $h; $h = $t; }
+        if ($w > 0 && $h > 0) return array_fill(0, max(1, countPdfPages($path)), round($h / $w, 4));
+    }
+    return [];
+}
+
 function getPlaylist($type, $content, $uploadBase, $hiddenFiles = []) {
     // "pdf" + $content ist das aktuelle Format (siehe infomaster.php); "pdf:<Pfad>" ist die
     // alte Kodierung (vor der Auslagerung in ein eigenes Datei-Dropdown) und wird nur noch
@@ -98,6 +147,29 @@ $isPdfTypeB = ($s['typeB'] ?? '') === 'pdf' || strpos($s['typeB'] ?? '', 'pdf:')
 // zu laufen.
 $pdfPagesA = (!empty($playlistA) && $isPdfTypeA) ? countPdfPages($playlistA[0]) : 1;
 $pdfPagesB = (!empty($playlistB) && $isPdfTypeB) ? countPdfPages($playlistB[0]) : 1;
+// Seitenverhaeltnisse aller PDFs, die dieser Monitor zeigen kann (Einzel-PDF und PDFs in
+// Ordnern) - siehe pdfPageRatios().
+function pdfInfoFor($playlists) {
+    $info = [];
+    foreach ($playlists as $pl) {
+        foreach ($pl as $f) {
+            if (isset($info[$f]) || strtolower(pathinfo($f, PATHINFO_EXTENSION)) !== 'pdf') continue;
+            $info[$f] = pdfPageRatios($f);
+        }
+    }
+    return $info;
+}
+$pdfInfo = pdfInfoFor([$playlistA, $playlistB]);
+
+// Nur die aktuelle Dateiliste abfragen (fuer das Nachladen neuer/entfernter Bilder ohne
+// Seiten-Reload, siehe refreshPlaylists() im Script unten).
+if (isset($_GET['playlist'])) {
+    header('Content-Type: application/json');
+    header('Cache-Control: no-store');
+    echo json_encode(['A' => $playlistA, 'B' => $playlistB, 'pdf' => $pdfInfo]);
+    exit;
+}
+
 // Pass nextcloud URLs to JS for async fetching
 $ncUrlA = ($s && $s['type'] === 'nextcloud') ? ($s['content'] ?? '') : '';
 $ncUrlB = ($s && ($s['typeB'] ?? '') === 'nextcloud') ? ($s['contentB'] ?? '') : '';
@@ -217,6 +289,7 @@ $ncUrlB = ($s && ($s['typeB'] ?? '') === 'nextcloud') ? ($s['contentB'] ?? '') :
     const pdfModeB  = <?php echo json_encode($pdfModeB); ?>;
     const pdfPagesA = <?php echo json_encode($pdfPagesA); ?>;
     const pdfPagesB = <?php echo json_encode($pdfPagesB); ?>;
+    let pdfInfo = <?php echo json_encode((object)$pdfInfo); ?>;
     let idxA = 0;
     let idxB = 0;
     let currentHash = "";
@@ -243,29 +316,54 @@ $ncUrlB = ($s && ($s['typeB'] ?? '') === 'nextcloud') ? ($s['contentB'] ?? '') :
     // untereinander im "FitW"-Fortlaufmodus) plus einer CSS-Transform-Animation, die das
     // iframe selbst nach oben schiebt. Kein PDF.js/eigenes Rendering noetig, daher auch ohne
     // Internetzugang auf dem Pi lauffaehig.
+    // Sind die Seitenverhaeltnisse bekannt (pdfInfo, serverseitig ermittelt), wird
+    // ausgerechnet, wie hoch die PDF in voller Breite tatsaechlich ist: Passt sie (bzw. eine
+    // einzelne Seite eingepasst) auf den Bildschirm, wird NICHT gescrollt, sonst genau um die
+    // Ueberhoehe.
+    function renderPdfStatic(pane, file) {
+        pane.innerHTML = `<iframe src="${file}#toolbar=0&navpanes=0&scrollbar=0&view=Fit"></iframe>`;
+    }
     function renderPdfScroll(pane, file, seconds, numPages) {
-        // Bei einer einseitigen PDF gibt es nichts zum Durchscrollen - die Animation wuerde nur
-        // sinnlos "auf der Stelle stehen" bzw. am Ende der Seite ins Leere fahren. Dann statt
-        // dessen die eine Seite einfach ruhig/statisch anzeigen (wie renderPdfPage).
-        if (numPages === 1) {
-            pane.innerHTML = `<iframe src="${file}#toolbar=0&navpanes=0&scrollbar=0&view=FitW"></iframe>`;
-            return;
+        const ratios = pdfInfo[file] || [];
+        const paneW = pane.clientWidth || window.innerWidth;
+        const paneH = pane.clientHeight || window.innerHeight;
+        let scrollCss = null;
+        if (ratios.length) {
+            // Breite der Seiten im Viewer: das iframe ist 108% breit (Raender des Viewers
+            // werden seitlich abgeschnitten); zwischen den Seiten liegt ein schmaler Spalt.
+            const pageW = paneW * 1.08 - 16;
+            const contentH = ratios.reduce((sum, r) => sum + pageW * r + 12, 0);
+            const overflow = contentH - paneH;
+            // Passt komplett drauf -> stehen lassen. Eine einzelne Seite, die nur etwas zu
+            // hoch ist (z.B. A4 quer auf 16:9), wird ebenfalls nicht gescrollt, sondern als
+            // Ganzes eingepasst ("Fit") - Scrollen lohnt erst bei deutlich hoeheren Seiten
+            // (z.B. A4 hoch auf einem Querformat-Bildschirm).
+            if (overflow <= paneH * 0.03 || (ratios.length === 1 && contentH <= paneH * 2)) {
+                renderPdfStatic(pane, file); return;
+            }
+            scrollCss = `${Math.ceil(overflow + 12)}px`;
+        } else {
+            if (!numPages) numPages = 1;
+            // Bei einer einseitigen PDF (Seitengroesse unbekannt) gibt es nichts zum
+            // Durchscrollen - dann die eine Seite einfach ruhig/statisch anzeigen.
+            if (numPages === 1) { renderPdfStatic(pane, file); return; }
+            // Scroll-Distanz ohne bekannte Seitengroessen: 100vh pro 5 Sekunden Dauer
+            scrollCss = `${Math.max(100, (seconds / 5) * 100)}vh`;
         }
-        // Scroll-Distanz: 100vh pro 5 Sekunden Dauer
-        const scrollDist = Math.max(100, (seconds / 5) * 100);
+        const anim = 'dynScroll' + Math.floor(Math.random() * 1e9);
         pane.innerHTML = `
             <div class="pdf-wrapper">
                 <style>
-                    @keyframes dynScroll {
+                    @keyframes ${anim} {
                         0% { transform: translateY(0); }
                         15% { transform: translateY(0); }
-                        85% { transform: translateY(-${scrollDist}vh); }
-                        100% { transform: translateY(-${scrollDist}vh); }
+                        85% { transform: translateY(-${scrollCss}); }
+                        100% { transform: translateY(-${scrollCss}); }
                     }
                 </style>
                 <iframe src="${file}#toolbar=0&navpanes=0&scrollbar=0&view=FitW"
                         class="pdf-content"
-                        style="animation: dynScroll ${seconds}s linear forwards;">
+                        style="animation: ${anim} ${seconds}s linear forwards;">
                 </iframe>
             </div>`;
     }
@@ -276,6 +374,43 @@ $ncUrlB = ($s && ($s['typeB'] ?? '') === 'nextcloud') ? ($s['contentB'] ?? '') :
     // wenn der Viewer den blossen Hash-Wechsel sonst ignorieren wuerde.
     function renderPdfPage(pane, file, pageNum) {
         pane.innerHTML = `<iframe src="${file}#toolbar=0&navpanes=0&scrollbar=0&view=FitW&page=${pageNum}"></iframe>`;
+    }
+
+    // Ordner-Eintrag anzeigen: Bilder werden erst vorgeladen und dann ausgetauscht (kein
+    // schwarzes Bild waehrend des Ladens). Laesst sich eine Datei nicht laden (z.B. gerade
+    // geloescht/verschoben), wird sofort die naechste gezeigt statt einer schwarzen Flaeche.
+    function showFolderItem(pane, playlist, index, tries) {
+        if (!playlist.length || tries >= playlist.length) return;
+        const file = playlist[(index + tries) % playlist.length];
+        if (file.toLowerCase().endsWith('.pdf')) {
+            renderPdfScroll(pane, file, durationSec, (pdfInfo[file] || []).length);
+            return;
+        }
+        const token = (pane._showToken = (pane._showToken || 0) + 1);
+        const img = new Image();
+        img.onload = () => {
+            if (pane._showToken !== token) return;
+            pane.innerHTML = '';
+            pane.appendChild(img);
+        };
+        img.onerror = () => {
+            if (pane._showToken !== token) return;
+            showFolderItem(pane, playlist, index, tries + 1);
+        };
+        img.src = `${file}?t=${Date.now()}`;
+    }
+
+    // Dateiliste regelmaessig neu holen - so kommen neu hochgeladene Bilder ohne Neustart in
+    // die Rotation, und geloeschte fallen heraus (config.json aendert sich dabei nicht).
+    async function refreshPlaylists() {
+        try {
+            const resp = await fetch(`view.php?id=${encodeURIComponent(<?php echo json_encode((string)$id); ?>)}&playlist=1`, { cache: 'no-store' });
+            if (!resp.ok) return;
+            const data = await resp.json();
+            if (!ncUrlA && Array.isArray(data.A)) playlistA = data.A;
+            if (!ncUrlB && Array.isArray(data.B)) playlistB = data.B;
+            if (data.pdf && typeof data.pdf === 'object' && !Array.isArray(data.pdf)) pdfInfo = data.pdf;
+        } catch (e) {}
     }
 
     function updatePane(paneId, type, url, playlist, index, pdfMode, numPages) {
@@ -297,12 +432,7 @@ $ncUrlB = ($s && ($s['typeB'] ?? '') === 'nextcloud') ? ($s['contentB'] ?? '') :
             }
         } else if (type.startsWith('folder:')) {
             if (playlist.length > 0) {
-                const file = playlist[index % playlist.length];
-                if (file.toLowerCase().endsWith('.pdf')) {
-                    renderPdfScroll(pane, file, durationSec);
-                } else {
-                    pane.innerHTML = `<img src="${file}?t=${Date.now()}">`;
-                }
+                showFolderItem(pane, playlist, index, 0);
             } else {
                 pane.innerHTML = '<div style="color:#222;font-size:12px;padding:20px;">Ordner leer</div>';
             }
@@ -339,6 +469,7 @@ $ncUrlB = ($s && ($s['typeB'] ?? '') === 'nextcloud') ? ($s['contentB'] ?? '') :
             if(config.split !== 'none') updatePane('paneB', config.typeB, config.contentB, playlistB, idxB, pdfModeB, pdfPagesB);
             setInterval(cycle, durationSec * 1000);
             setInterval(checkUpdate, 5000);
+            setInterval(refreshPlaylists, 30000);
             // Refresh Nextcloud playlists every 5 minutes
             if(ncUrlA || ncUrlB) setInterval(async () => {
                 if(ncUrlA) playlistA = await loadNextcloudPlaylist(ncUrlA);

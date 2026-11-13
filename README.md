@@ -124,10 +124,6 @@ so lässt sich ein Ordner zügig durchsehen; aufgeklappte Ordner bleiben dabei a
   wieder meldet.
 - **"zuletzt …"** - Zeitpunkt des letzten Kontakts (Tooltip: genaue Uhrzeit), damit sich ein "Offline"
   auch aus der Ferne einordnen lässt.
-- **Warnhinweis "Der Server kann nicht schreiben"** - erscheint oben im Dashboard, wenn `clients.json`,
-  `config.json`, `error_reports.json`, `media/` oder der Programmordner nicht beschreibbar sind. Dann
-  werden Kontakte der Pis nicht gespeichert und sie erscheinen dauerhaft "Offline" (typisch nach dem
-  Hochladen einer neuen Version mit anderem Dateibesitzer/anderen Rechten).
 - Ist der Server nicht erreichbar, fragt der Client nach drei schnellen Versuchen nur noch alle
   **2 Minuten** nach (vorher 10) - nach einem Server-Update sind die Pis dadurch schnell wieder online.
 
